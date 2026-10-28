@@ -201,6 +201,8 @@ A project wraps a list of `pages` (each holding one drawing) and a list of `vers
 
 ## Hosting on Cloudflare Pages
 
+Step-by-step for lonepair.app, including buying the domains and forwarding lone-pair.com: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 `npm run build:pages` builds the app and writes a deploy-ready `site/` folder (not committed) containing:
 
 - `index.html`: the app.
