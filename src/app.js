@@ -931,6 +931,7 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   if (c==='smiles') copySmiles();
   else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
   else if (c==='lookup') lookupOnline();
+  else if (c==='nmr') openNmr(); else if (c==='ms') openMs();
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
   else if (c==='delete') deleteSel();
@@ -969,6 +970,7 @@ function analyzeNow(){
   html+=row('Formula', fmtFormula(r.formula), r.formula);
   html+=row('MW', r.mw.toFixed(2)+' g/mol', r.mw.toFixed(2));
   html+=row('Exact mass', r.exact.toFixed(4), r.exact.toFixed(4));
+  if (!r.generic){ try{ const {mol}=toOCL(doc,ix,ids,{skipH:true}); const a=MS.adducts(mol); const m=a.rows[0]; if (m && Number.isFinite(m.mz)) html+=row(`m/z ${esc(m.label)}`, m.mz.toFixed(4), m.mz.toFixed(4)); }catch(e){} }
   if (r.props){ const p=r.props;
     html+=row('cLogP', p.logP.toFixed(2), null);
     html+=row('tPSA', p.polarSurfaceArea.toFixed(1)+' Å²', null);
@@ -1005,6 +1007,7 @@ function reactionSmiles(){
   return R.join('.')+'>'+A.join('.')+'>'+P.join('.');
 }
 $('#bLookup').onclick=()=>lookupOnline();
+$('#bMs').onclick=()=>openMs();
 $('#props').addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, 'Copied'); });
 $('#bAddInfo').addEventListener('click', ()=>{
   if (!lastAnalysis){ toast('Draw a structure first'); return; }
@@ -1519,6 +1522,97 @@ function openNmr(){
   let res; try{ res=NMR.predict(mol); }catch(e){ console.warn(e); toast('Could not predict a spectrum for this structure'); return; }
   nmrState={res, comp, owner, mol, tab:'H', generic, multi:comps.length>1, solvent:(nmrState&&nmrState.solvent)||''};
   renderNmr();
+}
+/* ================= mass spectrum dialog ================= */
+let msState=null;
+function openMs(tab){
+  const selIds=selAtoms();
+  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  if (!comps.length){ toast('Draw or select a structure first'); return; }
+  const comp=comps[0];
+  const {mol, owner, generic}=toOCL(doc,ix,comp,{skipH:true});
+  if (generic){ toast('Structures with R, X or custom labels have no defined mass'); return; }
+  mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
+  msState={comp, mol, owner, multi:comps.length>1, tab:tab||(msState&&msState.tab)||'mz', mode:(msState&&msState.mode)||'pos', energy:(msState&&msState.energy)||'medium', pick:null};
+  renderMs();
+}
+function msStickSVG(peaks, opts={}){ // peaks: [{mz, rel, label?, i?}]
+  const W=640, top=26, base=190, padL=36, padR=14;
+  if (!peaks.length) return '<p class="note">No peaks.</p>';
+  let lo=Math.min(...peaks.map(p=>p.mz)), hi=Math.max(...peaks.map(p=>p.mz)); const span=Math.max(hi-lo, opts.minSpan||10);
+  lo=Math.max(0, lo-span*0.08); hi=lo+span*1.16;
+  const X=m=>padL+(m-lo)/(hi-lo)*(W-padL-padR), Y=r=>base-r/100*(base-top);
+  let g=`<line x1="${padL}" y1="${base}" x2="${W-padR}" y2="${base}" stroke="#18212b"/><line x1="${padL}" y1="${top}" x2="${padL}" y2="${base}" stroke="#18212b"/>`;
+  const step=[1,2,5,10,20,50,100,200,500].find(s=>span/s<=10)||1000;
+  for (let v=Math.ceil(lo/step)*step; v<=hi; v+=step) g+=`<line x1="${f2(X(v))}" y1="${base}" x2="${f2(X(v))}" y2="${base+4}" stroke="#18212b"/><text x="${f2(X(v))}" y="${base+15}" font-size="10" text-anchor="middle" fill="#18212b">${v}</text>`;
+  for (const r of [0,50,100]) g+=`<text x="${padL-4}" y="${f2(Y(r)+3)}" font-size="9" text-anchor="end" fill="#56626f">${r}</text>`;
+  g+=`<text x="${(W+padL)/2}" y="${base+30}" font-size="10.5" text-anchor="middle" fill="#56626f">m/z</text>`;
+  const lab=[...peaks].sort((a,b)=>b.rel-a.rel).slice(0, opts.labels||8);
+  for (const p of peaks){ const x=X(p.mz), on=opts.pick!=null && p.i===opts.pick;
+    g+=`<line x1="${f2(x)}" y1="${base}" x2="${f2(x)}" y2="${f2(Y(p.rel))}" stroke="${p.color||(on?'#d6336c':'#2459a8')}" stroke-width="${on?2.4:1.6}"/>`;
+    if (p.i!=null) g+=`<rect x="${f2(x-5)}" y="${top-6}" width="10" height="${base-top+6}" fill="transparent" data-peak="${p.i}" style="cursor:pointer"/>`; }
+  for (const p of lab) g+=`<text x="${f2(X(p.mz))}" y="${f2(Y(p.rel)-4)}" font-size="9.5" text-anchor="middle" fill="#18212b">${esc(p.label||p.mz.toFixed(opts.dp??4))}</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${base+36}" font-family="Arial, Helvetica, sans-serif" class="msplot">${g}</svg>`;
+}
+function msStructSVG(st, peak){
+  const d=subDoc(new Set(st.comp.map(id=>'a'+id))), dix=buildIndex(d); const {svg}=renderDoc(d,dix);
+  let ov='';
+  if (peak && peak.atoms){ const keep=new Set(peak.atoms.map(i=>st.owner[i]).filter(x=>x!=null));
+    for (const b of d.bonds) if (keep.has(b.a)&&keep.has(b.b)){ const A=dix.atom.get(b.a),B=dix.atom.get(b.b); ov+=`<line x1="${f2(A.x)}" y1="${f2(A.y)}" x2="${f2(B.x)}" y2="${f2(B.y)}" stroke="#2459a8" stroke-opacity=".25" stroke-width="5" stroke-linecap="round"/>`; }
+    for (const id of keep){ const a=dix.atom.get(id); if (a) ov+=`<circle cx="${f2(a.x)}" cy="${f2(a.y)}" r="3.4" fill="#2459a8" fill-opacity=".28"/>`; }
+    for (const bi of peak.bonds||[]){ const i1=st.owner[st.mol.getBondAtom(0,bi)], i2=st.owner[st.mol.getBondAtom(1,bi)], A=dix.atom.get(i1), B=dix.atom.get(i2); if (!A||!B) continue;
+      const m=mul(add(A,B),0.5), u=norm(sub(B,A)), n=perp(u); ov+=`<line x1="${f2(m.x+n.x*6)}" y1="${f2(m.y+n.y*6)}" x2="${f2(m.x-n.x*6)}" y2="${f2(m.y-n.y*6)}" stroke="#d6336c" stroke-width="1.4" stroke-dasharray="2 1.4"/>`; } }
+  const b=measureBBox(svg+ov), pad=8;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f2(b.x-pad)} ${f2(b.y-pad)} ${f2(b.width+2*pad)} ${f2(b.height+2*pad)}" style="max-height:260px">${ov}${svg}</svg>`;
+}
+function renderMs(){
+  const st=msState, ad=MS.adducts(st.mol);
+  const fmtF=f=>{ const m=/^(.*?)(?: (\d+))?([+-])?$/.exec(f); return esc(m[1]).replace(/([A-Za-z\)])(\d+)/g,'$1<sub>$2</sub>')+(m[3]?`<sup>${m[2]||''}${m[3]==='-'?'\u2212':'+'}</sup>`:''); };
+  const tabs=`<div class="tabs" style="margin:0 0 10px"><button data-mt="mz" aria-pressed="${st.tab==='mz'}">m/z and adducts</button><button data-mt="iso" aria-pressed="${st.tab==='iso'}">Isotope pattern</button><button data-mt="msms" aria-pressed="${st.tab==='msms'}">MS/MS (predicted)</button></div>`;
+  let body='', actions='';
+  if (!Number.isFinite(ad.M)){ body='<p>This structure contains an element without isotope data, so exact masses can\u2019t be computed.</p>'; }
+  else if (st.tab==='mz'){
+    body=`<p style="margin:0 0 8px">Formula <b>${fmtF(MS.hill(ad.counts))}</b> \u00b7 monoisotopic mass <b>${ad.M.toFixed(4)}</b> \u00b7 MW <b>${analysisFor(st.comp).mw.toFixed(2)}</b> g/mol</p>
+      <table class="peaks"><thead><tr><th>Ion</th><th>Formula</th><th>m/z</th><th></th></tr></thead><tbody>${ad.rows.map((r,i)=>`<tr><td>${esc(r.label)}</td><td>${fmtF(r.formula)}</td><td class="code">${r.mz.toFixed(4)}</td><td><button class="mini" data-cp="${r.mz.toFixed(4)}">Copy</button> <button class="mini" data-hrms="${i}">HRMS line</button></td></tr>`).join('')}</tbody></table>
+      <p class="note">Monoisotopic masses with the electron mass taken into account. "HRMS line" copies a journal-style sentence such as \u201cHRMS (ESI) m/z: [M + H]+ calcd for C9H9O4+ 181.0495; found \u2014.\u201d</p>`;
+  } else if (st.tab==='iso'){
+    const z = ad.charge || (st.mode==='neg'?-1:1), base = ad.charge? ad.counts : {...ad.counts, H:(ad.counts.H||0)+z};
+    const peaks=MS.isotopes(base, z), nom=MS.nominal(peaks);
+    body=`<p style="margin:0 0 8px">${ad.charge? 'Ion as drawn' : (z>0?'[M+H]⁺':'[M−H]⁻')} ${fmtF(MS.hill(base))} \u00b7 <label>Mode <select class="sel" id="msMode"><option value="pos"${st.mode==='pos'?' selected':''}>Positive</option><option value="neg"${st.mode==='neg'?' selected':''}>Negative</option></select></label></p>
+      <div class="nmrbox">${msStickSVG(peaks.map(p=>({mz:p.mz, rel:p.rel})), {minSpan:6, labels:6})}</div>
+      <table class="peaks"><thead><tr><th>Peak</th><th>m/z</th><th>Relative</th></tr></thead><tbody>${nom.map(p=>`<tr><td>${p.label}</td><td class="code">${p.mz.toFixed(4)}</td><td>${p.rel.toFixed(1)}%</td></tr>`).join('')}</tbody></table>
+      <p class="note">Natural isotope abundances (IUPAC). Fine structure closer than 0.005 Da is merged; the table sums each nominal mass.</p>`;
+    actions=`<button class="tb" id="msCopyIso">Copy pattern</button>`;
+  } else {
+    const r=MS.msms(st.mol,{mode:st.mode, energy:st.energy});
+    if (!r.precursor){ body=`<p>${esc(r.note||'No fragments for this structure.')}</p>`; }
+    else {
+      const peaks=r.peaks.map((p,i)=>({...p,i}));
+      const plot=[...peaks, {mz:r.precursor.mz, rel:r.precursor.rel, label:r.precursor.mz.toFixed(4), color:'#56626f'}];
+      const pk = st.pick!=null ? peaks[st.pick] : null;
+      body=`<div class="row" style="margin-bottom:8px"><label>Mode <select class="sel" id="msMode"><option value="pos"${st.mode==='pos'?' selected':''}>ESI positive, [M+H]⁺</option><option value="neg"${st.mode==='neg'?' selected':''}>ESI negative, [M−H]⁻</option></select></label>
+        <label>Collision energy <select class="sel" id="msEn">${['low','medium','high'].map(e=>`<option value="${e}"${st.energy===e?' selected':''}>${e[0].toUpperCase()+e.slice(1)}</option>`).join('')}</select></label>
+        <span style="font-size:13px">Precursor ${esc(r.precursor.label)} <b class="code">${r.precursor.mz.toFixed(4)}</b></span></div>
+        <div class="nmrgrid"><div class="nmrbox">${msStructSVG(st, pk)}<p class="note" style="margin:4px 6px">${pk? `m/z ${pk.mz.toFixed(4)}: ${esc(pk.how)}. Blue: atoms kept in the ion; red: bonds broken.` : 'Click a peak or a row to see which part of the molecule it comes from.'}</p></div>
+        <div class="nmrbox" id="msPlot">${msStickSVG(plot,{pick:st.pick, labels:9})}</div></div>
+        <table class="peaks"><thead><tr><th>m/z</th><th>Rel.</th><th>Ion formula</th><th>Origin</th></tr></thead><tbody>${peaks.map(p=>`<tr data-peak="${p.i}" style="cursor:pointer${st.pick===p.i?';background:var(--accent-soft)':''}"><td class="code">${p.mz.toFixed(4)}</td><td>${p.rel.toFixed(0)}</td><td>${fmtF(p.formula)}</td><td>${esc(p.how)}</td></tr>`).join('') || '<tr><td colspan="4">No fragments predicted</td></tr>'}</tbody></table>
+        <p class="note">Rule-based estimate of collision-induced fragments: one-bond cleavages, ring openings and common neutral losses, scored by bond lability and ion stability. It is a guide to likely fragments, not a measured or library spectrum; relative intensities in particular are rough.</p>`;
+      actions=`<button class="tb" id="msCopyMsms">Copy peak list</button>`;
+      st._r=r;
+    }
+  }
+  const notes = st.multi ? '<p class="note">Showing the largest structure. Select a structure to analyze another one.</p>' : '';
+  openDialog(`<div class="dialog-inner"><h3>Mass spectrum</h3>${tabs}${body}${notes}<div class="actions" style="flex-wrap:wrap"><button class="tb" id="msNmr">Predict NMR</button>${actions}<button class="tb primary" data-close>Done</button></div></div>`);
+  dialog.classList.add('wide');
+  dialog.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{ st.tab=b.dataset.mt; st.pick=null; renderMs(); });
+  const mm=$('#msMode'); if (mm) mm.onchange=e=>{ st.mode=e.target.value; st.pick=null; renderMs(); };
+  const me=$('#msEn'); if (me) me.onchange=e=>{ st.energy=e.target.value; st.pick=null; renderMs(); };
+  dialog.querySelectorAll('[data-peak]').forEach(el=>el.onclick=()=>{ const i=+el.dataset.peak; st.pick = st.pick===i? null : i; renderMs(); });
+  dialog.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp,'Copied'));
+  dialog.querySelectorAll('[data-hrms]').forEach(b=>b.onclick=()=>copyText(MS.hrmsLine(ad.rows[+b.dataset.hrms]),'HRMS line copied'));
+  $('#msNmr').onclick=()=>{ closeDialog(); sel=new Set(st.comp.map(id=>'a'+id)); openNmr(); };
+  const ci=$('#msCopyIso'); if (ci) ci.onclick=()=>{ const z=ad.charge||(st.mode==='neg'?-1:1); const b={...ad.counts}; if (!ad.charge) b.H=(b.H||0)+z; copyText(MS.nominal(MS.isotopes(b,z)).map(p=>`${p.label}\t${p.mz.toFixed(4)}\t${p.rel.toFixed(1)}`).join('\n'),'Isotope pattern copied'); };
+  const cm=$('#msCopyMsms'); if (cm) cm.onclick=()=>copyText(['m/z\trel\tformula\torigin', ...st._r.peaks.map(p=>`${p.mz.toFixed(4)}\t${p.rel.toFixed(0)}\t${p.formula}\t${p.how}`)].join('\n'),'MS/MS peak list copied');
 }
 function nmrAnnotSVG(st){
   const d=subDoc(new Set(st.comp.map(id=>'a'+id)));

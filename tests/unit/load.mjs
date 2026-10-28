@@ -14,7 +14,7 @@ const documentStub = { createElement: () => ({ getContext: () => ctx2d }), docum
 
 export function loadModules() {
   const context = vm.createContext({ OCL, document: documentStub, console, Math, JSON });
-  for (const f of ['core.js', 'nmr.js', 'solvents.js', 'formats.js']) vm.runInContext(read(f), context, { filename: f });
+  for (const f of ['core.js', 'nmr.js', 'solvents.js', 'formats.js', 'ms.js']) vm.runInContext(read(f), context, { filename: f });
   return name => vm.runInContext(name, context);
 }
 
