@@ -540,6 +540,7 @@ window.addEventListener('keydown', e=>{
   if (mod && e.shiftKey && e.key.toLowerCase()==='c'){ e.preventDefault(); copySmiles(); return; }
   if (mod && e.key.toLowerCase()==='c'){ e.preventDefault(); clip=subDoc(sel.size?sel:null); copyImage(); return; }
   if (mod && e.key.toLowerCase()==='x'){ e.preventDefault(); if(!sel.size) return; clip=subDoc(sel); copyImage(); deleteSel(); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase()==='s'){ e.preventDefault(); openSaveAs(); return; }
   if (mod && e.key.toLowerCase()==='g'){ e.preventDefault(); e.shiftKey? ungroupSel() : groupSel(); return; }
   if (mod && e.key.toLowerCase()==='d'){ e.preventDefault(); if(sel.size){ clip=subDoc(sel); pasteDoc(clip, L); } return; }
   if (mod) return;
@@ -1045,6 +1046,48 @@ function exportSVG(d, {pxPerPt=null, transparent=true, region=null}={}){
   const out=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${f2(x)} ${f2(y)} ${f2(w)} ${f2(h)}">${meta}${bg}${svg}</svg>`;
   return {svg:out, w, h};
 }
+// raster formats other than PNG: JPEG and WebP from the canvas, GIF with the encoder below; all on white unless GIF is transparent
+async function rasterBlob(d, type, region){
+  const ppp=300/72, transparent = type==='gif' && $('#transp').checked;
+  const e=exportSVG(d,{pxPerPt:ppp, transparent:false, region}); const w=Math.round(e.w*ppp), h=Math.round(e.h*ppp);
+  const c=await svgToCanvas(e.svg, w, h, transparent);
+  if (type==='gif'){ const g=c.getContext('2d'); return new Blob([gifEncode(g.getImageData(0,0,w,h).data, w, h, transparent)],{type:'image/gif'}); }
+  return await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Encoding failed')), 'image/'+type, 0.95));
+}
+function svgToCanvas(svgStr, wpx, hpx, transparent){
+  return new Promise((res,rej)=>{ const img=new Image();
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); res(c); };
+    img.onerror=()=>rej(new Error('Could not render image')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr); });
+}
+// GIF89a with a fixed palette: index 0 transparent/white, 32 greys for antialiased line art, then a 6×6×6 colour cube
+function gifEncode(px, w, h, transparent){
+  const pal=[[255,255,255]]; for (let i=0;i<32;i++){ const v=Math.round(i*255/31); pal.push([v,v,v]); }
+  for (let r=0;r<6;r++) for (let g=0;g<6;g++) for (let b=0;b<6;b++) pal.push([r*51,g*51,b*51]);
+  while (pal.length<256) pal.push([0,0,0]);
+  const idx=new Uint8Array(w*h);
+  for (let i=0,p=0;i<idx.length;i++,p+=4){ const r=px[p],g=px[p+1],b=px[p+2],a=px[p+3];
+    if (transparent && a<128){ idx[i]=0; continue; }
+    const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+    idx[i] = mx-mn<14 ? 1+Math.round((r+g+b)/3/255*31) : 33+Math.round(r/51)*36+Math.round(g/51)*6+Math.round(b/51); }
+  // LZW, minimum code size 8
+  const out=[]; let cur=0, nb=0; const emit=(code,size)=>{ cur|=code<<nb; nb+=size; while (nb>=8){ out.push(cur&255); cur>>=8; nb-=8; } };
+  const CLEAR=256, EOI=257; let dict=new Map(), next=258, size=9;
+  emit(CLEAR,size); let prefix=idx[0];
+  for (let i=1;i<idx.length;i++){ const k=idx[i], key=prefix*256+k, hit=dict.get(key);
+    if (hit!==undefined){ prefix=hit; continue; }
+    emit(prefix,size);
+    if (next<4096){ dict.set(key,next++); if (next>(1<<size) && size<12) size++; }
+    else { emit(CLEAR,size); dict=new Map(); next=258; size=9; }
+    prefix=k; }
+  emit(prefix,size); emit(EOI,size); if (nb>0) out.push(cur&255);
+  const bytes=[...'GIF89a'].map(ch=>ch.charCodeAt(0)), le=v=>[v&255,v>>8&255];
+  bytes.push(...le(w),...le(h),0xF7,0,0); for (const c of pal) bytes.push(...c);
+  if (transparent) bytes.push(0x21,0xF9,4,1,0,0,0,0);
+  bytes.push(0x2C,0,0,0,0,...le(w),...le(h),0,8);
+  const res=new Uint8Array(bytes.length + out.length + Math.ceil(out.length/255) + 2); res.set(bytes); let o=bytes.length;
+  for (let i=0;i<out.length;i+=255){ const n=Math.min(255,out.length-i); res[o++]=n; for (let j=0;j<n;j++) res[o++]=out[i+j]; }
+  res[o++]=0; res[o++]=0x3B; return res.subarray(0,o);
+}
 function svgToPngBlob(svgStr, wpx, hpx, transparent){
   return new Promise((res,rej)=>{
     const img=new Image();
@@ -1112,6 +1155,73 @@ async function downloadPng(){
   saveFile(fileBase()+'.png', await pngWithMeta(blob,used,JSON.stringify(d)));
 }
 function downloadSvg(){ const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; } const {svg}=exportSVG(d,{transparent:$('#transp').checked, region:exportRegion()}); saveFile(fileBase()+'.svg', '<?xml version="1.0" encoding="UTF-8"?>\n'+svg); }
+/* ================= Save as: every export format in one place ================= */
+const EXPORTS = [
+  {g:'Images', items:[
+    {id:'png', n:'PNG', ext:'png', note:'600 dpi, transparent if set; reopens here for editing'},
+    {id:'jpeg', n:'JPEG', ext:'jpg', note:'300 dpi on white'},
+    {id:'webp', n:'WebP', ext:'webp', note:'300 dpi on white'},
+    {id:'gif', n:'GIF', ext:'gif', note:'300 dpi, 256 colours'},
+    {id:'svg', n:'SVG', ext:'svg', note:'Vector; PowerPoint can convert it to shapes'},
+    {id:'pdf', n:'PDF', ext:'pdf', note:'Vector, standard fonts; pages and sheets'},
+    {id:'eps', n:'EPS', ext:'eps', note:'Vector PostScript for LaTeX and older publishing tools'} ]},
+  {g:'Structure files', items:[
+    {id:'cdxml', n:'ChemDraw XML', ext:'cdxml', f:1, note:'Opens in ChemDraw with styles, labels and arrows'},
+    {id:'cdx', n:'ChemDraw binary', ext:'cdx', f:1, bin:1, note:'Classic ChemDraw document'},
+    {id:'mol', n:'MDL Molfile V2000', ext:'mol', f:1},
+    {id:'molV3', n:'MDL Molfile V3000', ext:'mol', f:1},
+    {id:'sdf', n:'SD file', ext:'sdf', f:1, note:'One record per structure'},
+    {id:'rxn', n:'MDL RXN V2000', ext:'rxn', f:1, note:'Reactants and products from the drawn arrow'},
+    {id:'rxnV3', n:'MDL RXN V3000', ext:'rxn', f:1},
+    {id:'smiles', n:'SMILES', ext:'smi', text:1},
+    {id:'smarts', n:'SMARTS', ext:'sma', f:1, text:1},
+    {id:'inchi', n:'InChI', ext:'inchi', text:1, note:'Official IUPAC InChI, computed offline'},
+    {id:'inchikey', n:'InChIKey', ext:'txt', text:1},
+    {id:'cml', n:'Chemical Markup Language', ext:'cml', f:1},
+    {id:'mrv', n:'Marvin', ext:'mrv', f:1},
+    {id:'jme', n:'JME / JSME', ext:'jme', f:1, text:1},
+    {id:'chemfig', n:'chemfig (LaTeX)', ext:'tex', f:1, text:1} ]},
+  {g:'Project', items:[
+    {id:'html', n:'Skeletal project', ext:'html', note:'The editor with all pages and versions inside'},
+    {id:'json', n:'Skeletal JSON', ext:'json'} ]},
+];
+function exportDoc(){ return subDoc(sel.size?sel:null); }
+async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
+  const d=exportDoc(); if (!hasContent(d)) throw new Error('Nothing to export yet');
+  const ids=d.atoms.map(a=>a.id), dix=buildIndex(d);
+  const mol=()=>{ if (!ids.length) throw new Error('There are no structures to export'); const {mol,generic}=toOCL(d,dix,ids); if (generic) toast('Generic labels (R, X) are written as unknown atoms'); return mol; };
+  switch (id){
+    case 'jpeg': case 'webp': case 'gif': return {data:await rasterBlob(exportTarget(), id, exportRegion())};
+    case 'eps': { const {svg}=exportSVG(exportTarget(),{transparent:true, region:exportRegion()}); return {data:PDF.eps(svg), mime:'application/postscript'}; }
+    case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
+    case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
+    case 'json': return {data:JSON.stringify(project)};
+  }
+  const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
+  if (it && it.f){ if (typeof FORMATS==='undefined' || !FORMATS.write) throw new Error('This format is not available in this build');
+    const out=FORMATS.write(id, d); return {data:out, mime: it.bin? 'application/octet-stream' : 'text/plain'}; }
+  throw new Error('Unknown format');
+}
+async function exportAs(id, copy){
+  if (id==='png') return downloadPng(); if (id==='svg') return downloadSvg(); if (id==='pdf'){ closeDialog(); return exportPdfDialog(); } if (id==='html') return saveHtml();
+  const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
+  try{
+    const {data}=await exportData(id);
+    if (copy){ copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); return; }
+    saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+  }catch(err){ toast(err.message||'Export failed'); }
+}
+function openSaveAs(){
+  const has = typeof FORMATS!=='undefined' && FORMATS.write;
+  const row=it=>`<tr><td><b>${esc(it.n)}</b> <span class="code" style="color:var(--ink-2)">.${it.ext}</span>${it.note?`<div class="note" style="margin:2px 0 0">${esc(it.note)}</div>`:''}</td>
+    <td style="white-space:nowrap;text-align:right">${it.text?`<button class="mini" data-x="${it.id}" data-copy-x="1">Copy</button> `:''}<button class="mini"${it.f&&!has?' disabled':''} data-x="${it.id}">${it.id==='pdf'?'Options…':'Download'}</button></td></tr>`;
+  openDialog(`<div class="dialog-inner"><h3>Save as</h3><p>${sel.size? 'Exports the selection.' : 'Exports the whole page.'} Images follow the Export settings (area, transparency).</p>
+    ${EXPORTS.map(g=>`<h4 style="margin:14px 0 4px;font-size:13px">${g.g}</h4><table class="peaks fmt"><tbody>${g.items.map(row).join('')}</tbody></table>`).join('')}
+    <p class="note">Not offered: ISIS Sketch and TGF, SMD, PICT, MIF, SWF, WMF and Sybyl SLN. These are retired or closed formats that current software no longer reads; SVG, PDF and EPS cover their uses.</p>
+    <div class="actions"><button class="tb primary" data-close>Done</button></div></div>`);
+  dialog.classList.add('wide');
+  dialog.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exportAs(b.dataset.x, !!b.dataset.copyX));
+}
 function saveDrawing(){ saveFile(fileBase()+'.json', JSON.stringify(project)); }
 $('#fileIn').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
@@ -1322,6 +1432,7 @@ alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagati
 document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
 $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
+$('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bSaveHtml').onclick=saveHtml; $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>$('#fileIn').click();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
 $('#bNew').onclick=()=>{

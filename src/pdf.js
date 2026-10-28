@@ -109,6 +109,13 @@ const PDF = (()=>{
       else if (tag==='text'){ out.push(textOps(el)); }
     }
   }
+  // drawing operators for one SVG page (viewBox in pt), y flipped to PDF/PostScript orientation
+  function pageOps(s){
+    const doc=new DOMParser().parseFromString(s,'image/svg+xml'); const root=doc.documentElement;
+    const [x0,y0,w,h]=(root.getAttribute('viewBox')||'0 0 100 100').split(/[ ,]+/).map(parseFloat);
+    const ops=[`1 0 0 -1 ${num(-x0)} ${num(y0+h)} cm`]; walk(root,ops);
+    return {content:ops.filter(Boolean).join('\n'), w, h};
+  }
   // pages: array of SVG strings (viewBox in pt)
   function build(svgs){
     const objs=[]; const add=s=>{ objs.push(s); return objs.length; };
@@ -117,11 +124,7 @@ const PDF = (()=>{
     const fontRes='<< '+fontIds.map((id,i)=>`/F${i+1} ${id} 0 R`).join(' ')+' >>';
     const pageIds=[];
     for (const s of svgs){
-      const doc=new DOMParser().parseFromString(s,'image/svg+xml'); const root=doc.documentElement;
-      const vb=(root.getAttribute('viewBox')||'0 0 100 100').split(/[ ,]+/).map(parseFloat);
-      const [x0,y0,w,h]=vb;
-      const ops=[`1 0 0 -1 ${num(-x0)} ${num(y0+h)} cm`]; walk(root,ops);
-      const content=ops.filter(Boolean).join('\n');
+      const {content,w,h}=pageOps(s);
       const cid=add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
       const pid=add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${num(w)} ${num(h)}] /Resources << /Font ${fontRes} >> /Contents ${cid} 0 R >>`);
       pageIds.push(pid);
@@ -136,5 +139,29 @@ const PDF = (()=>{
     const bytes=new Uint8Array(out.length); for (let i=0;i<out.length;i++) bytes[i]=out.charCodeAt(i)&255;
     return bytes;
   }
-  return {build};
+  /* EPS: the same operator stream, run by a small PostScript prolog that defines each PDF operator used above.
+     Fonts are re-encoded to WinAnsi so the byte codes match the PDF text. */
+  function eps(svg){
+    const {content,w,h}=pageOps(svg);
+    const enc='/WinAnsi ISOLatin1Encoding 256 array copy dup 16#96 /endash put dup 16#97 /emdash put dup 16#95 /bullet put dup 16#91 /quoteleft put dup 16#92 /quoteright put dup 16#93 /quotedblleft put dup 16#94 /quotedblright put dup 16#85 /ellipsis put dup 16#89 /perthousand put dup 16#86 /dagger put dup 16#87 /daggerdbl put def';
+    const fonts=FONTS.map((f,i)=> f==='Symbol' ? `/F${i+1} /Symbol findfont def` : `/${f}-Win /${f} reencode /F${i+1} /${f}-Win findfont def`).join('\n');
+    const prolog=[
+      '/SkeletalDict 64 dict def SkeletalDict begin',
+      enc,
+      '/reencode { findfont dup length dict begin { 1 index /FID ne { def } { pop pop } ifelse } forall /Encoding WinAnsi def currentdict end definefont pop } def',
+      fonts,
+      '/SC [0 0 0] def /FC [0 0 0] def /TM [1 0 0 1 0 0] def /CF /F1 def /CS 10 def',
+      '/q { gsave } def /Q { grestore } def /cm { 6 array astore concat } def /w { setlinewidth } def /J { setlinecap } def /j { setlinejoin } def /d { setdash } def',
+      '/RG { 3 array astore /SC exch def } def /rg { 3 array astore /FC exch def } def',
+      '/m { moveto } def /l { lineto } def /c { curveto } def /h { closepath } def',
+      '/re { 4 2 roll moveto 1 index 0 rlineto 0 exch rlineto neg 0 rlineto closepath } def',
+      '/S { SC aload pop setrgbcolor stroke } def /f { FC aload pop setrgbcolor fill } def /B { gsave f grestore S } def',
+      '/BT { } def /ET { } def /Tf { /CS exch def /CF exch def } def /Tm { 6 array astore /TM exch def } def',
+      '/Tj { gsave TM concat FC aload pop setrgbcolor CF load CS scalefont setfont 0 0 moveto show grestore } def',
+      'end'].join('\n');
+    const out=`%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 ${Math.ceil(w)} ${Math.ceil(h)}\n%%HiResBoundingBox: 0 0 ${num(w)} ${num(h)}\n%%Creator: Skeletal\n%%LanguageLevel: 2\n%%Pages: 1\n%%EndComments\n%%BeginProlog\n${prolog}\n%%EndProlog\n%%Page: 1 1\nsave SkeletalDict begin\n${content}\nend restore\nshowpage\n%%EOF\n`;
+    const bytes=new Uint8Array(out.length); for (let i=0;i<out.length;i++) bytes[i]=out.charCodeAt(i)&255;
+    return bytes;
+  }
+  return {build, eps};
 })();
