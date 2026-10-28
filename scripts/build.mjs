@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = f => path.join(root, 'src', f);
 
 // Order matters: later files use globals defined by earlier ones.
-const APP_FILES = ['core.js', 'nmr.js', 'pdf.js', 'solvents.js', 'app.js'];
+const APP_FILES = ['core.js', 'nmr.js', 'pdf.js', 'solvents.js', 'formats.js', 'app.js'];
 
 const ocl = await build({
   stdin: { contents: "export * from 'openchemlib';", resolveDir: root },

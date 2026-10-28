@@ -1832,6 +1832,13 @@ const SOLV_RES={
 };
 const SOLV_CITE='Fulmer, G. R. et al. Organometallics 2010, 29, 2176–2179, extending Gottlieb, H. E. et al. J. Org. Chem. 1997, 62, 7512. Room-temperature values referenced to TMS; shifts move slightly with temperature, concentration and pH.';
 
+/* ================= chemical file formats =================
+   Writers and readers for ChemDraw (CDXML, CDX), CML, MRV, JME, chemfig, SDF and RXN.
+   Each writer takes a drawing (doc) and returns a string or Uint8Array; each reader returns a doc fragment. */
+const FORMATS = (()=>{
+  return {};
+})();
+
 /* ================= state ================= */
 function newProject(){ return {v:2, uid:Math.random().toString(36).slice(2,10), name:'Untitled project', pages:[{id:1,name:'Page 1',doc:newDoc()}], cur:0, versions:[], nextPage:2, modified:Date.now()}; }
 let project = newProject();
