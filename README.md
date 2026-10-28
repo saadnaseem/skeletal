@@ -30,13 +30,20 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
 - Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
 - **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
+- **Enhanced stereochemistry:** right-click a stereocenter to label it abs, &1 (racemic) or or1 (relative), as in ChemDraw. The labels are saved in V3000 molfiles and ChemDraw files.
+- **TLC plates:** draw lanes, spots and streaks with Rf values and the eluent. They're drawn in the page style and can be edited by double-clicking.
 - **Groups** (Ctrl+G): a structure and its label select, move and align as one.
 - **Smart guides**: while you drag, the selection snaps to the centers and edges of other structures. Hold Alt to drag freely.
 - Right-click a structure to copy its SMILES or molfile, or to look up its name and CAS number.
 
 ### Publication output
-- **ACS Document 1996** style: 14.4 pt bonds, 0.6 pt lines, 2.0 pt bold bonds, 18% bond spacing and Arial 10 pt labels. A **Slides** style is also available.
-- **Drawing settings**, as in ChemDraw: line width, bold width, wedge width, bond spacing, hash spacing and margin width can be set for each page, or applied to all pages.
+- **Journal styles:**
+  - **ACS Document 1996:** 14.4 pt bonds, 0.6 pt lines, 2.0 pt bold bonds, 18% bond spacing, Arial 10 pt labels.
+  - **RSC:** values from ChemDraw 22's RSC 1-column style sheet: 12.2 pt bonds, 0.45 pt lines, 7 pt labels.
+  - **Nature Reviews:** values from its structure style guide: 0.381 cm bonds, 0.021 cm lines, 6 pt Arial labels.
+  - **Slides.**
+  - Switching styles rescales the drawing so every bond takes the new length.
+- **Drawing settings**, as in ChemDraw: bond length, line width, bold width, wedge width, bond spacing, hash spacing and margin width. Set them for one page, or apply them to all pages.
 - **Copy image** puts a high-resolution transparent PNG on the clipboard for Office.
 - **Download PNG** saves a 600 dpi file with the dpi recorded, so it inserts at true size.
 - **Download SVG** gives vector graphics; PowerPoint can convert them to shapes.
@@ -63,6 +70,7 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - Exported PNGs and SVGs carry the drawing data, so you can open them in Skeletal and edit them again.
 
 ### Chemistry tools
+- **Analysis block:** pick any of chemical formula, exact mass, molecular weight, m/z (isotope peaks), elemental analysis, cLogP, LogS and tPSA, as in ChemDraw's Analysis window. Copy the block, or add it under the structure. It also writes the journal line "Anal. Calcd for C9H8O4: C, 60.00; H, 4.48."
 - **Mass spectrum:**
   - Monoisotopic mass, plus the m/z of common adducts: [M+H]⁺, [M+Na]⁺, [M+K]⁺, [M+NH₄]⁺, [M+2H]²⁺, M⁺•, [M−H]⁻, [M+Cl]⁻ and [M+HCOO]⁻.
   - A journal-style HRMS line you can copy.
@@ -132,10 +140,10 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/skeletal.html
-npm test             # 99 unit tests (Node test runner)
+npm test             # 100 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 41 browser tests (Playwright)
+npm run test:e2e     # 46 browser tests (Playwright)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):

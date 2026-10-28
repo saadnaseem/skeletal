@@ -122,3 +122,13 @@ SMILES, SMARTS, InChI, MDL Molfile, ISIS Sketch, ISIS TGF, ChemDraw CDX, ChemDra
 | Show all C and H, arrange presets, stoichiometry table, brackets and orbitals | Not started |
 
 The format cross-check also found that stereochemistry was mirrored between the drawing and OpenChemLib. This bug had been there all along, and it is now fixed and covered by a test.
+
+## 8. ChemDraw feature pass (top four)
+
+| Feature | State |
+| --- | --- |
+| Journal styles: ACS 1996, RSC, Nature Reviews, Slides | Done. Bond length is now per document, and switching styles rescales the drawing. RSC values come from ChemDraw 22's RSC 1-column style sheet (as read and reported by a third party). Nature values come from the Nature Reviews structure guide. **No Wiley preset:** Wiley distributes a template file, and no published values were found |
+| Analysis block (formula, exact mass, MW, m/z, elemental analysis, cLogP, LogS, tPSA) and the "Anal. Calcd" line | Done. Elemental analysis uses IUPAC standard atomic weights |
+| Enhanced stereo labels (abs, &n, or n) | Done. Written to V3000 molfiles and CDXML/CDX, and read back. RDKit reads the same groups |
+| TLC plate tool | Done |
+| EPS checked against PDF in Ghostscript | **Blocked.** Homebrew can't install Ghostscript on macOS 14 with Command Line Tools 15.1, because its Python 3.15 dependency fails to compile |
