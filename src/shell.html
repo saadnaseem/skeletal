@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" data-sk>
+<meta data-sk name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title data-sk>Skeletal</title>
+<link data-sk rel="preconnect" href="https://fonts.googleapis.com">
+<link data-sk rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link data-sk href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style data-sk>
+:root{
+  --ink:#18212b; --ink-2:#56626f; --chrome:#e3e7eb; --panel:#f3f5f7; --line:#cbd3da;
+  --paper:#ffffff; --accent:#2459a8; --accent-ink:#ffffff; --accent-soft:rgba(36,89,168,.13);
+  --btn:#ffffff; --btn-hover:#eef2f6; --danger:#a8321f;
+  --ui:"Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#e6eaee; --ink-2:#9aa6b2; --chrome:#1a2027; --panel:#212930; --line:#34414d;
+    --accent:#86aef0; --accent-ink:#0e1620; --accent-soft:rgba(134,174,240,.16);
+    --btn:#2a333c; --btn-hover:#323d47; --danger:#f08a76; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e6eaee; --ink-2:#9aa6b2; --chrome:#1a2027; --panel:#212930; --line:#34414d;
+  --accent:#86aef0; --accent-ink:#0e1620; --accent-soft:rgba(134,174,240,.16);
+  --btn:#2a333c; --btn-hover:#323d47; --danger:#f08a76; color-scheme: dark;
+}
+*{box-sizing:border-box}
+:root{box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%; margin:0}
+body{background:var(--chrome); color:var(--ink); font:14px/1.4 var(--ui); overflow:hidden; -webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit; color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+#app{height:100%; display:grid; grid-template-columns:auto 1fr 296px; grid-template-rows:auto 1fr; }
+header.top{grid-column:1/-1; display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--chrome); min-width:0}
+.brand{display:flex; align-items:center; gap:8px; font-weight:700; font-size:16px; letter-spacing:-.01em; margin-right:10px; white-space:nowrap}
+.brand svg{width:22px; height:22px}
+.sep{width:1px; align-self:stretch; background:var(--line); margin:2px 6px}
+.tb{display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 10px; border:1px solid var(--line); background:var(--btn); border-radius:7px; white-space:nowrap}
+.tb:hover{background:var(--btn-hover)}
+.tb:disabled{opacity:.4; cursor:default}
+.tb svg{width:18px; height:18px; flex:none}
+.tb.icon{padding:0; width:34px; justify-content:center}
+.tb.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600}
+.tb.primary:hover{filter:brightness(1.07)}
+.spacer{flex:1}
+.only-mobile{display:none}
+
+nav.tools{background:var(--chrome); border-right:1px solid var(--line); padding:10px 8px; overflow-y:auto; display:flex; flex-direction:column; gap:10px}
+.tgroup{display:grid; grid-template-columns:repeat(3,36px); gap:4px}
+.tgroup + .tgroup{padding-top:10px; border-top:1px solid var(--line)}
+.tool{width:36px; height:36px; display:grid; place-items:center; border:1px solid transparent; border-radius:7px; background:transparent; padding:0}
+.tool:hover{background:var(--btn-hover); border-color:var(--line)}
+.tool[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:transparent}
+.tool svg{width:22px; height:22px}
+.tool.el{font:600 14px/1 Arial, Helvetica, sans-serif}
+.infocard{position:absolute; z-index:4; width:280px; background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:10px; padding:12px 14px; box-shadow:0 12px 32px rgba(10,16,24,.22); font-size:13px}
+.infocard .ic-x{position:absolute; right:6px; top:4px; border:0; background:none; font-size:18px; color:var(--ink-2); width:26px; height:26px}
+.ic-k{font-size:11.5px; color:var(--ink-2); font-weight:600}
+.ic-site{font-weight:700; margin:2px 24px 6px 0}
+.ic-vals{display:flex; gap:18px; margin:2px 0 6px}
+.ic-vals div{display:flex; flex-direction:column}
+.ic-vals b{font-size:22px; font-variant-numeric:tabular-nums; line-height:1.1}
+.ic-vals span{font-size:11.5px; color:var(--ink-2)}
+.ic-n{margin:4px 0; font-size:12px; color:var(--ink-2)}
+.ic-foot{margin:8px 0 0; font-size:11px; color:var(--ink-2); border-top:1px solid var(--line); padding-top:6px}
+.ic-act{display:flex; gap:6px; margin-top:8px; align-items:center; flex-wrap:wrap}
+.ic-act .seg button{padding:2px 8px; font-size:12px}
+.tool.el.small{font-size:11px}
+
+main.stage{position:relative; overflow:hidden; background:var(--paper); touch-action:none}
+#cv{position:absolute; inset:0; width:100%; height:100%; display:block; cursor:crosshair; user-select:none; -webkit-user-select:none}
+#cv.select{cursor:default} #cv.pan{cursor:grab} #cv.erase{cursor:cell}
+#texted{position:absolute; z-index:3; resize:none; border:1px solid #2459a8; background:#fff; color:#000; padding:1px 3px; font-family:Arial, Helvetica, sans-serif; line-height:1.2; text-align:center; outline:none; overflow:hidden; white-space:pre; border-radius:2px; min-width:40px}
+.zoom{position:absolute; right:12px; bottom:12px; display:flex; gap:4px; z-index:2}
+.zoom .tb{background:#fff; color:#18212b; border-color:#cbd3da}
+.zoom .tb:hover{background:#f0f3f6}
+#zoomval{min-width:54px; justify-content:center; font-variant-numeric:tabular-nums}
+.empty{position:absolute; left:50%; top:42%; transform:translate(-50%,-50%); text-align:center; color:#6b7784; pointer-events:none; max-width:340px; padding:0 20px}
+.empty b{display:block; color:#18212b; font-size:17px; margin-bottom:4px}
+.status{position:absolute; left:12px; bottom:12px; font-size:12px; color:#6b7784; pointer-events:none; z-index:2}
+
+aside.panel{background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; padding:4px 0 24px}
+.panel section{padding:14px 16px; border-bottom:1px solid var(--line)}
+.panel h2{font-size:13px; font-weight:700; margin:0 0 10px; letter-spacing:.005em}
+.scope{font-size:12px; color:var(--ink-2); margin:-6px 0 10px}
+dl.props{margin:0; display:grid; grid-template-columns:1fr auto; gap:2px 8px; align-items:center}
+dl.props dt{grid-column:1/-1; color:var(--ink-2); font-size:12px; margin-top:6px}
+dl.props dt:first-of-type{margin-top:0}
+dl.props dd{margin:0; font-variant-numeric:tabular-nums; word-break:break-all; min-width:0}
+dl.props dd.code{font-size:12.5px}
+.mini{border:1px solid var(--line); background:var(--btn); border-radius:5px; font-size:11.5px; padding:1px 7px; height:22px}
+.mini:hover{background:var(--btn-hover)}
+.note{font-size:12px; color:var(--ink-2); margin:8px 0 0}
+.row{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.row + .row{margin-top:8px}
+.full{width:100%; justify-content:center}
+.seg{display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; width:100%}
+.seg button{flex:1; border:0; background:var(--btn); padding:6px 8px; font-size:13px}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
+label.chk{display:flex; gap:8px; align-items:center; font-size:13px; cursor:pointer}
+.swatches{display:flex; gap:6px; flex-wrap:wrap}
+.sw{width:24px; height:24px; border-radius:50%; border:2px solid var(--panel); box-shadow:0 0 0 1px var(--line)}
+.sw:hover{box-shadow:0 0 0 2px var(--accent)}
+.tpl{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+.tpl button{border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:6px 8px; text-align:left; font-size:12.5px}
+.tpl button:hover{background:var(--btn-hover)}
+select.sel{height:30px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+details summary{cursor:pointer; font-weight:700; font-size:13px}
+.keys{display:grid; grid-template-columns:auto 1fr; gap:4px 10px; font-size:12.5px; margin-top:10px}
+kbd{font:600 11.5px/1 var(--ui); border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:2px 5px; background:var(--btn); white-space:nowrap}
+
+.modal{position:fixed; inset:0; background:rgba(10,16,24,.42); display:none; place-items:center; z-index:20; padding:16px}
+.modal.open{display:grid}
+.dialog{background:var(--panel); color:var(--ink); border-radius:12px; width:min(520px,100%); max-height:90vh; overflow:auto; padding:18px; box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.dialog h3{margin:0 0 6px; font-size:16px}
+.dialog p{margin:0 0 12px; color:var(--ink-2); font-size:13px}
+.dialog textarea,.dialog input[type=text]{width:100%; border:1px solid var(--line); border-radius:8px; background:var(--btn); padding:8px 10px; font-size:14px}
+.dialog textarea{min-height:90px; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:13px}
+.dialog .actions{display:flex; justify-content:flex-end; gap:8px; margin-top:14px}
+.err{color:var(--danger); font-size:13px; margin-top:8px; min-height:1em}
+.copyimg{display:block; max-width:100%; max-height:50vh; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:6px}
+.examples{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+
+.toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%) translateY(20px); opacity:0; background:#18212b; color:#fff; padding:9px 14px; border-radius:8px; font-size:13px; z-index:30; transition:opacity .18s, transform .18s; pointer-events:none; max-width:90vw; text-align:center}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+
+.pages{position:absolute; left:10px; bottom:12px; right:190px; display:flex; gap:4px; align-items:center; z-index:2; overflow-x:auto; scrollbar-width:none}
+.pages::-webkit-scrollbar{display:none}
+.ptab{display:inline-flex; align-items:center; gap:4px; height:30px; padding:0 10px; border:1px solid #cbd3da; background:#f3f5f7; color:#3b4652; border-radius:7px; font-size:12.5px; white-space:nowrap; max-width:180px}
+.ptab span{overflow:hidden; text-overflow:ellipsis}
+.ptab[aria-current="true"]{background:#fff; color:#18212b; border-color:#2459a8; box-shadow:inset 0 -2px 0 #2459a8; font-weight:600}
+.ptab .more{border:0; background:none; padding:0 0 0 2px; color:inherit; font-size:15px; line-height:1}
+.ptab.add{padding:0 9px; font-size:16px}
+.dialog.wide{width:min(940px,100%)}
+.tabs{display:flex; gap:4px; margin:4px 0 12px}
+.tabs button{border:1px solid var(--line); background:var(--btn); border-radius:7px; padding:5px 14px; font-weight:600}
+.tabs button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:transparent}
+.nmrgrid{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr); gap:14px; align-items:start}
+.nmrbox{background:#fff; border:1px solid var(--line); border-radius:8px; padding:6px; overflow:auto}
+.nmrbox svg{display:block; width:100%; height:auto}
+table.peaks{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:12px; font-variant-numeric:tabular-nums}
+table.peaks th{text-align:left; color:var(--ink-2); font-weight:600; border-bottom:1px solid var(--line); padding:4px 6px}
+table.peaks td{border-bottom:1px solid var(--line); padding:4px 6px}
+.vlist{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:6px}
+.vlist li{display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:7px; padding:6px 8px; background:var(--btn)}
+.vlist .vn{flex:1; min-width:0}
+.vlist .vn b{display:block; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.vlist .vn small{color:var(--ink-2); font-size:11.5px}
+input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:6px; background:var(--btn); padding:0 8px; font-weight:600}
+.tstyle{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.tbtn{width:30px; height:30px; border:1px solid var(--line); background:var(--btn); border-radius:6px; display:grid; place-items:center; padding:0}
+.tbtn[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:transparent}
+.tbtn svg{width:16px; height:16px}
+.scopeT{font-size:12px; color:var(--ink-2); margin:-6px 0 10px}
+@media (max-width: 860px){
+  .pages{right:150px; bottom:10px}
+  .nmrgrid{grid-template-columns:1fr}
+  #app{grid-template-columns:1fr; grid-template-rows:auto 1fr auto}
+  nav.tools{grid-row:3; flex-direction:row; overflow-x:auto; overflow-y:hidden; border-right:0; border-top:1px solid var(--line); padding:6px 8px; gap:8px}
+  .tgroup{grid-template-columns:none; grid-auto-flow:column; grid-template-rows:repeat(2,36px)}
+  .tgroup + .tgroup{padding-top:0; border-top:0; padding-left:8px; border-left:1px solid var(--line)}
+  aside.panel{position:fixed; left:0; right:0; bottom:0; max-height:70vh; z-index:10; border-left:0; border-top:1px solid var(--line); border-radius:14px 14px 0 0; transform:translateY(105%); transition:transform .22s; box-shadow:0 -10px 30px rgba(0,0,0,.18); padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+  aside.panel.open{transform:none}
+  .only-mobile{display:inline-flex}
+  .hide-mobile{display:none}
+  header.top{overflow-x:auto; padding:6px 8px; gap:4px}
+  .brand{display:none}
+  header.top .sep{display:none}
+  #bSmiles span{display:none} #bSmiles{padding:0 8px}
+  #bCopy span{display:none} #bCopy{padding:0 10px}
+  .toast{bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+</style>
+<script type="application/json" id="sk-project" data-sk></script>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 6.2l4.8 2.8M7.2 14.2l4.8 2.8M16.8 9v5.6" stroke-width="1.1"/></svg><span>Skeletal</span></div>
+    <button class="tb icon" id="bUndo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 010 12h-2" transform="translate(0,-6)"/></svg></button>
+    <button class="tb icon" id="bRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7l5 5-5 5"/><path d="M20 12H10a6 6 0 000 12h2" transform="translate(0,-6)"/></svg></button>
+    <div class="sep"></div>
+    <button class="tb" id="bClean" title="Clean up structure geometry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l6.9 4v8L12 20l-6.9-4V8z"/><path d="M19 2.5v3M17.5 4h3M4 19v2.4M2.8 20.2h2.4"/></svg><span class="hide-mobile">Clean up</span></button>
+    <button class="tb icon" id="bFlipH" title="Flip horizontal" aria-label="Flip horizontal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L3 17h6zM15 7l6 10h-6z"/></svg></button>
+    <button class="tb icon" id="bFlipV" title="Flip vertical" aria-label="Flip vertical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9L17 3v6zM7 15l10 6v-6z"/></svg></button>
+    <div class="sep"></div>
+    <button class="tb" id="bPage" title="Document size and pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="hide-mobile">Document</span></button>
+    <button class="tb" id="bSolv" title="NMR solvent and impurity peaks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span class="hide-mobile">Solvent peaks</span></button>
+    <button class="tb" id="bSmiles" title="Insert from SMILES"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>SMILES</span></button>
+    <div class="spacer"></div>
+    <button class="tb only-mobile" id="bPanel" aria-expanded="false">Analysis</button>
+    <button class="tb primary" id="bCopy" title="Copy image for PowerPoint or Word (Ctrl+C)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg><span>Copy image</span></button>
+  </header>
+  <nav class="tools" id="tools" aria-label="Drawing tools"></nav>
+  <main class="stage" id="stage">
+    <svg id="cv" xmlns="http://www.w3.org/2000/svg"></svg>
+    <textarea id="texted" spellcheck="false" hidden></textarea>
+    <div class="empty" id="empty"><b>Start drawing</b>Pick the bond tool and click anywhere, or insert a structure from SMILES.</div>
+    <div class="pages" id="pages"></div>
+    <div class="zoom">
+      <button class="tb icon" id="bZoomOut" aria-label="Zoom out">−</button>
+      <button class="tb" id="zoomval" title="Fit drawing">100%</button>
+      <button class="tb icon" id="bZoomIn" aria-label="Zoom in">+</button>
+    </div>
+  </main>
+  <aside class="panel" id="panel">
+    <section>
+      <h2>Analysis</h2>
+      <p class="scope" id="scope">Nothing drawn yet</p>
+      <dl class="props" id="props"></dl>
+      <div class="row" style="margin-top:12px"><button class="tb full" id="bNmr">Predict ¹H and ¹³C NMR</button></div>
+      <div class="row"><button class="tb full" id="bSolv2">NMR solvent and impurity peaks</button></div>
+      <div class="row"><button class="tb full" id="bAddInfo">Add formula and mass to drawing</button></div>
+    </section>
+    <section>
+      <h2>Text</h2>
+      <p class="scopeT" id="textScope">Settings for new text</p>
+      <div class="row">
+        <select class="sel" id="tFont" aria-label="Font" style="flex:1">
+          <option value="sans">Arial / Helvetica</option>
+          <option value="serif">Times New Roman</option>
+          <option value="mono">Courier New</option>
+        </select>
+        <select class="sel" id="tSize" aria-label="Font size"></select>
+      </div>
+      <div class="row tstyle">
+        <button class="tbtn" id="tBold" aria-pressed="false" title="Bold" aria-label="Bold"><b>B</b></button>
+        <button class="tbtn" id="tItal" aria-pressed="false" title="Italic" aria-label="Italic"><i style="font-family:Georgia,serif">I</i></button>
+        <span style="width:6px"></span>
+        <button class="tbtn" data-al="left" title="Align left" aria-label="Align left"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h11"/></svg></button>
+        <button class="tbtn" data-al="center" title="Center" aria-label="Center"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M4 8h8M2.5 12h11"/></svg></button>
+        <button class="tbtn" data-al="right" title="Align right" aria-label="Align right"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M6 8h8M3 12h11"/></svg></button>
+      </div>
+      <div class="swatches" id="tSwatches" style="margin-top:10px"></div>
+    </section>
+    <section>
+      <h2>Project</h2>
+      <input class="name" id="projName" aria-label="Project name" value="Untitled project">
+      <div class="row" style="margin-top:8px">
+        <button class="tb primary" id="bSaveHtml">Save project (.html)</button>
+        <button class="tb" id="bSave">Save as .json</button>
+      </div>
+      <div class="row"><button class="tb" id="bOpen">Open project or file</button><button class="tb" id="bNew">New project</button>
+        <input type="file" id="fileIn" accept=".html,.htm,.json,.svg,.png,.mol,.sdf,.txt,.smi" hidden></div>
+      <p class="note">The .html file is a complete copy of this editor with all your pages and versions inside. Open it in any browser to keep working, even offline, or open it here.</p>
+      <div class="row" style="margin-top:12px; justify-content:space-between"><b style="font-size:13px">Versions</b><button class="tb" id="bVersion">Save version</button></div>
+      <ul class="vlist" id="vlist"></ul>
+    </section>
+    <section>
+      <h2>Export</h2>
+      <div class="row">
+        <label for="copyScale" style="font-size:13px">Copied image size</label>
+        <select class="sel" id="copyScale">
+          <option value="1">1× (journal size)</option>
+          <option value="2">2×</option>
+          <option value="3" selected>3× (slides)</option>
+          <option value="4">4×</option>
+        </select>
+      </div>
+      <div class="row"><label for="expArea" style="font-size:13px">Area</label><select class="sel" id="expArea"><option value="crop">Cropped to drawing</option><option value="doc">Whole document</option></select></div>
+      <div class="row"><label class="chk"><input type="checkbox" id="transp" checked> Transparent background</label></div>
+      <div class="row">
+        <button class="tb" id="bPng">PNG</button>
+        <button class="tb" id="bSvg">SVG</button>
+        <button class="tb" id="bPdf">PDF</button>
+      </div>
+      <p class="note">Exports use the selection, or the whole page if nothing is selected. PNGs are 600 dpi at true size; SVG and PDF are vector, and PDF can include every page. Exported PNGs and SVGs reopen here for editing.</p>
+    </section>
+    <section>
+      <h2>Style</h2>
+      <div class="seg" id="presetSeg">
+        <button data-p="acs" aria-pressed="true">ACS Document 1996</button>
+        <button data-p="slides" aria-pressed="false">Slides</button>
+      </div>
+      <p class="note" style="margin-top:8px">ACS Document 1996: bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18% of length, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Slides keeps the geometry with heavier lines and bold labels.</p>
+      <div class="row"><button class="tb" id="bAcsAll">Apply ACS 1996 to all pages</button></div>
+      <p class="note" style="margin:12px 0 6px">Document</p>
+      <div class="row" style="justify-content:space-between"><span id="pageInfo" style="font-size:13px">Free canvas</span><button class="tb" onclick="openPageSetup()">Change</button></div>
+      <div class="row" style="margin-top:10px"><label for="labelSize" style="font-size:13px">Atom label size</label><select class="sel" id="labelSize"></select></div>
+      <div class="row"><label class="chk"><input type="checkbox" id="colorAtoms"> Color heteroatom labels</label></div>
+      <p class="note" style="margin:12px 0 6px">Color the selection</p>
+      <div class="swatches" id="swatches"></div>
+    </section>
+    <section>
+      <h2>Templates</h2>
+      <div class="tpl" id="tpl"></div>
+    </section>
+    <section>
+      <details>
+        <summary>Shortcuts</summary>
+        <div class="keys">
+          <kbd>hover + N O S…</kbd><span>Change the atom under the cursor (L = Cl, B = Br)</span>
+          <kbd>hover + + / −</kbd><span>Add charge</span>
+          <kbd>hover bond + 1 2 3</kbd><span>Set bond order</span>
+          <kbd>Click bond</kbd><span>Single tool cycles single, double, triple</span>
+          <kbd>Drag empty</kbd><span>Select tool draws a selection box</span>
+          <kbd>Shift</kbd><span>Add to selection</span>
+          <kbd>Alt + drag</kbd><span>Draw without angle snapping</span>
+          <kbd>Space + drag</kbd><span>Pan (or two fingers)</span>
+          <kbd>Ctrl + wheel</kbd><span>Zoom</span>
+          <kbd>Ctrl C / V / D</kbd><span>Copy image, paste, duplicate</span>
+          <kbd>Delete</kbd><span>Remove selection</span>
+          <kbd>[ ]</kbd><span>Rotate selection 15°</span>
+          <kbd>In text</kbd><span>H2SO4 subscripts automatically; ^ makes superscript (Fe^3+)</span>
+          <kbd>Double-click atom</kbd><span>Edit its label (press and hold on touch screens)</span>
+          <kbd>Shift + Enter</kbd><span>New line while editing text</span>
+          <kbd>Double-click tab</kbd><span>Rename a page</span>
+          <kbd>pKa tool</kbd><span>Click an atom: acidity of its H, or pKaH if it is a base</span>
+          <kbd>BDE tool</kbd><span>Click a bond, or an atom to get its X–H bond energy</span>
+        </div>
+      </details>
+    </section>
+  </aside>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script data-sk>/*OCL*/</script>
+<script data-sk>/*APP*/</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "skeletal",
+  "version": "1.0.0",
+  "description": "Browser-based chemical structure editor for publication-quality molecules, reactions and mechanisms, with NMR, pKa and BDE estimates.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "test:e2e": "python3 -m pytest tests/e2e -q",
+    "test:all": "npm run build && npm test && npm run test:e2e",
+    "validate": "node scripts/validate.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "openchemlib": "9.25.1"
+  },
+  "license": "MIT"
+}

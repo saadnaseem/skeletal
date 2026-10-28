@@ -1,0 +1,6 @@
+node_modules/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+# dist/skeletal.html is committed on purpose so people can download and run it without building.
