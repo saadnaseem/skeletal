@@ -13,7 +13,7 @@ The whole app is one HTML file (about 2.4 MB). It needs no server, no install an
 
 That's it. Your work autosaves in the browser. Use **Save project (.html)** to keep a copy you can reopen anywhere.
 
-To host it, publish `dist/skeletal.html` with GitHub Pages or any static file server.
+To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or publish `dist/skeletal.html` on any static file server.
 
 ## Features
 
@@ -198,6 +198,63 @@ A drawing is JSON. Coordinates are in points, with y pointing down.
 ```
 
 A project wraps a list of `pages` (each holding one drawing) and a list of `versions`. Every file is passed through `sanitizeDoc()` when it is loaded, because values end up in SVG markup.
+
+## Hosting on Cloudflare Pages
+
+`npm run build:pages` builds the app and writes a deploy-ready `site/` folder (not committed) containing:
+
+- `index.html`: the app.
+- `_headers`:
+  - HTML is always revalidated, so a new deploy shows up on the next visit; Cloudflare still compresses the 2.4 MB file to about 1.1 MB.
+  - A Content-Security-Policy that only lets the page fetch from PubChem and EBI (ChEMBL) and forbids `eval` and plugins. `wasm-unsafe-eval` is there for the InChI module.
+  - `nosniff`, a strict referrer policy and a Permissions-Policy.
+- `_redirects`: old `/skeletal.html` links go to `/`.
+
+To change the policy, edit `scripts/build_pages.mjs`.
+
+**Option A: deploy from GitHub (recommended).** Every push to `main` redeploys, and every pull request gets a preview URL.
+
+1. In the Cloudflare dashboard, open **Workers & Pages → Create → Pages → Connect to Git**, and pick this repository.
+2. Set the production branch to `main`, framework preset to **None**, build command to `npm run build:pages`, and build output directory to `site`.
+
+   Pages installs the dependencies from `package-lock.json` and uses the Node version in `.node-version` (22).
+3. Choose **Save and Deploy**. The site appears at `https://<project>.pages.dev`.
+
+**Option B: upload from your computer.**
+
+```bash
+npx wrangler login
+```
+
+```bash
+npm run build:pages
+```
+
+```bash
+npx wrangler pages deploy site --project-name skeletal
+```
+
+**Custom domain.** In the Pages project, open **Custom domains → Set up a custom domain**. If the domain's DNS is already on Cloudflare (as with forkways.com), a subdomain such as `skeletal.forkways.com` is added and certified automatically.
+
+**What visitors can save.** There is no server, so nothing is stored on your side:
+
+- **Autosave:** work is kept in each visitor's own browser (`localStorage`, per browser and device).
+- **Files:** **Save project (.html)** and every export download to their computer, and they can reopen them on any device.
+- **Network:** the only requests that leave the browser are the ones a visitor starts (name/CAS lookup, Find in databases, inserting a compound by name).
+
+**Check before deploying.** To test the built site with the same headers:
+
+```bash
+python scripts/serve_site.py 8799
+```
+
+Open `http://localhost:8799/`, or run the browser tests against it:
+
+```bash
+SKELETAL_URL=http://localhost:8799/ npm run test:e2e
+```
+
+CI runs both the file and the served-site test passes on every push.
 
 ## Browser notes
 

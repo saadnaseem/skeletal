@@ -5,6 +5,14 @@ def atom_xy(page, js_pred):
     x, y = page.evaluate(f"(()=>{{const a=doc.atoms.find({js_pred}); return [a.x*view.z+view.ox, a.y*view.z+view.oy]}})()")
     return box["x"] + x, box["y"] + y
 
+def wait_until(page, expr, timeout=10000):
+    """Poll a JS expression via evaluate (wait_for_function uses eval(), which the site's CSP blocks)."""
+    for _ in range(timeout // 100):
+        if page.evaluate(expr): return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"timed out waiting for {expr}")
+
+
 def smiles(page):
     page.wait_for_timeout(200)
     return page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).smiles")
@@ -278,7 +286,7 @@ def test_fixed_gap_spacing(page):
 def test_panel_sections_fold_and_remember(page):
     page.click(".panel section:nth-of-type(2) .sechead")
     assert page.evaluate("document.querySelector('.panel section:nth-of-type(2)').classList.contains('collapsed')")
-    page.reload(); page.wait_for_function("typeof OCL !== 'undefined'")
+    page.reload(); wait_until(page, "typeof OCL !== 'undefined'")
     assert page.evaluate("document.querySelector('.panel section:nth-of-type(2)').classList.contains('collapsed')")
 
 
@@ -316,7 +324,7 @@ def test_lookup_shows_name_and_valid_cas_only(page):
 def test_insert_dialog_resolves_names_via_pubchem(page):
     calls = []; _mock_pubchem(page, calls)
     page.click("#bSmiles"); page.fill("#smIn", "caffeine"); page.click("#smGo")
-    page.wait_for_function("doc.atoms.length > 0")
+    wait_until(page, "doc.atoms.length > 0")
     assert smiles(page) == page.evaluate("OCL.Molecule.fromSmiles('Cn1cnc2c1c(=O)n(C)c(=O)n2C').toIsomericSmiles()")
 
 
@@ -351,10 +359,10 @@ def test_stereo_drawn_from_smiles_is_not_mirrored(page):
 def test_inchi_and_key_offline(page):
     page.evaluate("tryLoadText('C[C@H](N)C(=O)O'); sel.clear()")
     page.click("#bAnalyze")
-    page.wait_for_function("document.getElementById('anKey') && document.getElementById('anKey').textContent.length > 20")
+    wait_until(page, "document.getElementById('anKey') && document.getElementById('anKey').textContent.length > 20")
     assert page.inner_text("#anKey").strip() == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"
     page.evaluate("loadProject(newProject()); tryLoadText('InChI=1S/C8H10N4O2/c1-10-4-9-6-5(10)7(13)12(3)8(14)11(6)2/h4H,1-3H3')")
-    page.wait_for_function("doc.atoms.length===14")
+    wait_until(page, "doc.atoms.length===14")
 
 
 def test_save_as_lists_formats_and_exports(page):
