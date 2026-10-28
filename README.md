@@ -27,11 +27,15 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - Curved electron-pushing arrows (full and fishhook) with a draggable bend handle.
 - Text with automatic chemical subscripts (H2SO4 → H₂SO₄) and `^` superscripts (Fe^3+). Each text box can have its own font, size, bold, italic, alignment and color.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
-- **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to.
-- Insert structures from SMILES, reaction SMILES (`A.B>>C`) or molfiles, or start from 16 built-in templates.
+- **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
+- Insert structures from SMILES, reaction SMILES (`A.B>>C`) or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem.
+- **Groups** (Ctrl+G): a structure and its label select, move and align as one.
+- **Smart guides**: while you drag, the selection snaps to the centers and edges of other structures. Hold Alt to drag freely.
+- Right-click a structure to copy its SMILES or molfile, or to look up its name and CAS number.
 
 ### Publication output
 - **ACS Document 1996** style: 14.4 pt bonds, 0.6 pt lines, 2.0 pt bold bonds, 18% bond spacing and Arial 10 pt labels. A **Slides** style is also available.
+- **Drawing settings**, as in ChemDraw: line width, bold width, wedge width, bond spacing, hash spacing and margin width can be set for each page, or applied to all pages.
 - **Copy image** puts a high-resolution transparent PNG on the clipboard for Office.
 - **Download PNG** saves a 600 dpi file with the dpi recorded, so it inserts at true size.
 - **Download SVG** gives vector graphics; PowerPoint can convert them to shapes.
@@ -48,6 +52,7 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - Exported PNGs and SVGs carry the drawing data, so you can open them in Skeletal and edit them again.
 
 ### Chemistry tools
+- **Name and CAS lookup:** finds the name, IUPAC name, CAS Registry Number, InChIKey and PubChem record for the selected structure, with links to verify the CAS number on CAS Common Chemistry or search the web. This is the only feature that uses the internet. It sends only the structure's SMILES to PubChem, and only when you click it.
 - **Analysis panel:** SMILES, formula, MW, exact mass, cLogP, tPSA, H-bond donors and acceptors, rotatable bonds, stereocenters and molfile, plus reaction SMILES built from the drawn arrow.
 - **NMR prediction:**
   - ¹H and ¹³C shifts written on the structure, a simulated spectrum and a peak table with multiplicity, J and integration.
@@ -70,10 +75,13 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 | Charge the atom under the cursor | Hover and press + or − |
 | Set the order of the bond under the cursor | Hover and press 1, 2 or 3 |
 | Edit an atom label | Double-click it (press and hold on touch screens) |
-| Select | Drag a box with the Select tool; Shift adds to the selection |
+| Select | Drag a box with the Select tool; Shift adds to the selection. Delete only removes what is selected. |
 | Draw without angle snapping | Hold Alt while dragging |
 | Pan and zoom | Space + drag, two fingers, or Ctrl + wheel |
 | Copy image, paste, duplicate | Ctrl/⌘ + C, V, D |
+| Copy SMILES | Ctrl/⌘ + Shift + C, or right-click |
+| Group, ungroup | Ctrl/⌘ + G, Ctrl/⌘ + Shift + G |
+| Nudge the selection | Arrow keys (Shift: 5 pt) |
 | Rotate the selection 15° | [ and ] |
 | New line in text | Shift + Enter |
 
@@ -105,10 +113,10 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/skeletal.html
-npm test             # 82 unit tests (Node test runner)
+npm test             # 83 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 21 browser tests (Playwright)
+npm run test:e2e     # 33 browser tests (Playwright)
 ```
 
 ### Project layout
@@ -147,6 +155,7 @@ A project wraps a list of `pages` (each holding one drawing) and a list of `vers
 
 ## Browser notes
 
+- Name and CAS lookup needs an internet connection, and PubChem must be reachable from your network. Everything else works offline.
 - Copying to the clipboard needs a secure context (HTTPS or a local file). When a browser blocks it, Skeletal shows the image so you can right-click it and choose Copy image.
 - Autosave uses `localStorage`, which is separate for each browser and can be cleared. Save the project as HTML to keep it permanently.
 - Labels render in Arial/Helvetica so they match Office and journal fonts.

@@ -76,7 +76,27 @@ An independent pass: fresh install, unit and browser tests, and hands-on use on 
 | 12 | There was no way to line structures up or space them evenly. In ChemDraw this is a routine last step before a scheme goes into a paper. | New **Align** menu: left, center, right, top, middle and bottom alignment, equal spacing across or down, and **Scheme row** (align middles, then space evenly). Compound numbers and curly arrows move with their structure. Two browser tests added. |
 | 13 | Found while adding #12: **Save project (.html)** keeps only the top-level elements it knows by id, so any new top-level element is silently dropped, and the reopened file breaks. The existing round-trip test caught this. | The Align menu is on the list. Anyone adding a new top-level element needs to add it there too. |
 
-### Recommended next steps, in priority order
+### Done in the follow-up pass
+
+| # | Item | What changed |
+| --- | --- | --- |
+| 1 | Groups | Ctrl+G and Ctrl+Shift+G, also in the Align and right-click menus. Clicking any member selects the whole group, and Align treats it as one piece. |
+| 2 | Fixed-gap spacing | A **Gap** field in the Align menu, in bond lengths and remembered per browser. |
+| 3 | Smart guides | Dragging a selection snaps it to other pieces within 6 screen px. A center-to-center match wins over an edge match. Alt turns snapping off. |
+| 4 | Delete with no selection | It no longer erases the item under the cursor. It shows a hint instead. |
+| 5 | Arrow-key nudges | A run of nudges is one undo step. |
+| 6 | Long side panel | Each section folds, and the folded state is remembered. |
+| 13 | Fragile save whitelist | **Save project (.html)** now keeps every top-level element marked `data-sk`. |
+| — | Export bug | Copy image and every export ignored a custom atom label size, because `subDoc()` dropped `labelSize`. |
+| — | New features | Drawing settings for line, bold and wedge width, bond and hash spacing, and margin. Right-click menu. Ctrl+Shift+C copies SMILES. Name and CAS lookup through PubChem. Name and CAS input in the Insert dialog. |
+
+### Still open
+
+- **ES modules** (item 7 above). This is unchanged and still the largest structural item.
+- **Bond length** is a constant (`L` = 14.4 pt) used by all geometry. ChemDraw's "fixed length" setting would need `L` to become a per-document value. Until then, scale the copied image instead.
+- **CAS numbers come from PubChem synonyms.** These are filtered by the CAS check digit, and the first one is shown as primary. For an authoritative answer, use the CAS Common Chemistry API. It needs a free API key, so it would have to be a setting.
+
+### Original recommendations
 
 1. **Groups (Ctrl+G).** Alignment has to guess which labels belong to which structure. It attaches text and curly arrows within about 1.6 bond lengths. An explicit group would make this exact, and would also let users move a structure together with its label.
 2. **Fixed-gap spacing.** Scheme row keeps the outer pieces where they are and shares out the space between them. A "gap = N bond lengths" option would give the same spacing across every scheme in a paper.
