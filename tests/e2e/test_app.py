@@ -41,7 +41,7 @@ def test_insert_smiles_dialog_and_analysis(page):
     page.click("#bSmiles")
     page.fill("#smIn", "CC(=O)Oc1ccccc1C(=O)O")
     page.click("#smGo")
-    page.wait_for_timeout(300)
+    page.click("#bAnalyze")
     assert "C9H8O4" in page.inner_text("#props").replace("\n", "")
     assert "180.16" in page.inner_text("#props")
 
@@ -350,6 +350,7 @@ def test_stereo_drawn_from_smiles_is_not_mirrored(page):
 
 def test_inchi_and_key_offline(page):
     page.evaluate("tryLoadText('C[C@H](N)C(=O)O'); sel.clear()")
+    page.click("#bAnalyze")
     page.wait_for_function("document.getElementById('anKey') && document.getElementById('anKey').textContent.length > 20")
     assert page.inner_text("#anKey").strip() == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"
     page.evaluate("loadProject(newProject()); tryLoadText('InChI=1S/C8H10N4O2/c1-10-4-9-6-5(10)7(13)12(3)8(14)11(6)2/h4H,1-3H3')")
@@ -505,3 +506,17 @@ def test_real_double_click_edits_atom_label(page):
     page.wait_for_selector("#lbIn")
     page.fill("#lbIn", "OMe"); page.click("#lbGo")
     assert page.evaluate("doc.atoms.some(a=>a.el==='OMe')")
+
+
+def test_analysis_runs_only_on_request(page):
+    page.evaluate("window._n=0; const f=analysisFor; analysisFor=(...a)=>{ window._n++; return f(...a); }; 0")  # ending in a value: Playwright would call a returned function
+    page.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O'); sel.clear()")
+    box = page.locator("#cv").bounding_box()
+    page.mouse.click(box["x"] + 100, box["y"] + 100)  # draw a bond
+    page.wait_for_timeout(300)
+    assert page.evaluate("window._n") == 0, "editing must not run the analysis"
+    page.click("#bAnalyze")
+    assert page.evaluate("window._n") >= 1 and "C9H8O4" in page.inner_text("#props")
+    page.evaluate("tryLoadText('CCO')")
+    assert "Press Analyze" in page.inner_text("#scope")
+    assert page.evaluate("document.getElementById('props').classList.contains('stale')")

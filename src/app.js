@@ -22,7 +22,8 @@ function syncPageUI(){ const e=$('#expArea'); if(!e) return; const has=!!doc.pag
 function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[t]; if(!m||!m.has(id)) sel.delete(k);} }
 let _saveT=null;
 let _saveWarned=false;
-function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } },300); }
+const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
+function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } }),400); }
 
 /* ================= model edits ================= */
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
@@ -184,7 +185,13 @@ function transformSel(fn){ // fn maps point->point
 
 /* ================= rendering ================= */
 const SELC='#2459a8';
+// pointer moves can arrive faster than the screen refreshes: while one is handled, redraws wait for the next frame
+let _deferRender=0, _renderQueued=false;
 function render(){
+  if (_deferRender){ if (!_renderQueued){ _renderQueued=true; requestAnimationFrame(()=>{ _renderQueued=false; renderNow(); }); } return; }
+  renderNow();
+}
+function renderNow(){
   ix=buildIndex(doc);
   const {svg, labels}=renderDoc(doc,ix);
   const z=view.z, ov=[];
@@ -259,7 +266,8 @@ cv.addEventListener('pointerdown', e=>{
   }
   beginTool(drag);
 });
-window.addEventListener('pointermove', e=>{
+window.addEventListener('pointermove', e=>{ _deferRender++; try{ onPointerMove(e); } finally { _deferRender--; } });
+function onPointerMove(e){
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if (pinch && pointers.size===2){
     const [p1,p2]=[...pointers.values()]; const d=Math.hypot(p1.x-p2.x,p1.y-p2.y), m=V((p1.x+p2.x)/2,(p1.y+p2.y)/2);
@@ -274,7 +282,7 @@ window.addEventListener('pointermove', e=>{
   drag.alt=e.altKey; drag.cur=p;
   if (drag.moved) moveTool(drag,p);
   drag.last=p;
-});
+}
 function endPointer(e){
   pointers.delete(e.pointerId);
   if (pinch){ if (pointers.size<2) pinch=null; return; }
@@ -1097,7 +1105,14 @@ window.addEventListener('keydown', e=>{ if (e.key==='Escape') closeCtx(); }, tru
 
 /* ================= analysis ================= */
 let _anT=null;
-function scheduleAnalysis(){ clearTimeout(_anT); _anT=setTimeout(analyzeNow,120); }
+// analysis runs only when asked (Analyze button): editing just marks the shown results as out of date
+function scheduleAnalysis(){
+  const props=$('#props'), scope=$('#scope'), has=doc.atoms.length>0;
+  $('#bAnalyze').disabled=!has;
+  if (!has){ props.innerHTML=''; props.classList.remove('stale'); scope.textContent='Nothing drawn yet'; lastAnalysis=null; return; }
+  if (props.innerHTML){ props.classList.add('stale'); scope.textContent='Drawing changed. Press Analyze to update.'; }
+  else scope.textContent = (selAtoms().length? 'Selection' : 'Whole drawing')+': press Analyze for SMILES, formula, mass, InChI and properties';
+}
 const fmtFormula=f=>esc(f).replace(/(\d+)/g,'<sub>$1</sub>').replace(/([+-])$/,'<sup>$1</sup>');
 function analysisFor(ids){
   const {mol,generic}=toOCL(doc,ix,ids);
@@ -1110,7 +1125,7 @@ function analysisFor(ids){
 }
 let lastAnalysis=null;
 function analyzeNow(){
-  const props=$('#props'), scope=$('#scope');
+  const props=$('#props'), scope=$('#scope'); props.classList.remove('stale');
   const selIds=selAtoms();
   const ids = selIds.length? selIds : doc.atoms.map(a=>a.id);
   if (!ids.length){ props.innerHTML=''; scope.textContent='Nothing drawn yet'; lastAnalysis=null; return; }
@@ -1165,6 +1180,7 @@ function reactionSmiles(){
 }
 $('#bLookup').onclick=()=>lookupOnline();
 $('#bMs').onclick=()=>openMs();
+$('#bAnalyze').onclick=()=>analyzeNow();
 $('#bTlc').onclick=()=>openTlcDialog();
 $('#b3d').onclick=()=>open3d();
 $('#bFindDb').onclick=()=>openFindDb();
