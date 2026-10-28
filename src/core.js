@@ -103,32 +103,40 @@ function sanitizeDoc(d){
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
     font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color), g:grp(t.g)},['id','x','y','text','size','font','bold','italic','align','color','g']));
   out.pluses=arr(d.pluses).map(p=>pick({id:int(p.id), x:num(p.x), y:num(p.y), color:col(p.color), g:grp(p.g)},['id','x','y','color','g']));
+  const clamp=(v,lo,hi,def)=>Math.min(hi,Math.max(lo,num(v,def)));
+  out.plates=arr(d.plates).slice(0,50).map(q=>pick({id:int(q.id), x:num(q.x), y:num(q.y), w:clamp(q.w,10,2000,60), h:clamp(q.h,10,2000,72), g:grp(q.g),
+    origin:clamp(q.origin,0,0.5,0.12), front:clamp(q.front,0.5,1,0.9), solvent:str(q.solvent,200), showRf:!!q.showRf, color:col(q.color),
+    lanes:arr(q.lanes).slice(0,20).map(l=>({label:str(l.label,40), spots:arr(l.spots).slice(0,20).map(sp=>pick({rf:clamp(sp.rf,0,1,0.5), to:sp.to!=null?clamp(sp.to,0,1,0.5):undefined,
+      style:['fill','outline','faint'].includes(sp.style)?sp.style:'fill', color:col(sp.color)},['rf','to','style','color']))}))},
+    ['id','x','y','w','h','g','origin','front','solvent','showRf','color','lanes']));
   if (d.page && typeof d.page==='object'){ const p=d.page; const w=num(p.w), h=num(p.h);
     if (w>=36 && h>=36 && w<=20000 && h<=20000) out.page={preset:str(p.preset,20)||'custom', w, h, across:Math.max(1,Math.min(8,int(p.across,1))), down:Math.max(1,Math.min(8,int(p.down,1))), x:num(p.x), y:num(p.y)}; }
   return out;
 }
-function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], nid:1, style:'acs', colorAtoms:false}; }
+function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], plates:[], nid:1, style:'acs', colorAtoms:false}; }
 const _sCache=new Map();
 function useStyle(d){ L = S(d).bondLength || 14.4; return L; }
 // scale a drawing's geometry about its centre (used when the bond length changes; text sizes stay in pt)
 function rescaleDoc(d, f){
   if (!(f>0) || Math.abs(f-1)<1e-9) return;
-  const pts=[...d.atoms, ...d.texts, ...d.pluses]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
+  const pts=[...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[])]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
   if (!pts.length) return; let cx=0, cy=0; for (const p of pts){ cx+=p.x; cy+=p.y; } cx/=pts.length; cy/=pts.length;
   const sx=v=>cx+(v-cx)*f, sy=v=>cy+(v-cy)*f;
-  for (const o of [...d.atoms, ...d.texts, ...d.pluses]){ o.x=sx(o.x); o.y=sy(o.y); }
+  for (const o of [...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[])]){ o.x=sx(o.x); o.y=sy(o.y); }
   for (const r of d.arrows){ r.x1=sx(r.x1); r.y1=sy(r.y1); r.x2=sx(r.x2); r.y2=sy(r.y2); if (r.cx!=null){ r.cx=sx(r.cx); r.cy=sy(r.cy); } }
 }
 function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
   if(!s){ s={...(PRESETS[d.style]||PRESETS.acs), ...(d.styleOv||{})}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
 function buildIndex(d){
-  const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),adj:new Map()};
+  const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),plate:new Map(),adj:new Map()};
+  if (!d.plates) d.plates=[];
   for (const a of d.atoms){ ix.atom.set(a.id,a); ix.adj.set(a.id,[]); }
   d.bonds = d.bonds.filter(b=>ix.atom.has(b.a)&&ix.atom.has(b.b)&&b.a!==b.b);
   for (const b of d.bonds){ ix.bond.set(b.id,b); ix.adj.get(b.a).push({b,o:b.b}); ix.adj.get(b.b).push({b,o:b.a}); }
   for (const r of d.arrows) ix.arrow.set(r.id,r);
   for (const t of d.texts) ix.text.set(t.id,t);
   for (const p of d.pluses) ix.plus.set(p.id,p);
+  for (const q of d.plates) ix.plate.set(q.id,q);
   return ix;
 }
 function bondSum(ix,id){ let s=0; for(const {b} of ix.adj.get(id)||[]) s+=b.order; return s; }
@@ -474,6 +482,32 @@ function renderText(d,t,out){
 function renderPlus(d,p,out){ const st=S(d), s=3.8*st.head, col=p.color||'#000';
   out.push(strokeLine(V(p.x-s,p.y),V(p.x+s,p.y),st.lineWidth*1.1,col,'butt')); out.push(strokeLine(V(p.x,p.y-s),V(p.x,p.y+s),st.lineWidth*1.1,col,'butt')); }
 
+/* ================= TLC plates ================= */
+// geometry of a plate: lane x positions, origin and front y, spot y for an Rf
+function plateGeom(d,q){
+  const x0=q.x-q.w/2, y0=q.y-q.h/2, n=Math.max(1,q.lanes.length);
+  const yO=y0+q.h*(1-q.origin), yF=y0+q.h*(1-q.front), lane=i=>x0+q.w*(i+1)/(n+1);
+  const rx=Math.min(q.w/(n+1)*0.3, S(d).fontSize*0.55), ry=rx*0.62;
+  return {x0, y0, x1:x0+q.w, y1:y0+q.h, yO, yF, lane, rx, ry, rfY:rf=>yO-rf*(yO-yF)};
+}
+function plateBBox(d,q){ const g=plateGeom(d,q), fs=S(d).fontSize; return {x0:g.x0-(q.showRf?0:0), y0:g.y0-(q.solvent?fs*1.5:0), x1:g.x1+(q.showRf?fs*2.2:0), y1:g.y1+(q.lanes.some(l=>l.label)?fs*1.5:0)}; }
+const ellPath=(cx,cy,rx,ry)=>{ const k=0.5523; return `M${f2(cx+rx)} ${f2(cy)}C${f2(cx+rx)} ${f2(cy+k*ry)} ${f2(cx+k*rx)} ${f2(cy+ry)} ${f2(cx)} ${f2(cy+ry)}C${f2(cx-k*rx)} ${f2(cy+ry)} ${f2(cx-rx)} ${f2(cy+k*ry)} ${f2(cx-rx)} ${f2(cy)}C${f2(cx-rx)} ${f2(cy-k*ry)} ${f2(cx-k*rx)} ${f2(cy-ry)} ${f2(cx)} ${f2(cy-ry)}C${f2(cx+k*rx)} ${f2(cy-ry)} ${f2(cx+rx)} ${f2(cy-k*ry)} ${f2(cx+rx)} ${f2(cy)}Z`; };
+function renderPlate(d,q,out){
+  const st=S(d), fs=st.fontSize, lw=st.lineWidth, g=plateGeom(d,q), col=q.color||'#000';
+  out.push(`<path d="M${f2(g.x0)} ${f2(g.y0)}L${f2(g.x1)} ${f2(g.y0)}L${f2(g.x1)} ${f2(g.y1)}L${f2(g.x0)} ${f2(g.y1)}Z" fill="none" stroke="${col}" stroke-width="${f2(lw)}" stroke-linejoin="round"/>`);
+  out.push(`<line x1="${f2(g.x0)}" y1="${f2(g.yF)}" x2="${f2(g.x1)}" y2="${f2(g.yF)}" stroke="${col}" stroke-width="${f2(lw*0.8)}"/>`);
+  out.push(`<line x1="${f2(g.x0)}" y1="${f2(g.yO)}" x2="${f2(g.x1)}" y2="${f2(g.yO)}" stroke="${col}" stroke-width="${f2(lw*0.8)}" stroke-dasharray="${f2(fs*0.3)} ${f2(fs*0.2)}"/>`);
+  if (q.solvent) out.push(`<text x="${f2(q.x)}" y="${f2(g.y0-fs*0.45)}" font-size="${f2(fs)}" text-anchor="middle" fill="${col}">${esc(q.solvent)}</text>`);
+  q.lanes.forEach((ln,i)=>{ const lx=g.lane(i);
+    if (ln.label) out.push(`<text x="${f2(lx)}" y="${f2(g.y1+fs*1.05)}" font-size="${f2(fs)}" text-anchor="middle" fill="${col}">${esc(ln.label)}</text>`);
+    for (const sp of ln.spots){ const c=sp.color||(sp.style==='faint'?'#9aa0a6':'#3a3f44'), y=g.rfY(sp.rf);
+      const fill = sp.style==='outline' ? 'none' : c, stroke = sp.style==='outline' ? c : 'none';
+      if (sp.to!=null && Math.abs(sp.to-sp.rf)>0.01){ const ya=g.rfY(Math.max(sp.rf,sp.to)), yb=g.rfY(Math.min(sp.rf,sp.to)), r=g.rx; // streak
+        out.push(`<path d="M${f2(lx-r)} ${f2(ya)}C${f2(lx-r)} ${f2(ya-r*0.7)} ${f2(lx+r)} ${f2(ya-r*0.7)} ${f2(lx+r)} ${f2(ya)}L${f2(lx+r*0.8)} ${f2(yb)}C${f2(lx+r*0.8)} ${f2(yb+r*0.6)} ${f2(lx-r*0.8)} ${f2(yb+r*0.6)} ${f2(lx-r*0.8)} ${f2(yb)}Z" fill="${fill}" stroke="${stroke}" stroke-width="${f2(lw)}"/>`); }
+      else out.push(`<path d="${ellPath(lx,y,g.rx,g.ry)}" fill="${fill}" stroke="${stroke}" stroke-width="${f2(lw)}"/>`);
+      if (q.showRf) out.push(`<text x="${f2(lx+g.rx+fs*0.2)}" y="${f2(y+fs*0.25)}" font-size="${f2(fs*0.7)}" fill="${col}">${sp.rf.toFixed(2)}</text>`); }
+  });
+}
 function renderDoc(d, ix){
   useStyle(d);
   ix = ix || buildIndex(d);
@@ -485,6 +519,7 @@ function renderDoc(d, ix){
   for (const r of d.arrows) renderArrow(d,r,out);
   for (const t of d.texts) renderText(d,t,out);
   for (const p of d.pluses) renderPlus(d,p,out);
+  for (const q of d.plates||[]) renderPlate(d,q,out);
   out.push('</g>');
   return {svg:out.join(''), labels};
 }

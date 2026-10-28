@@ -469,3 +469,39 @@ def test_enhanced_stereo_groups(page):
         assert page.evaluate(f"normalizeDoc({{...newDoc(),...FORMATS.read('{fmt}',FORMATS.write('{fmt}',subDoc(null)))}}).atoms.filter(a=>a.stg).map(a=>a.stg)") == ["and1"]
     assert page.evaluate("fromOCL(OCL.Molecule.fromMolfile(FORMATS.write('molV3', subDoc(null)))).atoms.filter(a=>a.stg).map(a=>a.stg)") == ["and1"]
     assert page.evaluate("sanitizeDoc({atoms:[{id:1,x:0,y:0,el:'C',stg:'<b>'},{id:2,x:0,y:0,el:'C',stg:'or3'}]}).atoms.map(a=>a.stg??null)") == [None, "or3"]
+
+
+def test_tlc_plate_insert_edit_export(page):
+    page.evaluate("tryLoadText('CC(=O)O'); sel.clear()")
+    page.click("#bTlc")
+    page.fill("#tlLanes", "SM: 0.6\nco: 0.6, 0.3\nRxn: 0.3, 0.05-0.15")
+    page.check("#tlRf")
+    page.click("#tlGo")
+    q = page.evaluate("doc.plates[0]")
+    assert [l["label"] for l in q["lanes"]] == ["SM", "co", "Rxn"]
+    assert q["lanes"][2]["spots"][1] == {"rf": 0.05, "to": 0.15, "style": "fill"}
+    assert page.evaluate("plateBBox(doc,doc.plates[0]).x0 > bboxOf(fragPoints(doc.atoms.map(a=>a.id))).x1")  # beside the structure
+    svg = page.evaluate("exportSVG(subDoc(null),{transparent:true}).svg")
+    assert ">0.30<" in svg and ">Rxn<" in svg and "stroke-dasharray" in svg
+    assert page.evaluate("PDF.build([exportSVG(subDoc(null),{transparent:true}).svg]).length") > 500
+    # double-click edits it
+    xy = page.evaluate("(()=>{ const q=doc.plates[0], r=cv.getBoundingClientRect(); return [r.left+q.x*view.z+view.ox, r.top+q.y*view.z+view.oy]; })()")
+    page.mouse.dblclick(*xy)
+    page.fill("#tlSolv", "EtOAc")
+    page.click("#tlGo")
+    assert page.evaluate("doc.plates[0].solvent") == "EtOAc" and page.evaluate("doc.plates.length") == 1
+    page.keyboard.press("Control+z")
+    assert page.evaluate("doc.plates[0].solvent") == "30% EtOAc/hexanes"
+    # survives save/load sanitising and copy-paste
+    assert page.evaluate("normalizeDoc(JSON.parse(JSON.stringify(doc))).plates.length") == 1
+    assert page.evaluate("sanitizeDoc({plates:[{id:1,x:0,y:0,w:1e9,h:-5,lanes:[{label:'<b>x</b>',spots:[{rf:7,style:'evil'}]}]}]}).plates[0].lanes[0].spots[0]") == {"rf": 1, "style": "fill"}
+
+
+def test_real_double_click_edits_atom_label(page):
+    # the first click re-renders the canvas, so the native dblclick event never fired; presses are paired instead
+    page.evaluate("tryLoadText('CCO'); sel.clear(); setTool('select'); fit()")
+    x, y = atom_xy(page, "(a)=>a.el==='O'")
+    page.mouse.dblclick(x, y)
+    page.wait_for_selector("#lbIn")
+    page.fill("#lbIn", "OMe"); page.click("#lbGo")
+    assert page.evaluate("doc.atoms.some(a=>a.el==='OMe')")

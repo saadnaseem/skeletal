@@ -47,6 +47,7 @@ header.top{grid-column:1/-1; display:flex; align-items:center; gap:6px; padding:
 .tb svg{width:18px; height:18px; flex:none}
 .menu{position:fixed; z-index:30; display:grid; grid-template-columns:repeat(3,auto); gap:2px; padding:6px; background:var(--btn); border:1px solid var(--line); border-radius:9px; box-shadow:0 8px 24px rgba(0,0,0,.16); width:max-content; max-width:calc(100vw - 16px)}
 .menu[hidden]{display:none}
+.menu [hidden]{display:none !important}
 .menu button{display:flex; align-items:center; gap:6px; padding:6px 9px; border:0; background:none; border-radius:6px; text-align:left; white-space:nowrap}
 .menu button:hover,.menu button:focus-visible{background:var(--btn-hover)}
 .menu svg{width:18px; height:18px; flex:none}
@@ -228,6 +229,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <div class="sep"></div>
     <button class="tb" id="bPage" title="Document size and pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="hide-mobile">Document</span></button>
     <button class="tb" id="bSolv" title="NMR solvent and impurity peaks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span class="hide-mobile">Solvent peaks</span></button>
+    <button class="tb" id="bTlc" title="Insert a TLC plate: lanes, spots, Rf, eluent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M6 6.5h12M6 17.5h12" stroke-width="1.1"/><ellipse cx="9.5" cy="10" rx="1.3" ry=".9" fill="currentColor"/><ellipse cx="14.5" cy="14" rx="1.3" ry=".9" fill="currentColor"/></svg><span class="hide-mobile">TLC</span></button>
     <button class="tb" id="bSmiles" title="Insert from SMILES"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>SMILES</span></button>
     <div class="spacer"></div>
     <button class="tb only-mobile" id="bPanel" aria-expanded="false">Analysis</button>
@@ -399,6 +401,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <p class="menunote">Works on the selection, or the whole page when nothing is selected. Compound numbers and curly arrows move with the nearest structure; group them (Ctrl+G) to be exact.</p>
 </div>
 <div class="menu ctx" id="ctxMenu" role="menu" hidden data-sk>
+  <button role="menuitem" data-cmd="tlc"><span>Edit TLC plate…</span></button>
   <button role="menuitem" data-cmd="smiles" data-need="atoms"><span>Copy SMILES</span><kbd>Ctrl Shift C</kbd></button>
   <button role="menuitem" data-cmd="molfile" data-need="atoms"><span>Copy molfile</span></button>
   <button role="menuitem" data-cmd="image"><span>Copy image</span><kbd>Ctrl C</kbd></button>
