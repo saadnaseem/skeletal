@@ -566,7 +566,7 @@ function deleteSel(){
 
 /* ================= sub-documents, clipboard ================= */
 function subDoc(keys){
-  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms};
+  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms, ...(doc.labelSize?{labelSize:doc.labelSize}:{}), ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{})};
   const all = !keys || !keys.size;
   const aSet=new Set(all? doc.atoms.map(a=>a.id) : [...keys].filter(k=>k[0]==='a').map(k=>+k.slice(1)));
   d.atoms=doc.atoms.filter(a=>aSet.has(a.id)).map(a=>({...a}));
@@ -1049,8 +1049,25 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; changed(); }; }
-function syncStyleUI(){ document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
+function syncStyleUI(){ syncDrawSet(); document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
 $('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); doc.style=b.dataset.p; changed(); });
+function syncDrawSet(){
+  const base=PRESETS[doc.style]||PRESETS.acs, ov=doc.styleOv||{};
+  document.querySelectorAll('#drawSet [data-ov]').forEach(inp=>{ const k=inp.dataset.ov, pct=inp.hasAttribute('data-pct'), f=v=>pct? String(Math.round(v*100)) : String(+v.toFixed(2));
+    inp.placeholder=f(base[k]); if (document.activeElement!==inp) inp.value = ov[k]!=null ? f(ov[k]) : ''; });
+}
+$('#drawSet').addEventListener('change', e=>{
+  const inp=e.target.closest('[data-ov]'); if (!inp) return;
+  const k=inp.dataset.ov, [lo,hi]=STYLE_LIMITS[k], raw=inp.value.trim();
+  pushUndo(); const ov={...(doc.styleOv||{})};
+  if (raw==='' || !Number.isFinite(+raw)) delete ov[k];
+  else ov[k]=Math.min(hi,Math.max(lo, inp.hasAttribute('data-pct') ? +raw/100 : +raw));
+  if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv;
+  changed();
+});
+$('#drawSet').addEventListener('focusout', ()=>setTimeout(syncDrawSet,0));
+$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); delete doc.styleOv; changed(); toast('Drawing settings reset to the style defaults'); };
+$('#bOvAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; } changed(); toast('Drawing settings applied to every page'); };
 $('#colorAtoms').addEventListener('change', e=>{ pushUndo(); doc.colorAtoms=e.target.checked; changed(); });
 
 /* ================= templates ================= */
@@ -1090,7 +1107,7 @@ $('#bNew').onclick=()=>{
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
-$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; } changed(); toast('ACS Document 1996 applied to every page'); };
+$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; delete pg.doc.styleOv; } changed(); toast('ACS Document 1996 applied to every page'); };
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
@@ -1123,7 +1140,7 @@ function switchPage(i){
   renderPages();
 }
 function addPage(copyOf){
-  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
+  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{}), ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
   project.pages.splice(project.cur+1,0,{id, name: copyOf ? copyOf.name+' copy' : 'Page '+(project.pages.length+1), doc:d});
   switchPage(project.cur+1); autosave();
 }

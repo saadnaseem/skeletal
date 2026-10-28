@@ -103,6 +103,9 @@ dl.props dd{margin:0; font-variant-numeric:tabular-nums; word-break:break-all; m
 dl.props dd.code{font-size:12.5px}
 .mini{border:1px solid var(--line); background:var(--btn); border-radius:5px; font-size:11.5px; padding:1px 7px; height:22px}
 .mini:hover{background:var(--btn-hover)}
+.dset{display:grid; grid-template-columns:auto 1fr; gap:6px 10px; align-items:center; font-size:13px}
+.dset input{width:70px; height:28px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+.dset span{color:var(--ink-2); font-size:12px}
 .note{font-size:12px; color:var(--ink-2); margin:8px 0 0}
 .row{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
 .row + .row{margin-top:8px}
@@ -290,6 +293,16 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       </div>
       <p class="note" style="margin-top:8px">ACS Document 1996: bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18% of length, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Slides keeps the geometry with heavier lines and bold labels.</p>
       <div class="row"><button class="tb" id="bAcsAll">Apply ACS 1996 to all pages</button></div>
+      <p class="note" style="margin:12px 0 6px">Drawing settings <span style="color:var(--ink-2)">(blank = style default)</span></p>
+      <div class="dset" id="drawSet">
+        <label for="ov_lineWidth">Line width</label><span><input type="number" id="ov_lineWidth" data-ov="lineWidth" min="0.1" max="6" step="0.05"> pt</span>
+        <label for="ov_boldWidth">Bold width</label><span><input type="number" id="ov_boldWidth" data-ov="boldWidth" min="0.3" max="12" step="0.1"> pt</span>
+        <label for="ov_wedge">Wedge width</label><span><input type="number" id="ov_wedge" data-ov="wedge" min="1" max="14" step="0.1"> pt</span>
+        <label for="ov_spacing">Bond spacing</label><span><input type="number" id="ov_spacing" data-ov="spacing" data-pct min="8" max="40" step="1"> % of length</span>
+        <label for="ov_hashSpacing">Hash spacing</label><span><input type="number" id="ov_hashSpacing" data-ov="hashSpacing" min="0.8" max="8" step="0.1"> pt</span>
+        <label for="ov_margin">Margin width</label><span><input type="number" id="ov_margin" data-ov="margin" min="0" max="6" step="0.1"> pt</span>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="tb" id="bOvReset">Reset to style</button><button class="tb" id="bOvAll">Apply to all pages</button></div>
       <p class="note" style="margin:12px 0 6px">Document</p>
       <div class="row" style="justify-content:space-between"><span id="pageInfo" style="font-size:13px">Free canvas</span><button class="tb" onclick="openPageSetup()">Change</button></div>
       <div class="row" style="margin-top:10px"><label for="labelSize" style="font-size:13px">Atom label size</label><select class="sel" id="labelSize"></select></div>

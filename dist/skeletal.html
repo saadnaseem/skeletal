@@ -103,6 +103,9 @@ dl.props dd{margin:0; font-variant-numeric:tabular-nums; word-break:break-all; m
 dl.props dd.code{font-size:12.5px}
 .mini{border:1px solid var(--line); background:var(--btn); border-radius:5px; font-size:11.5px; padding:1px 7px; height:22px}
 .mini:hover{background:var(--btn-hover)}
+.dset{display:grid; grid-template-columns:auto 1fr; gap:6px 10px; align-items:center; font-size:13px}
+.dset input{width:70px; height:28px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+.dset span{color:var(--ink-2); font-size:12px}
 .note{font-size:12px; color:var(--ink-2); margin:8px 0 0}
 .row{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
 .row + .row{margin-top:8px}
@@ -290,6 +293,16 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       </div>
       <p class="note" style="margin-top:8px">ACS Document 1996: bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18% of length, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Slides keeps the geometry with heavier lines and bold labels.</p>
       <div class="row"><button class="tb" id="bAcsAll">Apply ACS 1996 to all pages</button></div>
+      <p class="note" style="margin:12px 0 6px">Drawing settings <span style="color:var(--ink-2)">(blank = style default)</span></p>
+      <div class="dset" id="drawSet">
+        <label for="ov_lineWidth">Line width</label><span><input type="number" id="ov_lineWidth" data-ov="lineWidth" min="0.1" max="6" step="0.05"> pt</span>
+        <label for="ov_boldWidth">Bold width</label><span><input type="number" id="ov_boldWidth" data-ov="boldWidth" min="0.3" max="12" step="0.1"> pt</span>
+        <label for="ov_wedge">Wedge width</label><span><input type="number" id="ov_wedge" data-ov="wedge" min="1" max="14" step="0.1"> pt</span>
+        <label for="ov_spacing">Bond spacing</label><span><input type="number" id="ov_spacing" data-ov="spacing" data-pct min="8" max="40" step="1"> % of length</span>
+        <label for="ov_hashSpacing">Hash spacing</label><span><input type="number" id="ov_hashSpacing" data-ov="hashSpacing" min="0.8" max="8" step="0.1"> pt</span>
+        <label for="ov_margin">Margin width</label><span><input type="number" id="ov_margin" data-ov="margin" min="0" max="6" step="0.1"> pt</span>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="tb" id="bOvReset">Reset to style</button><button class="tb" id="bOvAll">Apply to all pages</button></div>
       <p class="note" style="margin:12px 0 6px">Document</p>
       <div class="row" style="justify-content:space-between"><span id="pageInfo" style="font-size:13px">Free canvas</span><button class="tb" onclick="openPageSetup()">Change</button></div>
       <div class="row" style="margin-top:10px"><label for="labelSize" style="font-size:13px">Atom label size</label><select class="sel" id="labelSize"></select></div>
@@ -391,6 +404,8 @@ const PRESETS = {
   acs:    { lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
   slides: { lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
 };
+// per-document overrides of the preset (ChemDraw "Drawing Settings"): [min, max] in pt, spacing as a fraction of bond length
+const STYLE_LIMITS = { lineWidth:[0.1,6], boldWidth:[0.3,12], spacing:[0.08,0.4], hashSpacing:[0.8,8], wedge:[1,14], margin:[0,6] };
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr').split(' ');
 const ELSET = new Set(ELEMENTS);
 // nicknames: s = SMILES with attachment atom first, l = form used when the bond comes from the right
@@ -465,24 +480,29 @@ function sanitizeDoc(d){
   const int=(v,def=0)=>Math.round(num(v,def));
   const col=v=> (typeof v==='string' && COLOR_RE.test(v)) ? v : undefined;
   const str=(v,max)=> typeof v==='string' ? v.slice(0,max) : '';
+  const grp=v=>{ const n=Math.round(+v); return Number.isFinite(n) && n>0 ? n : undefined; };
   const pick=(o,keys)=>{ const r={}; for (const k of keys) if (o[k]!==undefined) r[k]=o[k]; return r; };
   const out={ v:1, style: Object.hasOwn(PRESETS, d.style) ? d.style : 'acs', colorAtoms:!!d.colorAtoms, nid:int(d.nid,1) };
   if (d.labelSize!=null && Number.isFinite(+d.labelSize)) out.labelSize=Math.min(72,Math.max(4,+d.labelSize));
+  if (d.styleOv && typeof d.styleOv==='object'){ const o={};
+    for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
+    if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color)},['id','x','y','el','charge','lp','rad','color']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g)},['id','x','y','el','charge','lp','rad','color','g']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color)},['id','a','b','order','stereo','dbPos','color']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
-  out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
+  out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
-    font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color)},['id','x','y','text','size','font','bold','italic','align','color']));
-  out.pluses=arr(d.pluses).map(p=>pick({id:int(p.id), x:num(p.x), y:num(p.y), color:col(p.color)},['id','x','y','color']));
+    font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color), g:grp(t.g)},['id','x','y','text','size','font','bold','italic','align','color','g']));
+  out.pluses=arr(d.pluses).map(p=>pick({id:int(p.id), x:num(p.x), y:num(p.y), color:col(p.color), g:grp(p.g)},['id','x','y','color','g']));
   if (d.page && typeof d.page==='object'){ const p=d.page; const w=num(p.w), h=num(p.h);
     if (w>=36 && h>=36 && w<=20000 && h<=20000) out.page={preset:str(p.preset,20)||'custom', w, h, across:Math.max(1,Math.min(8,int(p.across,1))), down:Math.max(1,Math.min(8,int(p.down,1))), x:num(p.x), y:num(p.y)}; }
   return out;
 }
 function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], nid:1, style:'acs', colorAtoms:false}; }
 const _sCache=new Map();
-function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||''); let s=_sCache.get(k); if(!s){ s={...(PRESETS[d.style]||PRESETS.acs)}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
+function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
+  if(!s){ s={...(PRESETS[d.style]||PRESETS.acs), ...(d.styleOv||{})}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
 function buildIndex(d){
   const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),adj:new Map()};
   for (const a of d.atoms){ ix.atom.set(a.id,a); ix.adj.set(a.id,[]); }
@@ -2343,7 +2363,7 @@ function deleteSel(){
 
 /* ================= sub-documents, clipboard ================= */
 function subDoc(keys){
-  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms};
+  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms, ...(doc.labelSize?{labelSize:doc.labelSize}:{}), ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{})};
   const all = !keys || !keys.size;
   const aSet=new Set(all? doc.atoms.map(a=>a.id) : [...keys].filter(k=>k[0]==='a').map(k=>+k.slice(1)));
   d.atoms=doc.atoms.filter(a=>aSet.has(a.id)).map(a=>({...a}));
@@ -2826,8 +2846,25 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; changed(); }; }
-function syncStyleUI(){ document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
+function syncStyleUI(){ syncDrawSet(); document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
 $('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); doc.style=b.dataset.p; changed(); });
+function syncDrawSet(){
+  const base=PRESETS[doc.style]||PRESETS.acs, ov=doc.styleOv||{};
+  document.querySelectorAll('#drawSet [data-ov]').forEach(inp=>{ const k=inp.dataset.ov, pct=inp.hasAttribute('data-pct'), f=v=>pct? String(Math.round(v*100)) : String(+v.toFixed(2));
+    inp.placeholder=f(base[k]); if (document.activeElement!==inp) inp.value = ov[k]!=null ? f(ov[k]) : ''; });
+}
+$('#drawSet').addEventListener('change', e=>{
+  const inp=e.target.closest('[data-ov]'); if (!inp) return;
+  const k=inp.dataset.ov, [lo,hi]=STYLE_LIMITS[k], raw=inp.value.trim();
+  pushUndo(); const ov={...(doc.styleOv||{})};
+  if (raw==='' || !Number.isFinite(+raw)) delete ov[k];
+  else ov[k]=Math.min(hi,Math.max(lo, inp.hasAttribute('data-pct') ? +raw/100 : +raw));
+  if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv;
+  changed();
+});
+$('#drawSet').addEventListener('focusout', ()=>setTimeout(syncDrawSet,0));
+$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); delete doc.styleOv; changed(); toast('Drawing settings reset to the style defaults'); };
+$('#bOvAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; } changed(); toast('Drawing settings applied to every page'); };
 $('#colorAtoms').addEventListener('change', e=>{ pushUndo(); doc.colorAtoms=e.target.checked; changed(); });
 
 /* ================= templates ================= */
@@ -2867,7 +2904,7 @@ $('#bNew').onclick=()=>{
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
-$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; } changed(); toast('ACS Document 1996 applied to every page'); };
+$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; delete pg.doc.styleOv; } changed(); toast('ACS Document 1996 applied to every page'); };
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
@@ -2900,7 +2937,7 @@ function switchPage(i){
   renderPages();
 }
 function addPage(copyOf){
-  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
+  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{}), ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
   project.pages.splice(project.cur+1,0,{id, name: copyOf ? copyOf.name+' copy' : 'Page '+(project.pages.length+1), doc:d});
   switchPage(project.cur+1); autosave();
 }
