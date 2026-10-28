@@ -71,6 +71,15 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 
 ### Chemistry tools
 - **Analysis block:** pick any of chemical formula, exact mass, molecular weight, m/z (isotope peaks), elemental analysis, cLogP, LogS and tPSA, as in ChemDraw's Analysis window. Copy the block, or add it under the structure. It also writes the journal line "Anal. Calcd for C9H8O4: C, 60.00; H, 4.48."
+- **NMR solving guide:** a tutorial for working out a structure from its spectra.
+  - **Workflow:** a 10-step procedure from formula to checked structure.
+  - **Calculators:** degree of unsaturation, Rule of 13 candidate formulas (with the nitrogen rule), and scaling integrals to H counts.
+  - **Shift charts:** ¹H and ¹³C charts with source-tagged tables, notes on exchangeable protons, and solvent peaks.
+  - **Splitting:** n+1 multiplets with Pascal intensities, second-order effects and typical J values.
+  - **Benzene patterns:** substitution patterns, including AA′BB′ for para rings, and a ring-proton shift predictor based on Reich's increments.
+  - **Methods:** DEPT, APT, COSY, TOCSY, HSQC, HMBC and NOESY.
+  - **Worked examples:** three, using published data.
+  - **Sources:** values come from Reich's NMR collection, the UW-Madison tables, Fulmer et al. 2010 and Bright & Chen 1983. Where sources disagree, the guide shows a soft range.
 - **Mass spectrum:**
   - Monoisotopic mass, plus the m/z of common adducts: [M+H]⁺, [M+Na]⁺, [M+K]⁺, [M+NH₄]⁺, [M+2H]²⁺, M⁺•, [M−H]⁻, [M+Cl]⁻ and [M+HCOO]⁻.
   - A journal-style HRMS line you can copy.
@@ -140,10 +149,10 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/skeletal.html
-npm test             # 100 unit tests (Node test runner)
+npm test             # 104 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 46 browser tests (Playwright)
+npm run test:e2e     # 50 browser tests (Playwright)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):

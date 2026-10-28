@@ -64,6 +64,12 @@ dl.lk dt{color:var(--ink-2)} dl.lk dd{margin:0; word-break:break-word}
 table.fmt td{padding:6px 8px; vertical-align:top}
 .valwarn{position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:5; background:#fff5f5; color:#c92a2a; border:1px solid #ffa8a8; border-radius:999px; padding:5px 12px; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.08); max-width:calc(100% - 24px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .valwarn[hidden]{display:none}
+.guide-steps{margin:6px 0 10px; padding-left:20px; font-size:13.5px; line-height:1.45}
+.guide-steps li{margin:3px 0}
+.guide-calc{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; font-size:13px; margin:6px 0}
+.guide-calc input{height:28px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+.guide-ex{border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0}
+.dialog h4{margin:14px 0 6px; font-size:13.5px}
 .menusep{grid-column:1/-1; height:1px; background:var(--line); margin:3px 2px}
 .menunote{grid-column:1/-1; margin:4px 6px 2px; font-size:12px; color:var(--ink-2); max-width:30em; white-space:normal}
 .tb.icon{padding:0; width:34px; justify-content:center}
@@ -185,6 +191,7 @@ kbd{font:600 11.5px/1 var(--ui); border:1px solid var(--line); border-bottom-wid
 table.peaks{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:12px; font-variant-numeric:tabular-nums}
 table.peaks th{text-align:left; color:var(--ink-2); font-weight:600; border-bottom:1px solid var(--line); padding:4px 6px}
 table.peaks td{border-bottom:1px solid var(--line); padding:4px 6px}
+.guide table.peaks{font-variant-numeric:normal; font-size:13px; line-height:1.4} /* prose, not number columns */
 .vlist{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:6px}
 .vlist li{display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:7px; padding:6px 8px; background:var(--btn)}
 .vlist .vn{flex:1; min-width:0}
@@ -257,6 +264,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       <div class="row" style="justify-content:space-between;margin:-4px 0 6px"><p class="scope" id="scope" style="margin:0;flex:1">Nothing drawn yet</p><button class="tb primary" id="bAnalyze" disabled title="Compute SMILES, formula, mass, InChI and properties for the selection or the whole drawing">Analyze</button></div>
       <dl class="props" id="props"></dl>
       <div class="row" style="margin-top:12px"><button class="tb full" id="bNmr">Predict ¹H and ¹³C NMR</button></div>
+      <div class="row"><button class="tb full" id="bGuide" title="Tutorial: formula, DBE, shift tables, splitting, benzene patterns, worked examples">NMR solving guide</button></div>
       <div class="row"><button class="tb full" id="bMs">Mass spectrum: m/z, isotopes, MS/MS</button></div>
       <div class="row"><button class="tb full" id="b3d">3D view</button></div>
       <div class="row"><button class="tb full" id="bSolv2">NMR solvent and impurity peaks</button></div>

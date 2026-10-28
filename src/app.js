@@ -1185,6 +1185,7 @@ function reactionSmiles(){
 }
 $('#bLookup').onclick=()=>lookupOnline();
 $('#bMs').onclick=()=>openMs();
+$('#bGuide').onclick=()=>openNmrGuide();
 $('#bAnalyze').onclick=()=>analyzeNow();
 $('#valWarn').onclick=()=>{ const ids=$('#valWarn')._ids||[]; if (!ids.length) return; if (tool.id!=='select') setTool('select'); sel=new Set(ids.map(id=>'a'+id)); render(); toast('Selected the atoms with too many bonds'); };
 $('#bTlc').onclick=()=>openTlcDialog();
@@ -1867,6 +1868,103 @@ function openNmr(){
   nmrState={res, comp, owner, mol, tab:'H', generic, multi:comps.length>1, solvent:(nmrState&&nmrState.solvent)||''};
   renderNmr();
 }
+/* ================= NMR structure-solving guide ================= */
+let guideTab='solve';
+const fmtSub=f=>esc(f).replace(/([A-Za-z\)])(\d+)/g,'$1<sub>$2</sub>');
+function guideScaleSVG(rows, lo, hi, step){ // shift chart: high ppm on the left, as on a spectrum
+  const W=660, padL=250, padR=12, rowH=17, top=8, H=top+rows.length*rowH+30, X=v=>padL+(hi-v)/(hi-lo)*(W-padL-padR);
+  let g='';
+  for (let v=Math.ceil(lo/step)*step; v<=hi; v+=step) g+=`<line x1="${f2(X(v))}" y1="${top}" x2="${f2(X(v))}" y2="${top+rows.length*rowH}" stroke="#e3e7eb"/><text x="${f2(X(v))}" y="${top+rows.length*rowH+13}" font-size="10" text-anchor="middle" fill="#56626f">${v}</text>`;
+  g+=`<text x="${(W+padL)/2}" y="${H-3}" font-size="10.5" text-anchor="middle" fill="#56626f">δ (ppm)</text>`;
+  rows.forEach((r,i)=>{ const y=top+i*rowH, [label,a,b,,,,soft]=r;
+    g+=`<text x="${padL-6}" y="${y+12}" font-size="10.5" text-anchor="end" fill="#18212b">${esc(label)}</text>`;
+    g+=`<rect x="${f2(X(b))}" y="${y+3}" width="${f2(Math.max(2,X(a)-X(b)))}" height="${rowH-6}" rx="3" fill="${soft?'#ffffff':'#86aef0'}" stroke="#2459a8" stroke-width="${soft?1:0.6}"${soft?' stroke-dasharray="3 2"':''}/>`; });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif" class="msplot">${g}</svg>`;
+}
+function multipletSVG(rel){ const n=rel.length, w=Math.max(30,n*9), mx=Math.max(...rel); let g='';
+  rel.forEach((v,i)=>{ const x=w/2+(i-(n-1)/2)*8, h=4+26*v/mx; g+=`<line x1="${x}" y1="34" x2="${x}" y2="${34-h}" stroke="#2459a8" stroke-width="2"/>`; });
+  return `<svg viewBox="0 0 ${w} 36" width="${w}" height="36">${g}</svg>`; }
+function structSVG(smi, maxH=110){ try{ const f=layoutSmiles(smi); const d={...newDoc(), style:'acs'}; let id=1; const m=new Map();
+    f.atoms.forEach((a,i)=>{ const n={...a,id:id++}; m.set(i,n.id); d.atoms.push(n); }); f.bonds.forEach(b=>d.bonds.push({id:id++,a:m.get(b.a),b:m.get(b.b),order:b.order,stereo:b.stereo}));
+    const {svg}=renderDoc(d,buildIndex(d)); useStyle(doc); const bb=bboxOf(d.atoms); const pad=12;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f2(bb.x0-pad)} ${f2(bb.y0-pad)} ${f2(bb.x1-bb.x0+2*pad)} ${f2(bb.y1-bb.y0+2*pad)}" style="max-height:${maxH}px;max-width:100%">${svg}</svg>`; }catch(e){ return ''; } }
+function openNmrGuide(tab){
+  if (tab) guideTab=tab;
+  const G=NMRG, src=keys=>keys.map(k=>`<a href="#" data-src="${k}" title="${esc(G.SRC[k][0])}">${{reich:'Reich',wiscH:'UW',wiscC:'UW',fulmer:'Fulmer',bc:'Bright & Chen',dou:'LibreTexts',reusch:'Reusch',hmdb:'HMDB'}[k]}</a>`).join(', ');
+  const T=[['solve','How to solve'],['h1','¹H shifts'],['c13','¹³C shifts'],['split','Splitting'],['aro','Benzene patterns'],['methods','Methods'],['examples','Worked examples'],['sources','Sources']];
+  let body='';
+  if (guideTab==='solve'){
+    body=`<ol class="guide-steps">${G.WORKFLOW.map(([h,t])=>`<li><b>${esc(h)}.</b> ${esc(t)}</li>`).join('')}</ol>
+      <h4>Calculators</h4>
+      <div class="guide-calc"><label>Formula <input id="gcF" value="C9H10O2" style="width:130px"></label> <span id="gcFout"></span></div>
+      <div class="guide-calc"><label>Nominal mass M <input id="gc13" type="number" value="150" style="width:80px"></label> <span id="gc13out"></span></div>
+      <div class="guide-calc"><label>Integrals <input id="gcI" value="2.0, 2.0, 3.1, 2.9" style="width:170px"></label> <label>total H <input id="gcIH" type="number" value="10" style="width:60px"></label> <span id="gcIout"></span></div>
+      <p class="note">DBE: tetravalent atoms count like C, trivalent (N, P) add ½, halogens count like H, O and S drop out ${src(['dou'])}. Rule of 13: CₙH₍ₙ₊ᵣ₎ from M = 13n + r, then O replaces CH₄, N replaces CH₂, S replaces C₂H₈, Cl replaces C₂H₁₁, Br replaces C₆H₇ ${src(['bc'])}; candidates still need checking against the spectra. Integrals are relative: only the formula turns them into H counts ${src(['reich'])}.</p>`;
+  } else if (guideTab==='h1'){
+    body=`${guideScaleSVG(G.H1,0,13,1)}<p class="note">Dashed bars: sources disagree on the bounds. Ranges are for CDCl₃ and are guides, not limits; aromatic solvents (C₆D₆, pyridine-d₅) can move signals by 0.5–0.8 ppm.</p>
+      <table class="peaks"><thead><tr><th>Environment</th><th>δ (ppm)</th><th>Typical</th><th>Source</th></tr></thead><tbody>${G.H1.map(r=>`<tr><td>${esc(r[0])}${r[4]?`<div class="note" style="margin:0">${esc(r[4])}</div>`:''}</td><td>${r[1]}–${r[2]}${r[6]?' (soft)':''}</td><td>${esc(r[3])}</td><td>${src(r[5])}</td></tr>`).join('')}</tbody></table>
+      <h4>Exchangeable protons (OH, NH, SH)</h4><p class="note" style="margin-top:0">Their shifts depend on solvent, concentration and temperature by several ppm, so no fixed range is given. Fast exchange (traces of acid, old CDCl₃) broadens them and removes their coupling; a drop of D₂O makes them disappear ${src(['reich'])}.</p>
+      <table class="peaks"><tbody>${G.H1X.map(([a,b])=>`<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</tbody></table>
+      <h4>Solvent peaks to ignore</h4><table class="peaks"><thead><tr><th>Solvent</th><th>¹H residual</th><th>H₂O / HOD</th><th>¹³C</th></tr></thead><tbody>${G.SOLVENTS.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table><p class="note">${src(['fulmer'])}. Full impurity tables: NMR solvent and impurity peaks.</p>`;
+  } else if (guideTab==='c13'){
+    body=`${guideScaleSVG(G.C13,-20,220,20)}<p class="note">Dashed bars: soft bounds. Peak heights in routine ¹³C spectra are not proportional to the number of carbons; quaternary carbons are weak ${src(['reusch'])}.</p>
+      <table class="peaks"><thead><tr><th>Carbon</th><th>δ (ppm)</th><th>Typical</th><th>Source</th></tr></thead><tbody>${G.C13.map(r=>`<tr><td>${esc(r[0])}${r[4]?`<div class="note" style="margin:0">${esc(r[4])}</div>`:''}</td><td>${r[1]}–${r[2]}${r[6]?' (soft)':''}</td><td>${esc(r[3])}</td><td>${src(r[5])}</td></tr>`).join('')}</tbody></table>`;
+  } else if (guideTab==='split'){
+    body=`<p style="margin-top:0">n equivalent neighbours split a signal into n + 1 lines with Pascal-triangle intensities (first-order spectra only). Equivalent protons do not split each other.</p>
+      <table class="peaks"><thead><tr><th>Neighbours</th><th>Pattern</th><th>Intensities</th><th></th></tr></thead><tbody>${G.PASCAL.map(([n,k,r])=>`<tr><td>${k}</td><td>${n}</td><td>${r.join(' : ')}</td><td>${multipletSVG(r)}</td></tr>`).join('')}</tbody></table>
+      <ul class="guide-steps">
+        <li><b>Different neighbours, different J:</b> build a splitting tree, largest J first, giving dd, dt, ddd, tq… One combined n only works when the J values happen to be equal.</li>
+        <li><b>Matching partners:</b> coupled signals share the same J (an ethyl q and t both show J ≈ 7). In a first-order multiplet the outer-line spacing equals the sum of all its J.</li>
+        <li><b>Second-order effects:</b> when Δν/J &lt; 5 (Δν in Hz = Δδ × spectrometer MHz) lines lean toward their partner (roofing) and intensities distort; below 1 the pattern is strongly second order. An AB quartet still gives J directly, but its shifts must be calculated, not read as midpoints. Higher fields help, except AA′XX′ systems (para-disubstituted rings, X–CH₂CH₂–Y), which never become first order.</li>
+        <li><b>Isopropyl:</b> the outer lines of a septet carry 1/64 of the intensity, so it often looks like a quintet.</li>
+      </ul>
+      <h4>Typical coupling constants (Hz)</h4><table class="peaks"><thead><tr><th>Coupling</th><th>Typical</th><th>Notes</th></tr></thead><tbody>${G.J.map(([a,b,c])=>`<tr><td>${esc(a)}</td><td>${esc(b)}</td><td>${esc(c)}</td></tr>`).join('')}</tbody></table><p class="note">${src(['reich'])}</p>`;
+  } else if (guideTab==='aro'){
+    const opts=Object.keys(G.ZH).map(k=>`<option value="${k}">${k==='H'?'H':k.replace(/(\d)/g,'<sub>$1</sub>')}</option>`).join('');
+    body=`<p style="margin-top:0"><b>Most benzene patterns are not strictly first order.</b> The descriptions below are what you typically see at 300–500 MHz ${src(['reich'])}.</p>
+      <table class="peaks"><tbody>${G.ARO.map(([n,smi,h,t])=>`<tr><td style="width:150px">${structSVG(smi,90)}</td><td><b>${esc(n)}</b> <span class="note">(${esc(h)})</span><div>${esc(t)}</div></td></tr>`).join('')}</tbody></table>
+      <h4>Predict ring-proton shifts</h4><p class="note" style="margin-top:0">δ ≈ 7.36 + Z(ortho) + Z(meta) + Z(para) (Reich, dilute CDCl₃). Donors (NH₂, OH, OR) shield ortho and para; acceptors (C=O, NO₂) deshield, ortho most.</p>
+      <div class="guide-calc">${[1,2,3,4,5,6].map(i=>`<label>C${i} <select class="sel" data-zpos="${i}">${opts}</select></label>`).join(' ')}</div><div id="gzOut" class="code" style="margin-top:6px"></div>`;
+  } else if (guideTab==='methods'){
+    body=`<table class="peaks"><thead><tr><th>Experiment</th><th>Shows</th><th>Notes</th></tr></thead><tbody>${G.METHODS.map(([a,b,c])=>`<tr><td><b>${esc(a)}</b></td><td>${esc(b)}</td><td>${esc(c)}</td></tr>`).join('')}</tbody></table><p class="note">${src(['reich','reusch'])}</p>`;
+  } else if (guideTab==='examples'){
+    body=G.EXAMPLES.map((ex,i)=>`<div class="guide-ex"><div class="row" style="align-items:flex-start;gap:14px;flex-wrap:nowrap"><div style="flex:1">
+        <b>Problem ${i+1}:</b> ${fmtSub(ex.formula)} (M = ${ex.M})
+        <table class="peaks" style="margin:6px 0"><thead><tr><th>¹H δ</th><th>Mult.</th><th>J (Hz)</th><th>Int.*</th></tr></thead><tbody>${ex.h1.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <div>¹³C δ: ${esc(ex.c13)}</div><div class="note" style="margin:2px 0 0">Data: ${src([ex.src])}, CDCl₃. *Integrations are the values the structure implies.</div></div></div>
+      <details><summary>Show the solution step by step</summary><ol class="guide-steps">${ex.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>
+        <div class="row" style="align-items:center">${structSVG(ex.smiles,110)}<button class="tb" data-ex="${i}">Insert this structure</button><button class="tb" data-exnmr="${i}">Compare with predicted NMR</button></div></details></div>`).join('');
+  } else {
+    body=`<ul class="guide-steps">${Object.entries(G.SRC).map(([k,[n,u]])=>`<li><a href="#" data-src="${k}">${esc(n)}</a></li>`).join('')}</ul><p class="note">Ranges were cross-checked between these sources; where they disagree the guide shows a soft (dashed) range or describes the dependence instead of a number. Values are teaching guides, not limits: confirm structures with your own spectra and 2D experiments.</p>`;
+  }
+  openDialog(`<div class="dialog-inner guide"><h3>Solving a structure from NMR</h3><div class="tabs" style="flex-wrap:wrap">${T.map(([k,n])=>`<button data-gtab="${k}" aria-pressed="${guideTab===k}">${n}</button>`).join('')}</div>${body}
+    <div class="actions"><button class="tb" id="gNmr">Predict NMR of my drawing</button><button class="tb primary" data-close>Close</button></div></div>`);
+  dialog.classList.add('wide');
+  dialog.querySelectorAll('[data-gtab]').forEach(b=>b.onclick=()=>openNmrGuide(b.dataset.gtab));
+  dialog.querySelectorAll('[data-src]').forEach(a=>a.onclick=e=>{ e.preventDefault(); openExternal(G.SRC[a.dataset.src][1]); });
+  $('#gNmr').onclick=()=>{ closeDialog(); openNmr(); };
+  if (guideTab==='solve'){
+    const upF=()=>{ try{ const c=G.parseFormula($('#gcF').value), d=G.dbe(c); $('#gcFout').innerHTML=`DBE = <b>${d}</b>${Number.isInteger(d)&&d>=0? (d>=4?' (a benzene ring is likely)':'') : ' (not possible for a neutral molecule: check the formula)'}`; }catch(e){ $('#gcFout').textContent=e.message; } };
+    const up13=()=>{ try{ const M=+$('#gc13').value; const out=[];
+        for (const N of [0,1,2]) for (const O of [0,1,2,3,4]){ if ((N%2)!==(M%2)) continue; const r=G.rule13(M,{O,N}); if (r.plausible && r.formula.H>0 && r.dbe<=12) out.push(`${fmtSub(G.hill(r.formula))} <span class="note">(DBE ${r.dbe})</span>`); }
+        $('#gc13out').innerHTML = out.length? 'Candidates: '+out.slice(0,8).join(', ') : 'No C/H/N/O candidates'; }catch(e){ $('#gc13out').textContent=e.message; } };
+    const upI=()=>{ const v=$('#gcI').value.split(/[,\s]+/).filter(Boolean), r=G.scaleIntegrals(v, +$('#gcIH').value);
+      $('#gcIout').innerHTML = r.length ? r.map(x=>`<b>${Number.isInteger(x.h)?x.h:x.h.toFixed(2)}H</b>`).join(' : ') + (+$('#gcIH').value? '' : ' (ratio; add the total H to get counts)') : ''; };
+    ['gcF'].forEach(id=>$('#'+id).addEventListener('input',upF)); $('#gc13').addEventListener('input',up13); ['gcI','gcIH'].forEach(id=>$('#'+id).addEventListener('input',upI));
+    upF(); up13(); upI();
+  }
+  if (guideTab==='aro'){
+    const sels=[...dialog.querySelectorAll('[data-zpos]')]; sels[0].value='OCH3'; sels[3].value='C(O)CH3';
+    const up=()=>{ const subs={}; sels.forEach(x=>{ if (x.value!=='H') subs[+x.dataset.zpos]=x.value; }); const r=G.aromaticH(subs);
+      $('#gzOut').innerHTML = Object.keys(r).length ? Object.entries(r).map(([p,d])=>`H${p}: ${d.toFixed(2)}`).join('  ·  ') : 'No ring H left'; };
+    sels.forEach(x=>x.onchange=up); up();
+  }
+  if (guideTab==='examples'){
+    dialog.querySelectorAll('[data-ex]').forEach(b=>b.onclick=()=>{ closeDialog(); tryLoadText(G.EXAMPLES[+b.dataset.ex].smiles); });
+    dialog.querySelectorAll('[data-exnmr]').forEach(b=>b.onclick=()=>{ closeDialog(); tryLoadText(G.EXAMPLES[+b.dataset.exnmr].smiles); openNmr(); });
+  }
+}
+
 /* ================= 3D view dialog ================= */
 let v3={seed:17, style:'ball', showH:true, labels:false, spin:true};
 async function open3d(){
@@ -2064,12 +2162,13 @@ function renderNmr(){
     <div class="nmrgrid"><div class="nmrbox">${nmrAnnotSVG(st)}</div><div class="nmrbox">${nmrSpectrumSVG(st)}</div></div>
     <table class="peaks"><thead>${head}</thead><tbody>${rows || '<tr><td colspan="5">No signals</td></tr>'}</tbody></table>
     <p class="note">${notes.map(esc).join(' ')}</p>
-    <div class="actions" style="flex-wrap:wrap"><button class="tb" id="nmCopy">Copy peak list</button><button class="tb" id="nmAdd">Add peak list to drawing</button><button class="tb" id="nmDl">Download spectrum</button><button class="tb primary" data-close>Done</button></div></div>`);
+    <div class="actions" style="flex-wrap:wrap"><button class="tb" id="nmGuide">How to solve…</button><button class="tb" id="nmCopy">Copy peak list</button><button class="tb" id="nmAdd">Add peak list to drawing</button><button class="tb" id="nmDl">Download spectrum</button><button class="tb primary" data-close>Done</button></div></div>`);
   dialog.classList.add('wide');
   dialog.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ st.tab=b.dataset.tab; renderNmr(); });
   $('#nmSolv').onchange=e=>{ st.solvent=e.target.value; renderNmr(); };
   $('#nmSolvTbl').onclick=()=>{ if (st.solvent) solvUI.solvent=st.solvent; openSolvents(); };
   $('#nmCopy').onclick=()=>copyText(NMR.journalText(st.res),'Peak list copied');
+  $('#nmGuide').onclick=()=>openNmrGuide();
   $('#nmAdd').onclick=()=>{
     let x0=1e9,x1=-1e9,y1=-1e9; for(const id of st.comp){ const a=ix.atom.get(id); x0=Math.min(x0,a.x); x1=Math.max(x1,a.x); y1=Math.max(y1,a.y); }
     const txt=NMR.journalText(st.res).replace(/\u00B9H/,'1H').replace(/\u00B9\u00B3C/,'13C').replace(/\.\n/,'.\n');

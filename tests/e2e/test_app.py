@@ -536,3 +536,18 @@ def test_valence_errors_are_marked(page):
         assert page.evaluate(errs) == [], smi
     page.keyboard.press("Control+z")
     assert page.is_hidden("#valWarn")
+
+
+def test_nmr_solving_guide(page):
+    page.click("#bGuide")
+    assert "DBE = 5" in page.inner_text("#gcFout")
+    page.fill("#gcF", "C6H6"); assert "DBE = 4" in page.inner_text("#gcFout")
+    page.fill("#gc13", "88"); assert "C4H8O2" in page.inner_text("#gc13out").replace("\n", "")
+    page.fill("#gcI", "2, 3"); page.fill("#gcIH", "10"); assert page.inner_text("#gcIout").startswith("4H : 6H")
+    for tab in ["h1", "c13", "split", "aro", "methods", "examples", "sources"]:
+        page.click(f"[data-gtab={tab}]")
+        assert page.locator("#dialog .tabs [aria-pressed=true]").get_attribute("data-gtab") == tab
+    page.click("[data-gtab=split]"); assert "1 : 6 : 15 : 20 : 15 : 6 : 1" in page.inner_text("#dialog")
+    page.click("[data-gtab=aro]"); assert "H3: 7.89" in page.inner_text("#gzOut")  # 4'-methoxyacetophenone, Reich increments
+    page.click("[data-gtab=examples]"); page.click("#dialog details summary >> nth=0"); page.click("[data-ex='0']")
+    assert smiles(page) == page.evaluate("OCL.Molecule.fromSmiles('CCOC(C)=O').toIsomericSmiles()")
