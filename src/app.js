@@ -930,7 +930,9 @@ async function lookupOnline(){
 function addTextUnder(ids, text){
   const bb=bboxOf(fragPoints(ids)); pushUndo();
   const below=doc.texts.filter(t=>t.x>=bb.x0 && t.x<=bb.x1 && t.y>bb.y1 && t.y<bb.y1+L*4).reduce((m,t)=>Math.max(m,t.y),bb.y1);
-  doc.texts.push({id:nid(), x:(bb.x0+bb.x1)/2, y:below+L*0.95, text}); changed(); toast('Added below the structure');
+  const t={id:nid(), x:(bb.x0+bb.x1)/2, y:0, text, ...(text.includes('\n')?{align:'left'}:{})};
+  t.y = below + L*0.6 + textMetrics(doc,t).h/2; // top of the block sits just under the structure, however many lines it has
+  doc.texts.push(t); changed(); toast('Added below the structure');
 }
 
 /* ================= find in databases ================= */
@@ -985,6 +987,7 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   if (c==='smiles') copySmiles();
   else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
   else if (c==='lookup') lookupOnline();
+  else if (c==='analysis') openAnalysisDialog();
   else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb(); else if (c==='3d') open3d();
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
@@ -1027,6 +1030,7 @@ function analyzeNow(){
   if (!r.generic){ try{ const {mol}=toOCL(doc,ix,ids,{skipH:true}); const a=MS.adducts(mol); const m=a.rows[0]; if (m && Number.isFinite(m.mz)) html+=row(`m/z ${esc(m.label)}`, m.mz.toFixed(4), m.mz.toFixed(4)); }catch(e){} }
   if (r.props){ const p=r.props;
     html+=row('cLogP', p.logP.toFixed(2), null);
+    html+=row('LogS', p.logS.toFixed(2), null);
     html+=row('tPSA', p.polarSurfaceArea.toFixed(1)+' Å²', null);
     html+=row('H-bond donors / acceptors', p.donorCount+' / '+p.acceptorCount, null);
     html+=row('Rotatable bonds', p.rotatableBondCount, null);
@@ -1065,12 +1069,45 @@ $('#bMs').onclick=()=>openMs();
 $('#b3d').onclick=()=>open3d();
 $('#bFindDb').onclick=()=>openFindDb();
 $('#props').addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, 'Copied'); });
-$('#bAddInfo').addEventListener('click', ()=>{
-  if (!lastAnalysis){ toast('Draw a structure first'); return; }
+/* ChemDraw-style analysis block: pick the lines, preview, copy or add under the structure */
+const ANALYSIS_ITEMS=[['formula','Chemical Formula',1],['exact','Exact Mass',1],['mw','Molecular Weight',1],['mz','m/z (isotope peaks)',1],['ea','Elemental Analysis',1],['logp','cLogP',0],['logs','LogS',0],['tpsa','tPSA',0]];
+let anaPick; try{ anaPick=JSON.parse(localStorage.getItem('skeletal.analysis')||'null'); }catch(e){}
+anaPick = anaPick || Object.fromEntries(ANALYSIS_ITEMS.map(([k,,on])=>[k,!!on]));
+function analysisText(ids, pick){
+  const r=analysisFor(ids); if (!r) return null;
+  const {mol}=toOCL(doc,ix,ids,{skipH:true}); const comp=MS.composition(mol), counts=comp.counts, f=MS.hill(counts);
+  const L2=[];
+  if (pick.formula) L2.push(`Chemical Formula: ${f}`);
+  if (pick.exact) L2.push(`Exact Mass: ${MS.massOf(counts).toFixed(2)}`);
+  if (pick.mw) L2.push(`Molecular Weight: ${r.mw.toFixed(2)}`);
+  if (pick.mz){ const pk=MS.nominal(MS.isotopes(counts, comp.charge||0)).filter(p=>p.rel>=1).slice(0,4); if (pk.length) L2.push('m/z: '+pk.map(p=>`${p.mz.toFixed(2)} (${p.rel.toFixed(1)}%)`).join(', ')); }
+  const ea=MS.elemental(counts);
+  if (pick.ea && ea) L2.push('Elemental Analysis: '+ea.rows.map(x=>`${x.el}, ${x.pct.toFixed(2)}`).join('; '));
+  if (r.props){ if (pick.logp) L2.push(`cLogP: ${r.props.logP.toFixed(2)}`); if (pick.logs) L2.push(`LogS: ${r.props.logS.toFixed(2)}`); if (pick.tpsa) L2.push(`tPSA: ${r.props.polarSurfaceArea.toFixed(2)}`); }
+  // journal sentence for combustion analysis (C, H, N, S only, as reported)
+  const chn = ea ? ea.rows.filter(x=>/^(C|H|N|S)$/.test(x.el)) : [];
+  const journal = chn.length ? `Anal. Calcd for ${f}: ${chn.map(x=>`${x.el}, ${x.pct.toFixed(2)}`).join('; ')}. Found: ${chn.map(x=>`${x.el}, \u2014`).join('; ')}.` : '';
+  return {text:L2.join('\n'), journal, generic:r.generic};
+}
+function openAnalysisDialog(){
   const ids = selAtoms().length? selAtoms() : doc.atoms.map(a=>a.id);
-  let x0=1e9,x1=-1e9,y1=-1e9; for(const id of ids){ const a=ix.atom.get(id); x0=Math.min(x0,a.x); x1=Math.max(x1,a.x); y1=Math.max(y1,a.y); }
-  pushUndo(); doc.texts.push({id:nid(), x:(x0+x1)/2, y:y1+L*1.9, text:`${lastAnalysis.formula}\nMW ${lastAnalysis.mw.toFixed(2)}`}); changed();
-});
+  if (!ids.length){ toast('Draw a structure first'); return; }
+  const draw=()=>{ const a=analysisText(ids, anaPick); if (!a){ toast('Could not interpret this structure'); return; }
+    openDialog(`<div class="dialog-inner"><h3>Analysis</h3><p>${selAtoms().length?'For the selection.':'For the whole drawing.'} Values as in ChemDraw\u2019s Analysis window.</p>
+      <div class="row" style="flex-wrap:wrap;gap:4px 14px">${ANALYSIS_ITEMS.map(([k,n])=>`<label class="chk"><input type="checkbox" data-ana="${k}"${anaPick[k]?' checked':''}> ${n}</label>`).join('')}</div>
+      <pre class="code" id="anaPrev" style="white-space:pre-wrap;margin:10px 0;padding:8px;border:1px solid var(--line);border-radius:6px">${esc(a.text)||'Pick at least one line.'}</pre>
+      ${a.journal?`<p class="note" style="margin:0 0 4px">Journal line for combustion analysis:</p><pre class="code" style="white-space:pre-wrap;margin:0 0 10px">${esc(a.journal)}</pre>`:''}
+      ${a.generic?'<p class="note">Generic groups (R, X, custom labels) are left out.</p>':''}
+      <p class="note">Elemental analysis uses IUPAC standard atomic weights; m/z lists the most abundant isotope peaks of the neutral molecule; LogS and cLogP are OpenChemLib estimates.</p>
+      <div class="actions" style="flex-wrap:wrap"><button class="tb" id="anaCopy">Copy</button>${a.journal?'<button class="tb" id="anaJ">Copy journal line</button>':''}<button class="tb primary" id="anaAdd">Add to drawing</button><button class="tb" data-close>Close</button></div></div>`);
+    dialog.querySelectorAll('[data-ana]').forEach(c=>c.onchange=()=>{ anaPick[c.dataset.ana]=c.checked; try{ localStorage.setItem('skeletal.analysis',JSON.stringify(anaPick)); }catch(e){} draw(); });
+    $('#anaCopy').onclick=()=>copyText(a.text,'Analysis copied');
+    const j=$('#anaJ'); if (j) j.onclick=()=>copyText(a.journal,'Journal line copied');
+    $('#anaAdd').onclick=()=>{ if (!a.text) return; closeDialog(); addTextUnder(ids, a.text); };
+  };
+  draw();
+}
+$('#bAddInfo').addEventListener('click', openAnalysisDialog);
 
 /* ================= export ================= */
 let _meas=null;

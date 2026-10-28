@@ -198,5 +198,13 @@ const MS = (()=>{
   function hrmsLine(row){ const lab=row.label.replace('⁺','+').replace('⁻','−').replace('²⁺','2+').replace('₄','4').replace(/\[M([+−])/,'[M $1 ').replace(/\]/,']');
     return `HRMS (ESI) m/z: ${lab} calcd for ${row.formula} ${row.mz.toFixed(4)}; found ${'—'}.`; }
 
-  return {composition, massOf, hill, adducts, isotopes, nominal, msms, hrmsLine, ELECTRON:E, PROTON};
+  // elemental analysis (mass %) from IUPAC conventional standard atomic weights
+  const AW={H:1.008,Li:6.94,B:10.81,C:12.011,N:14.007,O:15.999,F:18.998,Na:22.990,Mg:24.305,Al:26.982,Si:28.085,P:30.974,S:32.06,Cl:35.45,K:39.098,Ca:40.078,
+    Fe:55.845,Co:58.933,Ni:58.693,Cu:63.546,Zn:65.38,As:74.922,Se:78.971,Br:79.904,Ru:101.07,Rh:102.91,Pd:106.42,Ag:107.87,Sn:118.71,I:126.90,Pt:195.08,Au:196.97,Hg:200.59};
+  function elemental(counts){
+    let tot=0; for (const [el,n] of Object.entries(counts)){ if (!Object.hasOwn(AW,el)) return null; tot+=n*AW[el]; }
+    const ks=Object.keys(counts).filter(k=>counts[k]>0); const order=counts.C ? ['C','H',...ks.filter(k=>k!=='C'&&k!=='H').sort()] : ks.sort();
+    return {mw:tot, rows:order.filter(k=>counts[k]>0).map(el=>({el, pct:100*counts[el]*AW[el]/tot}))};
+  }
+  return {composition, massOf, hill, adducts, isotopes, nominal, msms, hrmsLine, elemental, ELECTRON:E, PROTON};
 })();

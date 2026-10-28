@@ -441,3 +441,16 @@ def test_journal_presets_set_bond_length_and_styles(page):
     assert abs(page.evaluate(mean) - 10.8) < 0.01 and page.evaluate("doc.styleOv") is None and page.evaluate("S().fontSize") == 6
     page.keyboard.press("Control+z"); page.keyboard.press("Control+z"); page.keyboard.press("Control+z")
     assert abs(page.evaluate(mean) - 14.4) < 0.01 and page.evaluate("doc.style") == "acs"
+
+
+def test_analysis_dialog_chemdraw_style(page):
+    page.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O'); sel.clear()")
+    page.click("#bAddInfo")
+    txt = page.inner_text("#anaPrev")
+    assert "Chemical Formula: C9H8O4" in txt and "Exact Mass: 180.04" in txt and "Molecular Weight: 180.16" in txt
+    assert "Elemental Analysis: C, 60.00; H, 4.48; O, 35.52" in txt and "m/z: 180.04 (100.0%)" in txt
+    assert "Anal. Calcd for C9H8O4: C, 60.00; H, 4.48." in page.inner_text("#dialog")
+    page.check("[data-ana=logs]")
+    assert "LogS:" in page.inner_text("#anaPrev")
+    page.click("#anaAdd")
+    assert page.evaluate("(()=>{ const t=doc.texts[0], m=textMetrics(doc,t), b=bboxOf(fragPoints(doc.atoms.map(a=>a.id))); return t.y-m.h/2 > b.y1 })()")

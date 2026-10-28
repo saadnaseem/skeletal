@@ -38,3 +38,11 @@ test('MS/MS gives known major fragments as even-electron ions', () => {
   assert.ok(r.peaks.every(p => p.mz < r.precursor.mz), 'fragments are lighter than the precursor');
   assert.ok(r.peaks.every(p => !/^(CH3|HO|H2N|H4N)\+$/.test(p.formula)), 'no one-atom ions');
 });
+
+test('elemental analysis uses standard atomic weights', () => {
+  const ea = MS.elemental(MS.composition(mol('CC(=O)Oc1ccccc1C(=O)O')).counts);
+  assert.equal(ea.rows.map(r => `${r.el} ${r.pct.toFixed(2)}`).join(', '), 'C 60.00, H 4.48, O 35.52');
+  near(ea.mw, 180.159, 0.002, 'MW');
+  const caf = MS.elemental(MS.composition(mol('Cn1cnc2c1c(=O)n(C)c(=O)n2C')).counts);
+  assert.equal(caf.rows.map(r => `${r.el} ${r.pct.toFixed(2)}`).join(', '), 'C 49.48, H 5.19, N 28.85, O 16.48');
+});
