@@ -527,6 +527,7 @@ window.addEventListener('keydown', e=>{
   if (mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
   if (mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase()==='a'){ e.preventDefault(); selectAll(); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase()==='c'){ e.preventDefault(); copySmiles(); return; }
   if (mod && e.key.toLowerCase()==='c'){ e.preventDefault(); clip=subDoc(sel.size?sel:null); copyImage(); return; }
   if (mod && e.key.toLowerCase()==='x'){ e.preventDefault(); if(!sel.size) return; clip=subDoc(sel); copyImage(); deleteSel(); return; }
   if (mod && e.key.toLowerCase()==='g'){ e.preventDefault(); e.shiftKey? ungroupSel() : groupSel(); return; }
@@ -831,6 +832,109 @@ function arrangeUnits(units,mode){
 
 function selectAllSilent(){ doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); }
 
+/* ================= SMILES copy, online lookup (PubChem) ================= */
+// The only network use in the app. It runs only when the user asks, and sends just the SMILES or the typed name.
+const PUBCHEM='https://pubchem.ncbi.nlm.nih.gov/rest/pug';
+function lookupIds(){
+  const ids=selAtoms().length? selAtoms() : doc.atoms.map(a=>a.id);
+  return {ids, comps:components(doc,ix,ids)};
+}
+function copySmiles(){
+  const {ids}=lookupIds(); if (!ids.length){ toast('Nothing to copy'); return; }
+  let r=null; try{ r=analysisFor(ids); }catch(e){}
+  if (!r){ toast('Could not interpret this structure'); return; }
+  copyText(r.smiles, (selAtoms().length? 'SMILES of the selection' : 'SMILES')+' copied: '+(r.smiles.length>60? r.smiles.slice(0,57)+'\u2026' : r.smiles));
+}
+async function pcFetch(path, body){
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),12000);
+  try{
+    const res=await fetch(PUBCHEM+path, body ? {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body, signal:ctl.signal} : {signal:ctl.signal});
+    if (res.status===404) return null;
+    if (!res.ok) throw new Error('PubChem returned '+res.status);
+    return await res.json();
+  } finally { clearTimeout(t); }
+}
+async function pubchemNameToSmiles(name){
+  const j=await pcFetch('/compound/name/'+encodeURIComponent(name)+'/property/SMILES/JSON');
+  const p=j && j.PropertyTable && j.PropertyTable.Properties[0]; return p ? (p.SMILES || p.IsomericSMILES || p.CanonicalSMILES) : null;
+}
+function casValid(c){ const m=/^(\d{2,7})-(\d{2})-(\d)$/.exec(c); if (!m) return false; const d=(m[1]+m[2]).split('').reverse(); return d.reduce((s,x,i)=>s+(+x)*(i+1),0)%10===+m[3]; }
+async function pubchemLookup(smiles){
+  const j=await pcFetch('/compound/smiles/cids/JSON', 'smiles='+encodeURIComponent(smiles));
+  const cid=j && j.IdentifierList && j.IdentifierList.CID && j.IdentifierList.CID[0];
+  if (!cid) return null;
+  const [pj,sj]=await Promise.all([pcFetch(`/compound/cid/${cid}/property/Title,IUPACName,InChIKey,MolecularFormula/JSON`), pcFetch(`/compound/cid/${cid}/synonyms/JSON`)]);
+  const p=(pj && pj.PropertyTable.Properties[0])||{};
+  const syn=(sj && sj.InformationList && sj.InformationList.Information[0].Synonym)||[];
+  return {cid, title:p.Title||'', iupac:p.IUPACName||'', inchikey:p.InChIKey||'', cas:[...new Set(syn.filter(casValid))], synonyms:syn.filter(x=>!casValid(x)).slice(0,8)};
+}
+const webSearchUrl=q=>'https://www.google.com/search?q='+encodeURIComponent(q);
+function openExternal(url){ const w=window.open(url,'_blank','noopener,noreferrer'); if (!w) toast('Your browser blocked the new tab; allow pop-ups for this page'); }
+async function lookupOnline(){
+  const {ids,comps}=lookupIds();
+  if (!ids.length){ toast('Draw or select a structure first'); return; }
+  if (comps.length>1){ toast('Select one structure to look up (click it with the Select tool)'); return; }
+  let r=null; try{ r=analysisFor(ids); }catch(e){}
+  if (!r){ toast('Could not interpret this structure'); return; }
+  if (r.generic){ toast('Structures with R, X or custom labels can\u2019t be looked up'); return; }
+  const smi=r.smiles;
+  openDialog(`<h3>Name and CAS number</h3><p class="code" style="word-break:break-all">${esc(smi)}</p><div id="lkOut"><p>Looking this structure up on PubChem\u2026</p></div>
+    <p class="note">Sends only the SMILES above to PubChem (US National Library of Medicine). CAS numbers come from PubChem\u2019s synonym list; check important ones on CAS Common Chemistry.</p>
+    <div class="actions"><button class="tb" id="lkWeb">Search the web</button><button class="tb" data-close>Close</button></div>`);
+  let q=`"${smi}" CAS number`;
+  $('#lkWeb').onclick=()=>openExternal(webSearchUrl(q));
+  let res;
+  try{ res=await pubchemLookup(smi); }
+  catch(err){ if ($('#lkOut')) $('#lkOut').innerHTML='<p class="err">PubChem could not be reached. Check your internet connection, or use Search the web.</p>'; return; }
+  const out=$('#lkOut'); if (!out) return; // dialog closed meanwhile
+  if (!res){ out.innerHTML='<p>PubChem has no record of this exact structure (stereochemistry counts). Try Search the web, or remove stereo bonds and look up again.</p>'; return; }
+  q = res.title ? `${res.title} CAS number` : `${res.inchikey} CAS number`;
+  const casRow=c=>`<li><b class="code">${esc(c)}</b> <button class="mini" data-cp="${esc(c)}">Copy</button> <button class="mini" data-add="CAS ${esc(c)}">Add to drawing</button> <button class="mini" data-url="https://commonchemistry.cas.org/detail?cas_rn=${encodeURIComponent(c)}">Verify</button></li>`;
+  out.innerHTML=`<dl class="lk">
+      <dt>Name</dt><dd>${esc(res.title)||'\u2014'} ${res.title?`<button class="mini" data-cp="${esc(res.title)}">Copy</button> <button class="mini" data-add="${esc(res.title)}">Add to drawing</button>`:''}</dd>
+      ${res.iupac?`<dt>IUPAC</dt><dd>${esc(res.iupac)} <button class="mini" data-cp="${esc(res.iupac)}">Copy</button></dd>`:''}
+      <dt>CAS RN</dt><dd>${res.cas.length? `<ul class="caslist">${casRow(res.cas[0])}</ul>${res.cas.length>1?`<details><summary>${res.cas.length-1} more listed (often deprecated or for mixtures)</summary><ul class="caslist">${res.cas.slice(1,8).map(casRow).join('')}</ul></details>`:''}` : 'None listed on PubChem'}</dd>
+      <dt>InChIKey</dt><dd class="code">${esc(res.inchikey)} <button class="mini" data-cp="${esc(res.inchikey)}">Copy</button></dd>
+      <dt>PubChem</dt><dd><button class="mini" data-url="https://pubchem.ncbi.nlm.nih.gov/compound/${res.cid}">Open CID ${res.cid}</button></dd>
+    </dl>`;
+  out.onclick=e=>{ const b=e.target.closest('button'); if (!b) return;
+    if (b.dataset.cp) copyText(b.dataset.cp,'Copied');
+    else if (b.dataset.url) openExternal(b.dataset.url);
+    else if (b.dataset.add) addTextUnder(ids, b.dataset.add); };
+}
+function addTextUnder(ids, text){
+  const bb=bboxOf(fragPoints(ids)); pushUndo();
+  const below=doc.texts.filter(t=>t.x>=bb.x0 && t.x<=bb.x1 && t.y>bb.y1 && t.y<bb.y1+L*4).reduce((m,t)=>Math.max(m,t.y),bb.y1);
+  doc.texts.push({id:nid(), x:(bb.x0+bb.x1)/2, y:below+L*0.95, text}); changed(); toast('Added below the structure');
+}
+
+/* ================= context menu ================= */
+const ctxMenu=$('#ctxMenu');
+function closeCtx(){ ctxMenu.hidden=true; }
+cv.addEventListener('contextmenu', e=>{
+  e.preventDefault(); if (editingText) commitText();
+  const p=toDoc(e), h=hitTest(p,'mouse');
+  if (h && (h.type==='atom'||h.type==='bond')){ const id = h.type==='atom'? h.id : ix.bond.get(h.id).a; if (!sel.has('a'+id)){ sel=new Set(withGroups(fragmentKeys(id))); render(); scheduleAnalysis(); } }
+  else if (h && keyOf(h)){ if (!sel.has(keyOf(h))){ sel=new Set(withGroups([keyOf(h)])); render(); } }
+  const hasAtoms = selAtoms().length>0 || (!sel.size && doc.atoms.length>0);
+  ctxMenu.querySelectorAll('[data-need=atoms]').forEach(b=>b.disabled=!hasAtoms);
+  ctxMenu.querySelectorAll('[data-need=sel]').forEach(b=>b.disabled=!sel.size);
+  ctxMenu.hidden=false;
+  const w=ctxMenu.offsetWidth, hh=ctxMenu.offsetHeight;
+  ctxMenu.style.left=Math.max(4,Math.min(e.clientX, innerWidth-w-4))+'px'; ctxMenu.style.top=Math.max(4,Math.min(e.clientY, innerHeight-hh-4))+'px';
+});
+ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disabled) return; closeCtx();
+  const c=b.dataset.cmd;
+  if (c==='smiles') copySmiles();
+  else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
+  else if (c==='lookup') lookupOnline();
+  else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
+  else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
+  else if (c==='delete') deleteSel();
+};
+document.addEventListener('pointerdown', e=>{ if (!ctxMenu.contains(e.target)) closeCtx(); });
+window.addEventListener('keydown', e=>{ if (e.key==='Escape') closeCtx(); }, true);
+
 /* ================= analysis ================= */
 let _anT=null;
 function scheduleAnalysis(){ clearTimeout(_anT); _anT=setTimeout(analyzeNow,120); }
@@ -885,6 +989,7 @@ function reactionSmiles(){
   if (!R.length||!P.length) return null;
   return R.join('.')+'>'+A.join('.')+'>'+P.join('.');
 }
+$('#bLookup').onclick=()=>lookupOnline();
 $('#props').addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, 'Copied'); });
 $('#bAddInfo').addEventListener('click', ()=>{
   if (!lastAnalysis){ toast('Draw a structure first'); return; }
@@ -1094,9 +1199,14 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 
 function openSmilesDialog(){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
-  openDialog(`<h3>Insert from SMILES</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C) or a molfile.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
+  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C) or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
   dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
-  const go=()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string first.'; return; } if (tryLoadText(v)){ closeDialog(); } else $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; };
+  const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+    if (tryLoadText(v,true)){ closeDialog(); return; }
+    if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
+    $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
+    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; } $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
 function openElementDialog(){
@@ -1150,6 +1260,18 @@ const TEMPLATES=[
 function renderTemplates(){ $('#tpl').innerHTML=TEMPLATES.map(([n,s])=>`<button data-s="${esc(s)}">${esc(n)}</button>`).join(''); $('#tpl').onclick=e=>{ const b=e.target.closest('[data-s]'); if(b){ tryLoadText(b.dataset.s); closePanelMobile(); } }; }
 
 /* ================= wiring ================= */
+// side panel sections fold up; which ones are folded is remembered per browser
+(()=>{
+  let folded=[]; try{ folded=JSON.parse(localStorage.getItem('skeletal.folded')||'[]'); }catch(e){}
+  const save=()=>{ try{ localStorage.setItem('skeletal.folded', JSON.stringify([...document.querySelectorAll('.panel section.collapsed h2')].map(h=>h.textContent))); }catch(e){} };
+  document.querySelectorAll('.panel section > h2').forEach(h=>{
+    const name=h.textContent, sec=h.parentElement, b=document.createElement('button');
+    b.className='sechead'; b.textContent=name; h.textContent=''; h.appendChild(b);
+    const set=c=>{ sec.classList.toggle('collapsed',c); b.setAttribute('aria-expanded', String(!c)); };
+    set(folded.includes(name));
+    b.onclick=()=>{ set(!sec.classList.contains('collapsed')); save(); };
+  });
+})();
 $('#bUndo').onclick=undo; $('#bRedo').onclick=redo;
 $('#bClean').onclick=cleanUp; $('#bFlipH').onclick=()=>flip('h'); $('#bFlipV').onclick=()=>flip('v');
 const alignMenu=$('#alignMenu');
@@ -1278,7 +1400,7 @@ function buildProjectHtml(){
   dp.querySelectorAll('script:not([data-sk])').forEach(s=>s.remove());
   [...dp.head.children].forEach(c=>{ if (!c.hasAttribute('data-sk')) c.remove(); });
   [...dp.body.attributes].forEach(a=>dp.body.removeAttribute(a.name));
-  [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast','alignMenu'].includes(c.id) || (c.tagName==='SCRIPT' && c.hasAttribute('data-sk')))) c.remove(); });
+  [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast'].includes(c.id) || c.hasAttribute('data-sk'))) c.remove(); });
   const slot=dp.getElementById('sk-project');
   const data={...project, modified:Date.now()};
   slot.textContent=JSON.stringify(data).replace(/</g,'\\u003c');
