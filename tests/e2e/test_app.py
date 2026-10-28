@@ -549,9 +549,10 @@ def test_valence_errors_are_marked(page):
 def test_nmr_solving_guide(page):
     page.click("#bGuide")
     assert "DBE = 5" in page.inner_text("#gcFout")
-    page.fill("#gcF", "C6H6"); assert "DBE = 4" in page.inner_text("#gcFout")
-    page.fill("#gc13", "88"); assert "C4H8O2" in page.inner_text("#gc13out").replace("\n", "")
-    page.fill("#gcI", "2, 3"); page.fill("#gcIH", "10"); assert page.inner_text("#gcIout").startswith("4H : 6H")
+    # wait for each result to update rather than reading it at once (CI machines are slower)
+    page.fill("#gcF", "C6H6"); wait_until(page, "document.getElementById('gcFout').innerText.includes('DBE = 4')")
+    page.fill("#gc13", "88"); wait_until(page, "document.getElementById('gc13out').innerText.includes('C4H8O2')")
+    page.fill("#gcI", "2, 3"); page.fill("#gcIH", "10"); wait_until(page, "document.getElementById('gcIout').innerText.startsWith('4H : 6H')")
     for tab in ["h1", "c13", "split", "aro", "methods", "examples", "sources"]:
         page.click(f"[data-gtab={tab}]")
         assert page.locator("#dialog .tabs [aria-pressed=true]").get_attribute("data-gtab") == tab

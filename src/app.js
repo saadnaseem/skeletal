@@ -1950,7 +1950,8 @@ function openNmrGuide(tab){
         $('#gc13out').innerHTML = out.length? 'Candidates: '+out.slice(0,8).join(', ') : 'No C/H/N/O candidates'; }catch(e){ $('#gc13out').textContent=e.message; } };
     const upI=()=>{ const v=$('#gcI').value.split(/[,\s]+/).filter(Boolean), r=G.scaleIntegrals(v, +$('#gcIH').value);
       $('#gcIout').innerHTML = r.length ? r.map(x=>`<b>${Number.isInteger(x.h)?x.h:x.h.toFixed(2)}H</b>`).join(' : ') + (+$('#gcIH').value? '' : ' (ratio; add the total H to get counts)') : ''; };
-    ['gcF'].forEach(id=>$('#'+id).addEventListener('input',upF)); $('#gc13').addEventListener('input',up13); ['gcI','gcIH'].forEach(id=>$('#'+id).addEventListener('input',upI));
+    const on=(id,f)=>{ const el=$('#'+id); el.addEventListener('input',f); el.addEventListener('change',f); }; // number fields: some browsers only fire change
+    on('gcF',upF); on('gc13',up13); on('gcI',upI); on('gcIH',upI);
     upF(); up13(); upI();
   }
   if (guideTab==='aro'){
