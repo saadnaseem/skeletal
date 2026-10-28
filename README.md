@@ -2,7 +2,7 @@
 
 A chemical structure editor that runs entirely in the browser. Draw molecules, reactions and arrow-pushing mechanisms in ACS journal style, then copy them into PowerPoint or Word or export them as PNG, SVG or PDF. Built-in tools estimate ¹H/¹³C NMR spectra, pKa values and bond dissociation energies, and look up NMR solvent and impurity peaks.
 
-The whole app is one HTML file (about 1.3 MB). It needs no server, no install and no account, and works offline.
+The whole app is one HTML file (about 2.4 MB). It needs no server, no install and no account, and works offline. The only exceptions are the name/CAS lookup and the database search, which you start yourself.
 
 ![Editor with a reaction scheme](docs/editor.png)
 
@@ -28,7 +28,8 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - Text with automatic chemical subscripts (H2SO4 → H₂SO₄) and `^` superscripts (Fe^3+). Each text box can have its own font, size, bold, italic, alignment and color.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
-- Insert structures from SMILES, reaction SMILES (`A.B>>C`) or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem.
+- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
+- **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
 - **Groups** (Ctrl+G): a structure and its label select, move and align as one.
 - **Smart guides**: while you drag, the selection snaps to the centers and edges of other structures. Hold Alt to drag freely.
 - Right-click a structure to copy its SMILES or molfile, or to look up its name and CAS number.
@@ -40,6 +41,16 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - **Download PNG** saves a 600 dpi file with the dpi recorded, so it inserts at true size.
 - **Download SVG** gives vector graphics; PowerPoint can convert them to shapes.
 - **Vector PDF** export with standard fonts: cropped to the drawing, the whole document, or tiled printable sheets.
+- **Save as…** (Ctrl+Shift+S) lists every format in one place:
+
+  | Kind | Formats |
+  | --- | --- |
+  | Images | PNG, JPEG, WebP, GIF, SVG, PDF, EPS |
+  | ChemDraw | CDXML and CDX, both writing and opening. These keep the document style, labels, nicknames, stereo bonds, arrows, text and colors |
+  | Structure files | Molfile V2000 and V3000, SD file, RXN V2000 and V3000, SMILES, SMARTS, InChI, InChIKey, CML (writing and opening), Marvin MRV (writing and opening), JME, chemfig (LaTeX) |
+  | 3D | XYZ, PDB, 3D SD file, from a generated conformer |
+
+  InChI and InChIKey come from the official IUPAC InChI library, bundled as WebAssembly, so they work offline. Retired formats from ChemDraw's list (ISIS Sketch and TGF, SMD, PICT, MIF, SWF, WMF, Sybyl SLN) are not written; SVG, PDF and EPS cover their uses.
 - **Document size:**
   - Letter, A4, Legal, Tabloid, A3, ACS single column (3.33 in), ACS double column (7 in), 16:9 and 4:3 slides, or a custom size.
   - Portrait or landscape.
@@ -52,8 +63,16 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - Exported PNGs and SVGs carry the drawing data, so you can open them in Skeletal and edit them again.
 
 ### Chemistry tools
+- **Mass spectrum:**
+  - Monoisotopic mass, plus the m/z of common adducts: [M+H]⁺, [M+Na]⁺, [M+K]⁺, [M+NH₄]⁺, [M+2H]²⁺, M⁺•, [M−H]⁻, [M+Cl]⁻ and [M+HCOO]⁻.
+  - A journal-style HRMS line you can copy.
+  - The isotope pattern, as a plot and a table.
+  - A **predicted MS/MS** spectrum for [M+H]⁺ or [M−H]⁻ at three collision energies. It is rule-based: bond cleavages, ring openings and common neutral losses. Clicking a peak shows which atoms the fragment ion keeps and which bonds break.
+  - The Analysis panel also shows m/z for [M+H]⁺.
+- **3D view:** a conformer from OpenChemLib, refined with MMFF94s, in ball-and-stick, space-filling or stick style. You can rotate and zoom it, and export it as XYZ, PDB, 3D SDF or PNG. It works offline.
+- **Find in databases:** sends the structure to PubChem (exact, similarity, substructure or superstructure search), RCSB PDB ligands, ChEMBL, or Google and Google Scholar by InChIKey.
 - **Name and CAS lookup:** finds the name, IUPAC name, CAS Registry Number, InChIKey and PubChem record for the selected structure, with links to verify the CAS number on CAS Common Chemistry or search the web. This is the only feature that uses the internet. It sends only the structure's SMILES to PubChem, and only when you click it.
-- **Analysis panel:** SMILES, formula, MW, exact mass, cLogP, tPSA, H-bond donors and acceptors, rotatable bonds, stereocenters and molfile, plus reaction SMILES built from the drawn arrow.
+- **Analysis panel:** SMILES, InChI, InChIKey, formula, MW, exact mass, cLogP, tPSA, H-bond donors and acceptors, rotatable bonds, stereocenters and molfile, plus reaction SMILES built from the drawn arrow.
 - **NMR prediction:**
   - ¹H and ¹³C shifts written on the structure, a simulated spectrum and a peak table with multiplicity, J and integration.
   - An optional overlay of solvent residual and water peaks.
@@ -113,10 +132,16 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/skeletal.html
-npm test             # 83 unit tests (Node test runner)
+npm test             # 99 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 33 browser tests (Playwright)
+npm run test:e2e     # 41 browser tests (Playwright)
+```
+
+To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
+
+```bash
+node scripts/gen_format_samples.mjs out && python scripts/check_formats.py out
 ```
 
 ### Project layout
@@ -126,12 +151,16 @@ src/
   shell.html     page markup and CSS; the build fills in the /*OCL*/ and /*APP*/ markers
   core.js        data model, geometry, label layout, SVG rendering, OpenChemLib bridge, file sanitizer
   nmr.js         NMR, pKa and BDE estimators
-  pdf.js         vector PDF writer for the app's own SVG
+  pdf.js         vector PDF and EPS writer for the app's own SVG
   solvents.js    NMR solvent and impurity data (Fulmer et al. 2010)
+  formats.js     ChemDraw CDXML/CDX, CML, MRV, JME, chemfig, SDF and RXN writers and readers
+  ms.js          exact masses, adducts, isotope patterns, MS/MS fragment estimate
+  view3d.js      3D conformer view and XYZ/PDB export
   app.js         interaction, tools, pages and versions, export, dialogs
 scripts/
-  build.mjs      bundles OpenChemLib and inlines everything into one file
+  build.mjs      bundles OpenChemLib and InChI, embeds the 3D tables, inlines everything into one file
   validate.mjs   held-out accuracy check
+  gen_format_samples.mjs, check_formats.py   format cross-check against RDKit and Open Babel
 tests/unit/      chemistry, data and sanitizer tests (Node VM with DOM stubs)
 tests/e2e/       Playwright tests against dist/skeletal.html
 dist/            the built app (committed, so it can be downloaded directly)
@@ -166,5 +195,5 @@ Issues and pull requests are welcome. Please add a unit test for chemistry chang
 
 ## License and credits
 
-MIT (see [LICENSE](LICENSE)). The bundled [OpenChemLib JS](https://github.com/cheminfo/openchemlib-js) is BSD-3-Clause. Reference data are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT (see [LICENSE](LICENSE)). The bundled [OpenChemLib JS](https://github.com/cheminfo/openchemlib-js) is BSD-3-Clause, and [inchi-js](https://www.npmjs.com/package/inchi-js) with the IUPAC InChI library is MIT. Reference data are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 # skeletal

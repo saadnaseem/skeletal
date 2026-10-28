@@ -105,3 +105,44 @@ An independent pass: fresh install, unit and browser tests, and hands-on use on 
 5. **Combine arrow-key nudges into one undo step.** Each key press adds its own undo step, so nudging 20 times takes 20 undos. It can also push older history out of the 200-step limit.
 6. **Collapsible side panel.** The panel is long: Analysis, Text, Project, Export, Style, Templates and Shortcuts.
 7. **ES modules.** This is still the largest structural item (see Open items above). The id whitelist in #13 is one example of a coupling that is easy to break without noticing.
+
+## Third pass (October 2026): competitor features and file formats
+
+### How Skeletal compares now
+
+| Feature | Skeletal | MolDraw | MolView | ChemDraw |
+| --- | --- | --- | --- | --- |
+| ACS 1996 style by default | yes | no (serif labels) | no | yes |
+| Works offline, no account | yes | partly (Pro features need an account) | no | desktop app |
+| Write and open ChemDraw CDXML and CDX | yes | writes only | no | yes |
+| Molfile, SDF, RXN, SMILES, SMARTS, CML | yes | yes | SDF only | yes |
+| InChI and InChIKey | yes, offline | yes | search only | yes |
+| Marvin MRV, JME, chemfig | yes | chemfig only | no | MRV and JME |
+| JPEG, GIF, EPS | yes | JPEG only | no | yes |
+| Align, distribute, smart guides, groups | yes | groups and arrange presets | no | yes |
+| Lasso selection | yes | yes | no | yes |
+| NMR prediction | yes (¹H, ¹³C) | yes | no | yes (ChemNMR) |
+| m/z adducts and isotope pattern | yes | no | no | partly (Analysis window) |
+| MS/MS fragment estimate | yes | no | no | no (needs a separate tool) |
+| pKa, BDE, solvent impurity tables | yes | pKa only | no | no |
+| 3D view and 3D export | yes | yes | yes, more styles | via Chem3D |
+| Database search (PubChem, PDB, ChEMBL) | yes | ChEMBL and PubChem | PubChem | SciFinder |
+| AI chat and image-to-structure | no | Pro only | no | no |
+
+### Fixed in this pass
+
+| # | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 14 | **High (correctness)** | `toOCL` and `fromOCL` negated y, but OpenChemLib's y axis already points down. Every drawing reached OpenChemLib mirrored top to bottom, so drawn stereocenters were reported inverted (SMILES, molfile, InChI, lookups), and structures inserted from SMILES were drawn as the other enantiomer. Round trips hid this because the two flips cancelled. The RDKit and Open Babel format cross-check caught it. | The sign is removed in both functions and in Clean up. A browser test reads the screen geometry back through an independent molfile, and it fails on the old code. |
+| 15 | Low | Exporting InChI recomputed the 2D layout and lost the wedges. | Drawn coordinates are now used. |
+
+### Still open
+- **EPS** output follows the PDF writer, but no PostScript interpreter was available to render it. Run it through Ghostscript or Illustrator before relying on it.
+- **MS/MS** is a rule-based estimate, and its relative intensities are rough. A learned model such as CFM-ID would be better, but it can't run offline in a single file.
+- **Still missing from the competitor survey:**
+  - an option to show all C and H
+  - arrange presets (grid and circle)
+  - a stoichiometry table
+  - polymer brackets
+  - orbitals
+  - image-to-structure

@@ -105,3 +105,20 @@ SMILES, SMARTS, InChI, MDL Molfile, ISIS Sketch, ISIS TGF, ChemDraw CDX, ChemDra
 7. Lasso selection.
 8. Find in databases. Make NMR easier to reach.
 9. Browser tests, README, a comparison table in REVIEW.md, and a rebuild.
+
+## 7. Status (end of this pass)
+
+| Step | State |
+| --- | --- |
+| Formats (CDXML, CDX, CML, MRV, JME, chemfig, SDF, RXN, SMARTS, Molfile V2000/V3000) | Done. Cross-checked with RDKit and Open Babel: 0 failures |
+| InChI and InChIKey | Done. Offline, stereo preserved |
+| Save as dialog; reading CDXML, CDX, CML, MRV and InChI | Done |
+| JPEG, WebP, GIF and EPS | Done. GIF was verified by decoding it in the browser. **EPS has not yet been rendered by a PostScript interpreter** (none is installed here) |
+| m/z table and isotope pattern | Done. Checked against reference masses and Cl/Br patterns |
+| MS/MS estimate | Done. It reproduces known major fragments (benzoyl 105, paracetamol 110, dopamine 137, aspirin [M−H]⁻ 137) |
+| Lasso | Done |
+| Find in databases | Done. All URLs were checked live |
+| 3D view and XYZ/PDB/3D SDF | Done. This was the optional step |
+| Show all C and H, arrange presets, stoichiometry table, brackets and orbitals | Not started |
+
+The format cross-check also found that stereochemistry was mirrored between the drawing and OpenChemLib. This bug had been there all along, and it is now fixed and covered by a test.
