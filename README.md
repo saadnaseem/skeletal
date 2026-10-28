@@ -152,7 +152,7 @@ npm run build        # writes dist/skeletal.html
 npm test             # 104 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 50 browser tests (Playwright)
+npm run test:e2e     # 49 browser tests (Playwright)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
