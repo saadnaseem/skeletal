@@ -211,6 +211,11 @@ function renderNow(){
   }
   if (infoSite){ if (infoSite.atom!=null){ const a=ix.atom.get(infoSite.atom); if(a) ov.push(`<circle cx="${a.x}" cy="${a.y}" r="${f2(L*0.34)}" fill="#f2b705" fill-opacity=".35" stroke="#c48f00" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`); }
     if (infoSite.bond!=null){ const b=ix.bond.get(infoSite.bond); if(b){ const A=ix.atom.get(b.a),B=ix.atom.get(b.b); ov.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#f2b705" stroke-opacity=".5" stroke-width="${f2(L*0.4)}" stroke-linecap="round"/>`);} } }
+  // valence errors: a red box like ChemDraw's (on screen only, never exported)
+  const bad=[]; for (const a of doc.atoms){ const e=valenceError(a,ix); if (e) bad.push([a,e]); }
+  for (const [a] of bad){ const lb=labels.get(a.id), b=lb&&lb.visible&&lb.box ? lb.box : {x0:a.x-L*0.22,y0:a.y-L*0.22,x1:a.x+L*0.22,y1:a.y+L*0.22};
+    ov.push(`<rect x="${f2(b.x0-1)}" y="${f2(b.y0-1)}" width="${f2(b.x1-b.x0+2)}" height="${f2(b.y1-b.y0+2)}" fill="#e03131" fill-opacity=".12" stroke="#e03131" stroke-width="1.4" vector-effect="non-scaling-stroke"/>`); }
+  const vw=$('#valWarn'); if (vw){ vw.hidden=!bad.length; if (bad.length){ vw.textContent = bad.length===1 ? '\u26A0 '+bad[0][1].why : `\u26A0 ${bad.length} atoms have too many bonds`; vw._ids=bad.map(([a])=>a.id); } }
   // selection frame & handles
   if (tool.id==='select' && sel.size){
     const ar=selectedArrowSingle();
@@ -1181,6 +1186,7 @@ function reactionSmiles(){
 $('#bLookup').onclick=()=>lookupOnline();
 $('#bMs').onclick=()=>openMs();
 $('#bAnalyze').onclick=()=>analyzeNow();
+$('#valWarn').onclick=()=>{ const ids=$('#valWarn')._ids||[]; if (!ids.length) return; if (tool.id!=='select') setTool('select'); sel=new Set(ids.map(id=>'a'+id)); render(); toast('Selected the atoms with too many bonds'); };
 $('#bTlc').onclick=()=>openTlcDialog();
 $('#b3d').onclick=()=>open3d();
 $('#bFindDb').onclick=()=>openFindDb();

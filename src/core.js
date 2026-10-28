@@ -151,6 +151,19 @@ function implicitH(atom, bsum){
   }
   return 0;
 }
+// atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
+function valenceError(atom, ix){
+  const n=(ix.adj.get(atom.id)||[]).length, k=kindOf(atom.el);
+  if (k==='abbr') return n>1 ? {have:n, max:1, why:`${atom.el} has ${n} bonds (a group label takes one)`} : null;
+  if (k!=='element') return null;
+  const vals=VAL[atom.el]; if (!vals) return null; // metals: no fixed valence
+  const g=GROUP[atom.el], ch=atom.charge||0;
+  let max=-1; for (const v0 of vals){ let v=v0; if (g==='c') v=v0-Math.abs(ch); else if (g==='n'||g==='o'||g==='x') v=v0+ch; else if (g==='b') v=v0-ch; else if (g==='h') v=v0-Math.abs(ch); max=Math.max(max,v, v0>vals[0]? v0+Math.abs(ch) : -1); } // hypervalent states take a charge as an extra bond (PF6-, IF6-)
+  const have=bondSum(ix,atom.id)+(atom.rad?1:0);
+  if (have<=max) return null;
+  const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
+  return {have, max, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; at most ${max}`};
+}
 function components(d, ix, atomIds){
   const allowed = atomIds ? new Set(atomIds) : null;
   const seen=new Set(), comps=[];

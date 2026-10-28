@@ -520,3 +520,19 @@ def test_analysis_runs_only_on_request(page):
     page.evaluate("tryLoadText('CCO')")
     assert "Press Analyze" in page.inner_text("#scope")
     assert page.evaluate("document.getElementById('props').classList.contains('stale')")
+
+
+def test_valence_errors_are_marked(page):
+    errs = "doc.atoms.map(a=>valenceError(a,ix)).filter(Boolean).map(e=>e.why)"
+    page.evaluate("tryLoadText('CC(C)(C)C'); const c=doc.atoms.find(a=>ix.adj.get(a.id).length===4); placeBondFrom(c, nextDir(c), 1, 'none'); changed()")
+    assert page.evaluate(errs) == ["C has 5 bonds; at most 4"]
+    assert page.is_visible("#valWarn") and "at most 4" in page.inner_text("#valWarn")
+    assert 'stroke="#e03131"' in page.evaluate("cv.innerHTML")
+    assert "#e03131" not in page.evaluate("exportSVG(subDoc(null),{transparent:true}).svg")  # never exported
+    page.click("#valWarn")
+    assert page.evaluate("selAtoms().length") == 1
+    for smi in ["C[N+](C)(C)C", "CS(=O)(=O)C", "C=C=C", "[CH2]C", "F[P-](F)(F)(F)(F)F"]:
+        page.evaluate(f"loadProject(newProject()); tryLoadText('{smi}')")
+        assert page.evaluate(errs) == [], smi
+    page.keyboard.press("Control+z")
+    assert page.is_hidden("#valWarn")
