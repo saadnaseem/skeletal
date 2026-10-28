@@ -63,3 +63,25 @@ npm install && npm run build
 npm test && npm run validate
 pip install -r requirements-dev.txt && python -m playwright install chromium && npm run test:e2e
 ```
+
+## Second review (October 2026)
+
+An independent pass: fresh install, unit and browser tests, and hands-on use on desktop and phone viewports.
+
+### Fixed in this pass
+
+| # | Finding | Fix |
+| --- | --- | --- |
+| 11 | `npm test` found no files on Node 20, the documented minimum. The quoted glob is only expanded by Node 21+, and CI runs Node 22, so it never showed up there. | The script now passes the `tests/unit/` folder, which works on Node 20 and later. |
+| 12 | There was no way to line structures up or space them evenly. In ChemDraw this is a routine last step before a scheme goes into a paper. | New **Align** menu: left, center, right, top, middle and bottom alignment, equal spacing across or down, and **Scheme row** (align middles, then space evenly). Compound numbers and curly arrows move with their structure. Two browser tests added. |
+| 13 | Found while adding #12: **Save project (.html)** keeps only the top-level elements it knows by id, so any new top-level element is silently dropped, and the reopened file breaks. The existing round-trip test caught this. | The Align menu is on the list. Anyone adding a new top-level element needs to add it there too. |
+
+### Recommended next steps, in priority order
+
+1. **Groups (Ctrl+G).** Alignment has to guess which labels belong to which structure. It attaches text and curly arrows within about 1.6 bond lengths. An explicit group would make this exact, and would also let users move a structure together with its label.
+2. **Fixed-gap spacing.** Scheme row keeps the outer pieces where they are and shares out the space between them. A "gap = N bond lengths" option would give the same spacing across every scheme in a paper.
+3. **Smart guides while dragging**, as in PowerPoint: snap to the centerlines and edges of other structures. Most alignment would then happen without opening a menu.
+4. **Make Delete with no selection safer.** Pressing Delete deletes whatever the cursor is over, and that is easy to trigger by accident. Require a selection, or at least flash the item first.
+5. **Combine arrow-key nudges into one undo step.** Each key press adds its own undo step, so nudging 20 times takes 20 undos. It can also push older history out of the 200-step limit.
+6. **Collapsible side panel.** The panel is long: Analysis, Text, Project, Export, Style, Templates and Shortcuts.
+7. **ES modules.** This is still the largest structural item (see Open items above). The id whitelist in #13 is one example of a coupling that is easy to break without noticing.
