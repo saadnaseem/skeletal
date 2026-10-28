@@ -7,7 +7,7 @@ const pageState = new Map();
 let sel = new Set();          // keys: a<id>, r<id> (arrow), t<id>, p<id>
 let hover = null, drag = null, preview = null;
 let view = {z:3, ox:0, oy:0};
-let tool = {id:'bond', bond:{order:1,stereo:'none'}, ring:6, arom:true, el:'N', arrow:'reaction', charge:1, textStyle:{}};
+let tool = {lasso:false, id:'bond', bond:{order:1,stereo:'none'}, ring:6, arom:true, el:'N', arrow:'reaction', charge:1, textStyle:{}};
 let undoStack=[], redoStack=[], clip=null, spaceDown=false, editingText=null;
 const cv=document.getElementById('cv'), stage=document.getElementById('stage');
 const $=s=>document.querySelector(s);
@@ -218,6 +218,7 @@ function render(){
     if (preview.lines) for (const [a,b] of preview.lines) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="${SELC}" stroke-width="${S().lineWidth*1.4}" stroke-linecap="round"/>`);
     if (preview.rect){ const r=preview.rect; ov.push(`<rect x="${f2(Math.min(r.x0,r.x1))}" y="${f2(Math.min(r.y0,r.y1))}" width="${f2(Math.abs(r.x1-r.x0))}" height="${f2(Math.abs(r.y1-r.y0))}" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
     if (preview.arrow){ const o=[]; renderArrow(doc,preview.arrow,o,SELC); ov.push(o.join('')); }
+    if (preview.poly){ ov.push(`<path d="M${preview.poly.map(q=>f2(q.x)+' '+f2(q.y)).join('L')}Z" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
     if (preview.guides) for (const [a,b] of preview.guides) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="#d6336c" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
     if (preview.label) ov.push(`<text x="${f2(preview.label.x)}" y="${f2(preview.label.y)}" font-size="${f2(11/z)}" fill="${SELC}" font-family="${esc(FONT)}">${esc(preview.label.t)}</text>`);
   }
@@ -301,7 +302,7 @@ function beginTool(d){
     const k = h ? (h.type==='bond' ? null : keyOf(h)) : null;
     if (h && h.type==='bond'){ const b=ix.bond.get(h.id); d.bondKeys=['a'+b.a,'a'+b.b]; d.sub = sel.has('a'+b.a)&&sel.has('a'+b.b) ? 'move' : 'pending'; return; }
     if (k){ d.key=k; d.sub = sel.has(k) ? 'move' : 'pending'; return; }
-    d.sub='rect'; if (!d.shift){ sel.clear(); render(); }
+    d.sub = tool.lasso ? 'lasso' : 'rect'; if (d.sub==='lasso') d.path=[d.start]; if (!d.shift){ sel.clear(); render(); }
     return;
   }
   if (tool.id==='erase'){ if (h && h.type!=='handle'){ ensureUndo(d); eraseAt(h); render(); } return; }
@@ -341,6 +342,7 @@ function moveTool(d,p){
       preview = lines.length ? {guides:lines} : null; render(); return; }
     if (d.sub==='atom'){ ensureUndo(d); const a=ix.atom.get(d.atomId); a.x+=p.x-d.last.x; a.y+=p.y-d.last.y; render(); return; }
     if (d.sub==='rect'){ preview={rect:{x0:d.start.x,y0:d.start.y,x1:p.x,y1:p.y}}; render(); return; }
+    if (d.sub==='lasso'){ if (dist(p,d.path[d.path.length-1])>2/view.z) d.path.push(p); preview={poly:d.path}; render(); return; }
     if (d.sub==='handle'){
       ensureUndo(d); const h=d.hit;
       if (h.h==='rotate'){
@@ -391,8 +393,16 @@ function endTool(d,p){
         for (const q of doc.pluses) if (inR(q)) sel.add('p'+q.id); }
       return;
     }
+    if (d.sub==='lasso' && d.moved && d.path.length>2){
+      const P=d.path, inP=q=>{ let c=false; for (let i=0,j=P.length-1;i<P.length;j=i++){ const a=P[i], b=P[j]; if ((a.y>q.y)!==(b.y>q.y) && q.x < (b.x-a.x)*(q.y-a.y)/(b.y-a.y)+a.x) c=!c; } return c; };
+      for (const a of doc.atoms) if (inP(a)) sel.add('a'+a.id);
+      for (const ar of doc.arrows) if (inP(V(ar.x1,ar.y1))&&inP(V(ar.x2,ar.y2))) sel.add('r'+ar.id);
+      for (const t of doc.texts) if (inP(t)) sel.add('t'+t.id);
+      for (const q of doc.pluses) if (inP(q)) sel.add('p'+q.id);
+      return;
+    }
     if (!d.moved){
-      if (d.sub==='rect'){ if(!d.shift) sel.clear(); return; }
+      if (d.sub==='rect' || d.sub==='lasso'){ if(!d.shift) sel.clear(); return; }
       if (d.sub==='handle') return;
       let keys = d.bondKeys ? fragmentKeys(+d.bondKeys[0].slice(1)) : d.key && d.key[0]==='a' ? fragmentKeys(+d.key.slice(1)) : [d.key];
       keys=withGroups(keys);
@@ -560,7 +570,9 @@ window.addEventListener('keydown', e=>{
     if (k==='x'){ pushUndo(); b.order=1; b.stereo='hash'; changed(); return; }
   }
   const map={v:'select',e:'erase',t:'text'};
-  if (map[k]) setTool(map[k]);
+  if (k==='v') setTool('select',{lasso:false});
+  else if (k==='l') setTool('select',{lasso:true});
+  else if (map[k]) setTool(map[k]);
   else if (k==='1') setTool('bond',{order:1,stereo:'none'});
   else if (k==='2') setTool('bond',{order:2,stereo:'none'});
   else if (k==='3') setTool('bond',{order:3,stereo:'none'});
@@ -1136,7 +1148,8 @@ function polyIcon(n, inner){ const pts=[]; for(let k=0;k<n;k++){ const t=-Math.P
   return ic(s); }
 const TOOLS = [
   {g:'basic', items:[
-    {id:'select', t:'Select and move (V)', i:ic('<path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1.1-2.6-6.6L6 18z" fill="currentColor" stroke-width="1.2"/>')},
+    {id:'select', o:{lasso:false}, t:'Select and move (V): drag a box', i:ic('<path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1.1-2.6-6.6L6 18z" fill="currentColor" stroke-width="1.2"/>')},
+    {id:'select', o:{lasso:true}, t:'Lasso select (L): drag a freehand loop', i:ic('<path d="M12 4c5 0 8 2.2 8 5s-3.6 5-8 5c-1.7 0-3.3-.3-4.5-.9" stroke-dasharray="2.4 2"/><path d="M7.5 13.1C5.4 12.2 4 10.7 4 9c0-2.8 3.6-5 8-5"/><path d="M7.5 13.1c-.6 1.6.2 3.4 1.6 4.4 1 .7 1.1 2 .3 2.9"/>')},
     {id:'erase', t:'Eraser (E)', i:ic('<path d="M4 16l9-9 6 6-7 7H7z"/><path d="M9 11l6 6M12 20h8"/>')},
     {id:'text', t:'Text (T)', i:ic('<path d="M6 5h12M12 5v14M9 19h6"/>')},
   ]},
