@@ -218,6 +218,7 @@ function render(){
     if (preview.lines) for (const [a,b] of preview.lines) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="${SELC}" stroke-width="${S().lineWidth*1.4}" stroke-linecap="round"/>`);
     if (preview.rect){ const r=preview.rect; ov.push(`<rect x="${f2(Math.min(r.x0,r.x1))}" y="${f2(Math.min(r.y0,r.y1))}" width="${f2(Math.abs(r.x1-r.x0))}" height="${f2(Math.abs(r.y1-r.y0))}" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
     if (preview.arrow){ const o=[]; renderArrow(doc,preview.arrow,o,SELC); ov.push(o.join('')); }
+    if (preview.guides) for (const [a,b] of preview.guides) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="#d6336c" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
     if (preview.label) ov.push(`<text x="${f2(preview.label.x)}" y="${f2(preview.label.y)}" font-size="${f2(11/z)}" fill="${SELC}" font-family="${esc(FONT)}">${esc(preview.label.t)}</text>`);
   }
   cv.innerHTML=`<g transform="translate(${f2(view.ox)},${f2(view.oy)}) scale(${view.z})">${renderPageBackdrop()}${ov.join('')}${svg}</g>`;
@@ -330,9 +331,14 @@ function moveTool(d,p){
     if (d.sub==='pending'){
       // decide: dragging an unselected atom moves just the atom; others select fragment then move
       if (d.key && d.key[0]==='a'){ d.sub='atom'; d.atomId=+d.key.slice(1); }
-      else { if (!d.shift) sel.clear(); if (d.bondKeys) fragmentKeys(+d.bondKeys[0].slice(1)).forEach(k=>sel.add(k)); else sel.add(d.key); d.sub='move'; }
+      else { if (!d.shift) sel.clear(); withGroups(d.bondKeys ? fragmentKeys(+d.bondKeys[0].slice(1)) : [d.key]).forEach(k=>sel.add(k)); d.sub='move'; }
     }
-    if (d.sub==='move'){ ensureUndo(d); moveSel(p.x-d.last.x,p.y-d.last.y); render(); return; }
+    if (d.sub==='move'){ ensureUndo(d);
+      if (!d.applied){ d.applied=V(0,0); d.guide=guideSetup(); }
+      let off=sub(p,d.start), lines=[];
+      if (!d.alt && d.guide) ({off,lines}=snapToGuides(d.guide,off));
+      moveSel(off.x-d.applied.x, off.y-d.applied.y); d.applied=off;
+      preview = lines.length ? {guides:lines} : null; render(); return; }
     if (d.sub==='atom'){ ensureUndo(d); const a=ix.atom.get(d.atomId); a.x+=p.x-d.last.x; a.y+=p.y-d.last.y; render(); return; }
     if (d.sub==='rect'){ preview={rect:{x0:d.start.x,y0:d.start.y,x1:p.x,y1:p.y}}; render(); return; }
     if (d.sub==='handle'){
@@ -389,6 +395,7 @@ function endTool(d,p){
       if (d.sub==='rect'){ if(!d.shift) sel.clear(); return; }
       if (d.sub==='handle') return;
       let keys = d.bondKeys ? fragmentKeys(+d.bondKeys[0].slice(1)) : d.key && d.key[0]==='a' ? fragmentKeys(+d.key.slice(1)) : [d.key];
+      keys=withGroups(keys);
       if (d.shift){ const all=keys.every(k=>sel.has(k)); keys.forEach(k=> all? sel.delete(k) : sel.add(k)); }
       else { sel.clear(); keys.forEach(k=>sel.add(k)); }
       return;
@@ -511,6 +518,7 @@ function commitText(){
 }
 
 /* ================= keyboard ================= */
+let _nudge={depth:-1,t:0}; // consecutive arrow-key nudges share one undo step
 const HOTKEY_EL={c:'C',n:'N',o:'O',s:'S',p:'P',f:'F',l:'Cl',b:'Br',i:'I',h:'H'};
 window.addEventListener('keydown', e=>{
   if (e.target.closest && e.target.closest('input,textarea,select,.dialog')) return;
@@ -521,17 +529,20 @@ window.addEventListener('keydown', e=>{
   if (mod && e.key.toLowerCase()==='a'){ e.preventDefault(); selectAll(); return; }
   if (mod && e.key.toLowerCase()==='c'){ e.preventDefault(); clip=subDoc(sel.size?sel:null); copyImage(); return; }
   if (mod && e.key.toLowerCase()==='x'){ e.preventDefault(); if(!sel.size) return; clip=subDoc(sel); copyImage(); deleteSel(); return; }
+  if (mod && e.key.toLowerCase()==='g'){ e.preventDefault(); e.shiftKey? ungroupSel() : groupSel(); return; }
   if (mod && e.key.toLowerCase()==='d'){ e.preventDefault(); if(sel.size){ clip=subDoc(sel); pasteDoc(clip, L); } return; }
   if (mod) return;
   if (e.key==='Escape'){ sel.clear(); preview=null; closeInfo(); render(); return; }
   if (e.key==='Delete'||e.key==='Backspace'){
     e.preventDefault();
     if (sel.size){ deleteSel(); return; }
-    if (hover){ pushUndo(); eraseAt(hover); hover=null; changed(); }
+    if (hover) toast('Select something first, or use the eraser');
     return;
   }
   if (e.key==='['||e.key===']'){ if(!sel.size) return; const bb=selBBox(); const c=V((bb.x0+bb.x1)/2,(bb.y0+bb.y1)/2); pushUndo(); transformSel(q=>rotAround(q,c,(e.key===']'?1:-1)*Math.PI/12)); changed(); return; }
-  if (e.key.startsWith('Arrow') && sel.size){ e.preventDefault(); const s=e.shiftKey?5:1; pushUndo(); moveSel(e.key==='ArrowLeft'?-s:e.key==='ArrowRight'?s:0, e.key==='ArrowUp'?-s:e.key==='ArrowDown'?s:0); changed(); return; }
+  if (e.key.startsWith('Arrow') && sel.size){ e.preventDefault(); const s=e.shiftKey?5:1;
+    if (!(_nudge.depth===undoStack.length && !redoStack.length && Date.now()-_nudge.t<1500)) pushUndo();
+    _nudge={depth:undoStack.length, t:Date.now()}; moveSel(e.key==='ArrowLeft'?-s:e.key==='ArrowRight'?s:0, e.key==='ArrowUp'?-s:e.key==='ArrowDown'?s:0); changed(); return; }
   const k=e.key;
   if (hover && hover.type==='atom'){
     const a=ix.atom.get(hover.id); if(!a) return;
@@ -586,11 +597,12 @@ function pasteDoc(src, offset, at){
   let dx=offset||0, dy=offset||0;
   if (at && bb){ dx=at.x-(bb.x0+bb.x1)/2; dy=at.y-(bb.y0+bb.y1)/2; }
   sel.clear();
-  for (const a of src.atoms){ const n={...a,id:nid(),x:a.x+dx,y:a.y+dy}; idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
+  const gMap=new Map(); let gNext=maxGroup()+1; const G=o=>{ if (o.g==null) return o; if (!gMap.has(o.g)) gMap.set(o.g,gNext++); o.g=gMap.get(o.g); return o; };
+  for (const a of src.atoms){ const n=G({...a,id:nid(),x:a.x+dx,y:a.y+dy}); idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
   for (const b of src.bonds){ doc.bonds.push({...b,id:nid(),a:idMap.get(b.a),b:idMap.get(b.b)}); }
-  for (const r of src.arrows){ const n={...r,id:nid(),x1:r.x1+dx,y1:r.y1+dy,x2:r.x2+dx,y2:r.y2+dy}; if(r.cx!=null){n.cx=r.cx+dx;n.cy=r.cy+dy;} doc.arrows.push(n); sel.add('r'+n.id); }
-  for (const t of src.texts){ const n={...t,id:nid(),x:t.x+dx,y:t.y+dy}; doc.texts.push(n); sel.add('t'+n.id); }
-  for (const p of src.pluses){ const n={...p,id:nid(),x:p.x+dx,y:p.y+dy}; doc.pluses.push(n); sel.add('p'+n.id); }
+  for (const r of src.arrows){ const n=G({...r,id:nid(),x1:r.x1+dx,y1:r.y1+dy,x2:r.x2+dx,y2:r.y2+dy}); if(r.cx!=null){n.cx=r.cx+dx;n.cy=r.cy+dy;} doc.arrows.push(n); sel.add('r'+n.id); }
+  for (const t of src.texts){ const n=G({...t,id:nid(),x:t.x+dx,y:t.y+dy}); doc.texts.push(n); sel.add('t'+n.id); }
+  for (const p of src.pluses){ const n=G({...p,id:nid(),x:p.x+dx,y:p.y+dy}); doc.pluses.push(n); sel.add('p'+n.id); }
   if (tool.id!=='select') setTool('select');
   changed();
 }
@@ -719,6 +731,17 @@ function layoutUnits(keys){
     else if (t==='p'){ const q=ix.plus.get(id); units.push({keys:[k], bb:{x0:q.x-4,y0:q.y-4,x1:q.x+4,y1:q.y+4}, kind:'plus'}); }
     else if (t==='t'){ const x=ix.text.get(id), m=textMetrics(doc,x); riders.push({key:k, at:V(x.x,x.y), bb:{x0:x.x-m.w/2,y0:x.y-m.h/2,x1:x.x+m.w/2,y1:x.y+m.h/2}}); }
   }
+  // pieces in one group become one unit
+  const gOf=keys=>{ for (const k of keys){ const o=objOf(k); if (o && o.g) return o.g; } return 0; };
+  const byG=new Map();
+  for (let i=units.length-1;i>=0;i--){ const u=units[i], g=gOf(u.keys); if (!g) continue;
+    const m=byG.get(g); if (!m){ byG.set(g,u); continue; }
+    m.keys.push(...u.keys); m.bb={x0:Math.min(m.bb.x0,u.bb.x0),y0:Math.min(m.bb.y0,u.bb.y0),x1:Math.max(m.bb.x1,u.bb.x1),y1:Math.max(m.bb.y1,u.bb.y1)}; if (u.kind==='frag') m.kind='frag'; units.splice(i,1); }
+  for (let i=riders.length-1;i>=0;i--){ const rd=riders[i], o=objOf(rd.key); if (!o.g) continue;
+    const u=byG.get(o.g);
+    if (u){ u.keys.push(rd.key); if (u.kind==='text' && rd.bb) u.bb={x0:Math.min(u.bb.x0,rd.bb.x0),y0:Math.min(u.bb.y0,rd.bb.y0),x1:Math.max(u.bb.x1,rd.bb.x1),y1:Math.max(u.bb.y1,rd.bb.y1)}; }
+    else { const bb=rd.bb||{x0:rd.at.x,y0:rd.at.y,x1:rd.at.x,y1:rd.at.y}; const nu={keys:[rd.key], bb:{...bb}, kind:'text'}; byG.set(o.g,nu); units.push(nu); }
+    riders.splice(i,1); }
   for (const rd of riders){
     let best=null, bd=L*1.6;
     for (const u of units){ if (u.kind==='plus') continue;
@@ -729,7 +752,54 @@ function layoutUnits(keys){
   }
   return units;
 }
+/* smart guides: while dragging, snap the selection's edges and centers to other pieces (Alt turns it off) */
+function guideSetup(){
+  const mine=layoutUnits(sel); if (!mine.length) return null;
+  const rest=new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id)].filter(k=>!sel.has(k)));
+  const others=rest.size ? layoutUnits(rest).map(u=>u.bb).slice(0,400) : [];
+  return others.length ? {mov:bboxOf(mine.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)])), others} : null;
+}
+function snapToGuides(g, off){
+  const thr=6/view.z, m={x0:g.mov.x0+off.x, x1:g.mov.x1+off.x, y0:g.mov.y0+off.y, y1:g.mov.y1+off.y};
+  const lines=[]; const out=V(off.x,off.y);
+  for (const ax of ['x','y']){
+    const lo=ax+'0', hi=ax+'1', mine=[m[lo],(m[lo]+m[hi])/2,m[hi]];
+    let best=null;
+    for (const o of g.others){ const theirs=[o[lo],(o[lo]+o[hi])/2,o[hi]];
+      for (let i=0;i<3;i++) for (let j=0;j<3;j++){ const dd=theirs[j]-mine[i], sc=Math.abs(dd)+(i===1&&j===1?0:thr); // a center match always beats an edge match
+        if (Math.abs(dd)<thr && (!best || sc<best.sc-1e-6)) best={dd,sc,at:theirs[j],o}; } }
+    if (!best) continue;
+    out[ax]+=best.dd;
+    const c=ax==='x'?'y':'x', lo2=c+'0', hi2=c+'1', mlo=(c==='x'?m.x0:m.y0)+(c==='x'?out.x-off.x:out.y-off.y), mhi=(c==='x'?m.x1:m.y1)+(c==='x'?out.x-off.x:out.y-off.y);
+    const a=Math.min(best.o[lo2],mlo)-6, b=Math.max(best.o[hi2],mhi)+6;
+    lines.push(ax==='x' ? [V(best.at,a),V(best.at,b)] : [V(a,best.at),V(b,best.at)]);
+  }
+  return {off:out, lines};
+}
+
+/* groups: objects sharing a g id select, move and align together */
+function objOf(k){ const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus}[k[0]]; return m && m.get(+k.slice(1)); }
+function allObjects(){ return [...doc.atoms,...doc.arrows,...doc.texts,...doc.pluses]; }
+function maxGroup(){ let m=0; for (const o of allObjects()) if (o.g>m) m=o.g; return m; }
+function withGroups(keys){
+  const gs=new Set(); for (const k of keys){ const o=objOf(k); if (o && o.g) gs.add(o.g); }
+  if (!gs.size) return keys;
+  const out=new Set(keys);
+  for (const [t,arr] of [['a',doc.atoms],['r',doc.arrows],['t',doc.texts],['p',doc.pluses]]) for (const o of arr) if (gs.has(o.g)) out.add(t+o.id);
+  return [...out];
+}
+function groupSel(){
+  if (!sel.size){ toast('Select a structure and its label to group them'); return; }
+  const keys=new Set(sel); for (const id of selAtoms()) fragmentKeys(id).forEach(k=>keys.add(k));
+  pushUndo(); const g=maxGroup()+1; for (const k of keys){ const o=objOf(k); if (o) o.g=g; }
+  sel=new Set(keys); changed(); toast('Grouped. Click any part to select the group; Ctrl+Shift+G ungroups.');
+}
+function ungroupSel(){
+  const os=[...sel].map(objOf).filter(o=>o && o.g); if (!os.length){ toast('Nothing grouped in the selection'); return; }
+  pushUndo(); for (const o of os) delete o.g; changed(); toast('Ungrouped');
+}
 function moveKeys(keys,dx,dy){ const s=sel; sel=new Set(keys); moveSel(dx,dy); sel=s; }
+let alignGap=0; try{ alignGap=+localStorage.getItem('skeletal.alignGap')||0; }catch(e){} // fixed gap in bond lengths; 0 keeps the outer pieces in place
 // mode: left | center | right | top | middle | bottom | hspace | vspace | row (middle, then hspace)
 function arrange(mode){
   const all=!sel.size; const keys = all ? new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id)]) : sel;
@@ -747,8 +817,8 @@ function arrangeUnits(units,mode){
     const h=mode==='hspace', lo=h?'x0':'y0', hi=h?'x1':'y1';
     units.sort((a,b)=>(a.bb[lo]+a.bb[hi])-(b.bb[lo]+b.bb[hi]));
     const used=units.reduce((s,u)=>s+u.bb[hi]-u.bb[lo],0);
-    let gap=(B[hi]-B[lo]-used)/(units.length-1);
-    if (gap<L*0.8) gap=L*0.8; // overlapping pieces: spread them out instead
+    let gap = alignGap>0 ? alignGap*L : (B[hi]-B[lo]-used)/(units.length-1);
+    if (gap<L*0.8 && !(alignGap>0)) gap=L*0.8; // overlapping pieces: spread them out instead
     let at=B[lo];
     for (const u of units){ const d=at-u.bb[lo]; moveKeys(u.keys, h?d:0, h?0:d); at+=u.bb[hi]-u.bb[lo]+gap; }
   } else {
@@ -1092,7 +1162,9 @@ $('#bAlign').onclick=e=>{
   alignMenu.style.left=Math.max(8,Math.min(r.left, innerWidth-w-8))+'px'; alignMenu.style.top=(r.bottom+4)+'px';
   alignMenu.querySelector('button').focus();
 };
-alignMenu.onclick=e=>{ const b=e.target.closest('[data-align]'); if (!b) return; arrange(b.dataset.align); };
+alignMenu.onclick=e=>{ const b=e.target.closest('[data-align]'); if (!b) return; const m=b.dataset.align; if (m==='group') groupSel(); else if (m==='ungroup') ungroupSel(); else arrange(m); };
+$('#alignGap').value = alignGap>0 ? String(alignGap) : '';
+$('#alignGap').addEventListener('change', e=>{ const v=+e.target.value; alignGap = Number.isFinite(v) && v>0 ? Math.min(20,v) : 0; e.target.value = alignGap? String(alignGap) : ''; try{ localStorage.setItem('skeletal.alignGap', String(alignGap)); }catch(err){} });
 alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeAlignMenu(); $('#bAlign').focus(); } });
 document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
 $('#bSmiles').onclick=openSmilesDialog;
