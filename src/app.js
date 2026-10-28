@@ -700,6 +700,65 @@ function flip(axis){
   if (!keys) sel.clear();
   changed();
 }
+/* ================= align, distribute ================= */
+// The pieces that move as one: each connected structure, straight arrow, plus sign and free text.
+// Compound labels and curly arrows ride along with the structure (or arrow) they sit on, and don't count toward its box.
+function bboxOf(pts){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);} return {x0,y0,x1,y1}; }
+function fragPoints(ids){
+  const pts=[];
+  for (const id of ids){ const a=ix.atom.get(id), lb=layoutLabel(doc,ix,a);
+    if (lb.visible && lb.box) pts.push(V(lb.box.x0,lb.box.y0),V(lb.box.x1,lb.box.y1)); else pts.push(a); }
+  return pts;
+}
+function layoutUnits(keys){
+  const units=[], riders=[];
+  for (const comp of components(doc,ix,[...keys].filter(k=>k[0]==='a').map(k=>+k.slice(1))))
+    units.push({keys:comp.map(id=>'a'+id), bb:bboxOf(fragPoints(comp)), kind:'frag'});
+  for (const k of keys){ const t=k[0], id=+k.slice(1);
+    if (t==='r'){ const r=ix.arrow.get(id); if (CURVED.has(r.type)) riders.push({key:k, at:quadPt(V(r.x1,r.y1),arrowControl(r),V(r.x2,r.y2),0.5)}); else units.push({keys:[k], bb:bboxOf(arrowSamples(r)), kind:'arrow'}); }
+    else if (t==='p'){ const q=ix.plus.get(id); units.push({keys:[k], bb:{x0:q.x-4,y0:q.y-4,x1:q.x+4,y1:q.y+4}, kind:'plus'}); }
+    else if (t==='t'){ const x=ix.text.get(id), m=textMetrics(doc,x); riders.push({key:k, at:V(x.x,x.y), bb:{x0:x.x-m.w/2,y0:x.y-m.h/2,x1:x.x+m.w/2,y1:x.y+m.h/2}}); }
+  }
+  for (const rd of riders){
+    let best=null, bd=L*1.6;
+    for (const u of units){ if (u.kind==='plus') continue;
+      const dx=Math.max(u.bb.x0-rd.at.x,0,rd.at.x-u.bb.x1), dy=Math.max(u.bb.y0-rd.at.y,0,rd.at.y-u.bb.y1), dd=Math.hypot(dx,dy);
+      if (dd<bd){ bd=dd; best=u; } }
+    if (best) best.keys.push(rd.key);
+    else units.push({keys:[rd.key], bb: rd.bb || {x0:rd.at.x,y0:rd.at.y,x1:rd.at.x,y1:rd.at.y}, kind:'text'});
+  }
+  return units;
+}
+function moveKeys(keys,dx,dy){ const s=sel; sel=new Set(keys); moveSel(dx,dy); sel=s; }
+// mode: left | center | right | top | middle | bottom | hspace | vspace | row (middle, then hspace)
+function arrange(mode){
+  const all=!sel.size; const keys = all ? new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id)]) : sel;
+  const units=layoutUnits(keys);
+  if (units.length<2){ toast(all ? 'Draw at least two structures to align' : 'Select two or more structures to align'); return; }
+  pushUndo();
+  if (mode==='row'){ arrangeUnits(units,'middle'); arrangeUnits(layoutUnits(keys),'hspace'); }
+  else arrangeUnits(units,mode);
+  changed();
+}
+function arrangeUnits(units,mode){
+  const B=bboxOf(units.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)]));
+  const cx=(B.x0+B.x1)/2, cy=(B.y0+B.y1)/2;
+  if (mode==='hspace' || mode==='vspace'){
+    const h=mode==='hspace', lo=h?'x0':'y0', hi=h?'x1':'y1';
+    units.sort((a,b)=>(a.bb[lo]+a.bb[hi])-(b.bb[lo]+b.bb[hi]));
+    const used=units.reduce((s,u)=>s+u.bb[hi]-u.bb[lo],0);
+    let gap=(B[hi]-B[lo]-used)/(units.length-1);
+    if (gap<L*0.8) gap=L*0.8; // overlapping pieces: spread them out instead
+    let at=B[lo];
+    for (const u of units){ const d=at-u.bb[lo]; moveKeys(u.keys, h?d:0, h?0:d); at+=u.bb[hi]-u.bb[lo]+gap; }
+  } else {
+    for (const u of units){ const b=u.bb;
+      const dx = mode==='left'? B.x0-b.x0 : mode==='right'? B.x1-b.x1 : mode==='center'? cx-(b.x0+b.x1)/2 : 0;
+      const dy = mode==='top'? B.y0-b.y0 : mode==='bottom'? B.y1-b.y1 : mode==='middle'? cy-(b.y0+b.y1)/2 : 0;
+      moveKeys(u.keys,dx,dy); }
+  }
+}
+
 function selectAllSilent(){ doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); }
 
 /* ================= analysis ================= */
@@ -1006,6 +1065,19 @@ function renderTemplates(){ $('#tpl').innerHTML=TEMPLATES.map(([n,s])=>`<button 
 /* ================= wiring ================= */
 $('#bUndo').onclick=undo; $('#bRedo').onclick=redo;
 $('#bClean').onclick=cleanUp; $('#bFlipH').onclick=()=>flip('h'); $('#bFlipV').onclick=()=>flip('v');
+const alignMenu=$('#alignMenu');
+function closeAlignMenu(){ if (alignMenu.hidden) return; alignMenu.hidden=true; $('#bAlign').setAttribute('aria-expanded','false'); }
+$('#bAlign').onclick=e=>{
+  e.stopPropagation();
+  if (!alignMenu.hidden){ closeAlignMenu(); return; }
+  alignMenu.hidden=false; $('#bAlign').setAttribute('aria-expanded','true');
+  const r=$('#bAlign').getBoundingClientRect(), w=alignMenu.offsetWidth;
+  alignMenu.style.left=Math.max(8,Math.min(r.left, innerWidth-w-8))+'px'; alignMenu.style.top=(r.bottom+4)+'px';
+  alignMenu.querySelector('button').focus();
+};
+alignMenu.onclick=e=>{ const b=e.target.closest('[data-align]'); if (!b) return; arrange(b.dataset.align); };
+alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeAlignMenu(); $('#bAlign').focus(); } });
+document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
 $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bSaveHtml').onclick=saveHtml; $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>$('#fileIn').click();
@@ -1117,7 +1189,7 @@ function buildProjectHtml(){
   dp.querySelectorAll('script:not([data-sk])').forEach(s=>s.remove());
   [...dp.head.children].forEach(c=>{ if (!c.hasAttribute('data-sk')) c.remove(); });
   [...dp.body.attributes].forEach(a=>dp.body.removeAttribute(a.name));
-  [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast'].includes(c.id) || (c.tagName==='SCRIPT' && c.hasAttribute('data-sk')))) c.remove(); });
+  [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast','alignMenu'].includes(c.id) || (c.tagName==='SCRIPT' && c.hasAttribute('data-sk')))) c.remove(); });
   const slot=dp.getElementById('sk-project');
   const data={...project, modified:Date.now()};
   slot.textContent=JSON.stringify(data).replace(/</g,'\\u003c');

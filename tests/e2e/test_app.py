@@ -169,3 +169,35 @@ def test_new_project_asks_before_replacing_work(page):
     assert "New project" in page.inner_text("#dialog")
     page.click("#npGo")
     assert page.evaluate("doc.atoms.length") == 0 and page.evaluate("project.pages.length") == 1
+
+
+def test_align_menu_scheme_row_aligns_middles_and_spaces_evenly(page):
+    page.evaluate("""(()=>{
+      tryLoadText('CC(=O)c1ccccc1.OB(O)c1ccccc1>>O=C(C)c1ccc(cc1)-c1ccccc1');
+      components(doc,ix).forEach((c,i)=>{ for (const id of c){ const a=ix.atom.get(id); a.y+=[-40,25,-15][i]; a.x+=i*12; } });
+      const b=bboxOf(components(doc,ix)[0].map(id=>ix.atom.get(id)));
+      doc.texts.push({id:nid(), x:(b.x0+b.x1)/2, y:b.y1+16, text:'1'});
+      sel.clear(); changed();
+    })()""")
+    label_dy = page.evaluate("(()=>{ const t=doc.texts[0], a=ix.atom.get(components(doc,ix)[0][0]); return t.y-a.y })()")
+    page.click("#bAlign")
+    page.click("[data-align=row]")
+    r = page.evaluate("""(()=>{
+      const keys=new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id)]);
+      const u=layoutUnits(keys).sort((a,b)=>a.bb.x0-b.bb.x0);
+      const t=doc.texts[0], a=ix.atom.get(components(doc,ix)[0][0]);
+      return {mids:u.map(x=>(x.bb.y0+x.bb.y1)/2), gaps:u.slice(1).map((x,i)=>x.bb.x0-u[i].bb.x1), dy:t.y-a.y, n:u.length};
+    })()""")
+    assert r["n"] == 5  # 3 structures, a plus and an arrow; the label rides with structure 1
+    assert max(r["mids"]) - min(r["mids"]) < 0.01
+    assert max(r["gaps"]) - min(r["gaps"]) < 0.01 and min(r["gaps"]) > 0
+    assert abs(r["dy"] - label_dy) < 0.01
+    page.keyboard.press("Escape")
+    page.keyboard.press("Control+z")
+    assert page.evaluate("(()=>{ const c=components(doc,ix); return ix.atom.get(c[0][0]).y !== ix.atom.get(c[1][0]).y })()")
+
+
+def test_align_needs_two_pieces(page):
+    page.evaluate("tryLoadText('c1ccccc1')")
+    page.click("#bAlign"); page.click("[data-align=left]")
+    assert "two" in page.inner_text("#toast")

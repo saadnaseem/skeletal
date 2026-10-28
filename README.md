@@ -27,6 +27,7 @@ To host it, publish `dist/skeletal.html` with GitHub Pages or any static file se
 - Curved electron-pushing arrows (full and fishhook) with a draggable bend handle.
 - Text with automatic chemical subscripts (H2SO4 → H₂SO₄) and `^` superscripts (Fe^3+). Each text box can have its own font, size, bold, italic, alignment and color.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
+- **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to.
 - Insert structures from SMILES, reaction SMILES (`A.B>>C`) or molfiles, or start from 16 built-in templates.
 
 ### Publication output
@@ -107,7 +108,7 @@ npm run build        # writes dist/skeletal.html
 npm test             # 82 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 19 browser tests (Playwright)
+npm run test:e2e     # 21 browser tests (Playwright)
 ```
 
 ### Project layout

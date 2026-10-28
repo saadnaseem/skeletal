@@ -45,6 +45,13 @@ header.top{grid-column:1/-1; display:flex; align-items:center; gap:6px; padding:
 .tb:hover{background:var(--btn-hover)}
 .tb:disabled{opacity:.4; cursor:default}
 .tb svg{width:18px; height:18px; flex:none}
+.menu{position:fixed; z-index:30; display:grid; grid-template-columns:repeat(3,auto); gap:2px; padding:6px; background:var(--btn); border:1px solid var(--line); border-radius:9px; box-shadow:0 8px 24px rgba(0,0,0,.16); width:max-content; max-width:calc(100vw - 16px)}
+.menu[hidden]{display:none}
+.menu button{display:flex; align-items:center; gap:6px; padding:6px 9px; border:0; background:none; border-radius:6px; text-align:left; white-space:nowrap}
+.menu button:hover,.menu button:focus-visible{background:var(--btn-hover)}
+.menu svg{width:18px; height:18px; flex:none}
+.menusep{grid-column:1/-1; height:1px; background:var(--line); margin:3px 2px}
+.menunote{grid-column:1/-1; margin:4px 6px 2px; font-size:12px; color:var(--ink-2); max-width:30em; white-space:normal}
 .tb.icon{padding:0; width:34px; justify-content:center}
 .tb.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600}
 .tb.primary:hover{filter:brightness(1.07)}
@@ -191,6 +198,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <button class="tb" id="bClean" title="Clean up structure geometry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l6.9 4v8L12 20l-6.9-4V8z"/><path d="M19 2.5v3M17.5 4h3M4 19v2.4M2.8 20.2h2.4"/></svg><span class="hide-mobile">Clean up</span></button>
     <button class="tb icon" id="bFlipH" title="Flip horizontal" aria-label="Flip horizontal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L3 17h6zM15 7l6 10h-6z"/></svg></button>
     <button class="tb icon" id="bFlipV" title="Flip vertical" aria-label="Flip vertical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9L17 3v6zM7 15l10 6v-6z"/></svg></button>
+    <button class="tb" id="bAlign" title="Align and space structures" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><rect x="4" y="7" width="5" height="10" rx="1"/><rect x="15" y="9" width="5" height="6" rx="1"/></svg><span class="hide-mobile">Align</span></button>
     <div class="sep"></div>
     <button class="tb" id="bPage" title="Document size and pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="hide-mobile">Document</span></button>
     <button class="tb" id="bSolv" title="NMR solvent and impurity peaks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span class="hide-mobile">Solvent peaks</span></button>
@@ -309,6 +317,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
           <kbd>Ctrl C / V / D</kbd><span>Copy image, paste, duplicate</span>
           <kbd>Delete</kbd><span>Remove selection</span>
           <kbd>[ ]</kbd><span>Rotate selection 15°</span>
+          <kbd>Align</kbd><span>Line up structures by edge or center, or space them evenly</span>
           <kbd>In text</kbd><span>H2SO4 subscripts automatically; ^ makes superscript (Fe^3+)</span>
           <kbd>Double-click atom</kbd><span>Edit its label (press and hold on touch screens)</span>
           <kbd>Shift + Enter</kbd><span>New line while editing text</span>
@@ -321,6 +330,20 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   </aside>
 </div>
 
+<div class="menu" id="alignMenu" role="menu" hidden data-sk>
+  <button role="menuitem" data-align="left" title="Align left edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v18"/><rect x="7" y="6" width="12" height="4" rx="1"/><rect x="7" y="14" width="7" height="4" rx="1"/></svg><span>Left</span></button>
+  <button role="menuitem" data-align="center" title="Align centers (vertical line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18" stroke-dasharray="2 2"/><rect x="5" y="6" width="14" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/></svg><span>Center</span></button>
+  <button role="menuitem" data-align="right" title="Align right edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 3v18"/><rect x="5" y="6" width="12" height="4" rx="1"/><rect x="10" y="14" width="7" height="4" rx="1"/></svg><span>Right</span></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-align="top" title="Align top edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18"/><rect x="6" y="7" width="4" height="12" rx="1"/><rect x="14" y="7" width="4" height="7" rx="1"/></svg><span>Top</span></button>
+  <button role="menuitem" data-align="middle" title="Align middles (horizontal line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/></svg><span>Middle</span></button>
+  <button role="menuitem" data-align="bottom" title="Align bottom edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><rect x="6" y="5" width="4" height="12" rx="1"/><rect x="14" y="10" width="4" height="7" rx="1"/></svg><span>Bottom</span></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-align="hspace" title="Equal horizontal spacing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v16M21 4v16"/><rect x="6" y="8" width="4" height="8" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/></svg><span>Space across</span></button>
+  <button role="menuitem" data-align="vspace" title="Equal vertical spacing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16M4 21h16"/><rect x="8" y="6" width="8" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/></svg><span>Space down</span></button>
+  <button role="menuitem" data-align="row" title="Line up as a scheme: align middles and space evenly"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3M10 12h4M19 12h3"/><circle cx="7.5" cy="12" r="2.5"/><circle cx="16.5" cy="12" r="2.5"/></svg><span>Scheme row</span></button>
+  <p class="menunote">Works on the selection, or the whole page when nothing is selected. Labels and curly arrows move with their structure.</p>
+</div>
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script data-sk>/*OCL*/</script>
