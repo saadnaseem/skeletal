@@ -201,3 +201,135 @@ def test_align_needs_two_pieces(page):
     page.evaluate("tryLoadText('c1ccccc1')")
     page.click("#bAlign"); page.click("[data-align=left]")
     assert "two" in page.inner_text("#toast")
+
+
+def test_drawing_settings_change_bond_width_in_exports(page):
+    page.evaluate("tryLoadText('CCO')")
+    page.fill("#ov_lineWidth", "1.5"); page.dispatch_event("#ov_lineWidth", "change")
+    page.fill("#ov_spacing", "30"); page.dispatch_event("#ov_spacing", "change")
+    assert page.evaluate("doc.styleOv") == {"lineWidth": 1.5, "spacing": 0.3}
+    assert page.evaluate("pageExportSVG(subDoc(null),'crop')[0].includes('stroke-width=\"1.5\"')")
+    page.fill("#ov_lineWidth", "99"); page.dispatch_event("#ov_lineWidth", "change")
+    assert page.evaluate("doc.styleOv.lineWidth") == 6  # clamped
+    page.click("#bOvReset")
+    assert page.evaluate("doc.styleOv") is None
+
+
+def test_label_size_reaches_exports(page):
+    page.evaluate("tryLoadText('CCO'); doc.labelSize=16; changed()")
+    assert page.evaluate("S(subDoc(null)).fontSize") == 16
+
+
+def test_group_selects_and_aligns_as_one(page):
+    page.evaluate("""(()=>{ tryLoadText('c1ccccc1'); tryLoadText('CCO');
+      const c=components(doc,ix); const b=bboxOf(c[0].map(id=>ix.atom.get(id)));
+      doc.texts.push({id:nid(), x:(b.x0+b.x1)/2, y:b.y1+60, text:'1'}); changed();
+      sel=new Set([...c[0].map(id=>'a'+id), 't'+doc.texts[0].id]); setTool('select'); })()""")
+    page.keyboard.press("Control+g")
+    assert page.evaluate("new Set(doc.atoms.filter(a=>a.g).map(a=>a.g)).size") == 1
+    assert page.evaluate("withGroups(['a'+components(doc,ix)[0][0]]).length") == 7  # 6 atoms + label far away
+    assert page.evaluate("layoutUnits(new Set([...doc.atoms.map(a=>'a'+a.id),'t'+doc.texts[0].id])).length") == 2
+    page.keyboard.press("Control+Shift+g")
+    assert page.evaluate("doc.atoms.some(a=>a.g)") is False
+
+
+def test_delete_without_selection_does_not_erase_hovered_item(page):
+    page.evaluate("tryLoadText('CCO'); sel.clear(); hover={type:'atom', id:doc.atoms[0].id}")
+    page.keyboard.press("Delete")
+    assert page.evaluate("doc.atoms.length") == 3
+    assert "Select something" in page.inner_text("#toast")
+
+
+def test_arrow_nudges_share_one_undo_step(page):
+    page.evaluate("tryLoadText('CCO'); selectAll()")
+    x0 = page.evaluate("doc.atoms[0].x"); n = page.evaluate("undoStack.length")
+    for _ in range(5): page.keyboard.press("ArrowRight")
+    assert page.evaluate("doc.atoms[0].x") == x0 + 5
+    assert page.evaluate("undoStack.length") == n + 1
+    page.keyboard.press("Control+z")
+    assert page.evaluate("doc.atoms[0].x") == x0
+
+
+def test_drag_snaps_centers_with_smart_guide(page):
+    page.evaluate("""(()=>{ tryLoadText('c1ccccc1'); tryLoadText('CC(=O)O');
+      const c=components(doc,ix); for (const id of c[1]) ix.atom.get(id).y+=30; changed(); setTool('select'); fit();
+      sel=new Set(c[1].map(i=>'a'+i)); render(); })()""")
+    sx, sy = atom_xy(page, "(a)=>a.id===components(doc,ix)[1][0]")
+    before = page.evaluate("(()=>{ const c=components(doc,ix), m=ids=>{const u=layoutUnits(new Set(ids.map(i=>'a'+i)))[0].bb; return (u.y0+u.y1)/2}; return m(c[1])-m(c[0]) })()")
+    z = page.evaluate("view.z")
+    page.mouse.move(sx, sy); page.mouse.down()
+    off = before - 3 / z  # land 3 screen px from alignment, inside the 6 px snap distance
+    page.mouse.move(sx + 20, sy - off * z / 2); page.mouse.move(sx + 40, sy - off * z)
+    assert page.evaluate("!!(preview && preview.guides && preview.guides.length)")
+    page.mouse.up()
+    after = page.evaluate("(()=>{ const c=components(doc,ix), m=ids=>{const u=layoutUnits(new Set(ids.map(i=>'a'+i)))[0].bb; return (u.y0+u.y1)/2}; return m(c[1])-m(c[0]) })()")
+    assert abs(after) < 0.01
+
+
+def test_fixed_gap_spacing(page):
+    page.evaluate("tryLoadText('c1ccccc1'); tryLoadText('CCO'); tryLoadText('CCN'); sel.clear()")
+    page.click("#bAlign"); page.fill("#alignGap", "2"); page.dispatch_event("#alignGap", "change")
+    page.click("[data-align=hspace]")
+    gaps = page.evaluate("""(()=>{ const u=layoutUnits(new Set(doc.atoms.map(a=>'a'+a.id))).sort((a,b)=>a.bb.x0-b.bb.x0);
+      return u.slice(1).map((x,i)=>x.bb.x0-u[i].bb.x1) })()""")
+    assert all(abs(g - 2 * 14.4) < 0.01 for g in gaps)
+
+
+def test_panel_sections_fold_and_remember(page):
+    page.click(".panel section:nth-of-type(2) .sechead")
+    assert page.evaluate("document.querySelector('.panel section:nth-of-type(2)').classList.contains('collapsed')")
+    page.reload(); page.wait_for_function("typeof OCL !== 'undefined'")
+    assert page.evaluate("document.querySelector('.panel section:nth-of-type(2)').classList.contains('collapsed')")
+
+
+PUBCHEM_ASPIRIN = {
+    "cids": {"IdentifierList": {"CID": [2244]}},
+    "props": {"PropertyTable": {"Properties": [{"CID": 2244, "Title": "Aspirin", "IUPACName": "2-acetyloxybenzoic acid",
+                                                 "InChIKey": "BSYNRYMUTXBXSQ-UHFFFAOYSA-N", "MolecularFormula": "C9H8O4"}]}},
+    "syn": {"InformationList": {"Information": [{"CID": 2244, "Synonym": ["aspirin", "50-78-2", "acetylsalicylic acid", "11126-35-5", "12-34-5"]}]}},
+    "name": {"PropertyTable": {"Properties": [{"CID": 2519, "SMILES": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C"}]}},
+}
+
+
+def _mock_pubchem(page, calls):
+    def handle(route):
+        url = route.request.url; calls.append((route.request.method, url, route.request.post_data))
+        body = (PUBCHEM_ASPIRIN["cids"] if "/smiles/cids" in url else PUBCHEM_ASPIRIN["props"] if "/property/Title" in url
+                else PUBCHEM_ASPIRIN["syn"] if "/synonyms" in url else PUBCHEM_ASPIRIN["name"] if "/compound/name/" in url else None)
+        if body is None: return route.fulfill(status=404, body="{}")
+        route.fulfill(status=200, content_type="application/json", headers={"Access-Control-Allow-Origin": "*"}, body=json.dumps(body))
+    page.route("https://pubchem.ncbi.nlm.nih.gov/**", handle)
+
+
+def test_lookup_shows_name_and_valid_cas_only(page):
+    calls = []; _mock_pubchem(page, calls)
+    page.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O'); sel.clear()")
+    page.click("#bLookup")
+    page.wait_for_selector("dl.lk")
+    txt = page.inner_text("#lkOut")
+    assert "Aspirin" in txt and "50-78-2" in txt and "12-34-5" not in txt  # bad check digit is dropped
+    assert calls[0][0] == "POST" and "smiles=" in calls[0][2]  # SMILES goes in the body, not the URL
+    page.click("#lkOut [data-add^='CAS']")
+    assert page.evaluate("doc.texts.map(t=>t.text)") == ["CAS 50-78-2"]
+
+
+def test_insert_dialog_resolves_names_via_pubchem(page):
+    calls = []; _mock_pubchem(page, calls)
+    page.click("#bSmiles"); page.fill("#smIn", "caffeine"); page.click("#smGo")
+    page.wait_for_function("doc.atoms.length > 0")
+    assert smiles(page) == page.evaluate("OCL.Molecule.fromSmiles('Cn1cnc2c1c(=O)n(C)c(=O)n2C').toIsomericSmiles()")
+
+
+def test_context_menu_copy_smiles_and_lookup_selects_structure(page):
+    page.evaluate("tryLoadText('c1ccccc1'); tryLoadText('CCO'); sel.clear(); setTool('select')")
+    x, y = atom_xy(page, "(a)=>a.id===components(doc,ix)[1][0]")
+    page.mouse.click(x, y, button="right")
+    assert page.is_visible("#ctxMenu")
+    assert page.evaluate("selAtoms().length") == 3
+    page.click("#ctxMenu [data-cmd=smiles]")
+    assert page.is_hidden("#ctxMenu")
+
+
+def test_saved_html_keeps_menus(page, tmp_path, open_page):
+    html = page.evaluate("buildProjectHtml()")
+    assert 'id="alignMenu"' in html and 'id="ctxMenu"' in html
