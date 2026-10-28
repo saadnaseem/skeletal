@@ -454,3 +454,18 @@ def test_analysis_dialog_chemdraw_style(page):
     assert "LogS:" in page.inner_text("#anaPrev")
     page.click("#anaAdd")
     assert page.evaluate("(()=>{ const t=doc.texts[0], m=textMetrics(doc,t), b=bboxOf(fragPoints(doc.atoms.map(a=>a.id))); return t.y-m.h/2 > b.y1 })()")
+
+
+def test_enhanced_stereo_groups(page):
+    page.evaluate("tryLoadText('C[C@H](O)[C@@H](C)N'); sel.clear(); setTool('select'); fit()")
+    x, y = atom_xy(page, "(a)=>a.id===stereoCentres(doc.atoms.map(a=>a.id))[0]")
+    page.mouse.click(x, y, button="right")
+    page.click("#ctxMenu [data-cmd=stereo]")
+    page.click("#dialog [data-stg=and1]")
+    assert page.evaluate("doc.atoms.filter(a=>a.stg).map(a=>a.stg)") == ["and1"]
+    assert ">&amp;1<" in page.evaluate("cv.innerHTML")
+    assert "MDLV30/STERAC1" in page.evaluate("FORMATS.write('molV3', subDoc(null))")
+    for fmt in ("cdxml", "cdx"):
+        assert page.evaluate(f"normalizeDoc({{...newDoc(),...FORMATS.read('{fmt}',FORMATS.write('{fmt}',subDoc(null)))}}).atoms.filter(a=>a.stg).map(a=>a.stg)") == ["and1"]
+    assert page.evaluate("fromOCL(OCL.Molecule.fromMolfile(FORMATS.write('molV3', subDoc(null)))).atoms.filter(a=>a.stg).map(a=>a.stg)") == ["and1"]
+    assert page.evaluate("sanitizeDoc({atoms:[{id:1,x:0,y:0,el:'C',stg:'<b>'},{id:2,x:0,y:0,el:'C',stg:'or3'}]}).atoms.map(a=>a.stg??null)") == [None, "or3"]

@@ -935,6 +935,34 @@ function addTextUnder(ids, text){
   doc.texts.push(t); changed(); toast('Added below the structure');
 }
 
+/* ================= enhanced stereochemistry ================= */
+// stereocentres (doc atom ids) among the given atoms, found by OpenChemLib on each whole structure
+function stereoCentres(ids){
+  const want=new Set(ids), out=[];
+  for (const comp of components(doc,ix).filter(c=>c.some(id=>want.has(id)))){
+    const {mol,map}=toOCL(doc,ix,comp,{skipH:true}); mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
+    for (const id of comp) if (want.has(id) && map.has(id) && mol.isAtomStereoCenter(map.get(id))) out.push(id); }
+  return out;
+}
+function openStereoGroups(){
+  const pool = ctxAtom!=null ? [ctxAtom] : selAtoms().length ? selAtoms() : doc.atoms.map(a=>a.id);
+  let ids=stereoCentres(pool); if (!ids.length && ctxAtom!=null) ids=stereoCentres(selAtoms().length? selAtoms() : doc.atoms.map(a=>a.id));
+  if (!ids.length){ toast('No stereocentres here. Draw a wedge or hash bond first.'); return; }
+  const used=new Set(doc.atoms.map(a=>a.stg).filter(Boolean));
+  const next=t=>{ for (let n=1;n<33;n++) if (!used.has(t+n)) return n; return 1; };
+  const btn=(v,label,hint)=>`<button class="tb" data-stg="${v}" title="${esc(hint)}">${esc(label)}</button>`;
+  const groups=t=>[...used].filter(x=>x.startsWith(t)).sort();
+  openDialog(`<div class="dialog-inner"><h3>Stereo group</h3><p>${ids.length} stereocentre${ids.length>1?'s':''} ${ctxAtom!=null&&ids.length===1?'(the atom you clicked)':selAtoms().length?'in the selection':'in the drawing'}. Labels follow the ChemDraw and MDL V3000 conventions.</p>
+    <div class="row" style="flex-wrap:wrap">${btn('abs','abs','Absolute: the configuration is known as drawn')}
+      ${btn('and'+next('and'),'New & group (&'+next('and')+')','AND: a racemic mixture of the drawn configuration and its mirror image')}
+      ${btn('or'+next('or'),'New or group (or'+next('or')+')','OR: one of the two, but which is not known (relative configuration)')}
+      ${[...groups('and'),...groups('or')].map(g=>btn(g,'Add to '+g.replace('and','&'),'Join an existing group')).join('')}
+      ${btn('','Clear','Remove the label')}</div>
+    <p class="note">abs: absolute, as drawn. &amp;n: racemic (both enantiomers, e.g. "rac"). or n: relative; one enantiomer, unknown which (e.g. "rel"). Centres in the same group keep their relative configuration. Saved in V3000 molfiles and ChemDraw files.</p>
+    <div class="actions"><button class="tb" data-close>Close</button></div></div>`);
+  dialog.querySelectorAll('[data-stg]').forEach(b=>b.onclick=()=>{ pushUndo(); for (const id of ids){ const a=ix.atom.get(id); if (b.dataset.stg) a.stg=b.dataset.stg; else delete a.stg; } closeDialog(); changed(); toast(b.dataset.stg? 'Stereo group set' : 'Stereo label removed'); });
+}
+
 /* ================= find in databases ================= */
 // Opens the drawn structure in public databases. Only the SMILES or InChIKey leaves the computer, and only on click.
 function rcsbUrl(smi, match){ return 'https://www.rcsb.org/search?request='+encodeURIComponent(JSON.stringify({query:{type:'terminal',service:'chemical',parameters:{value:smi,type:'descriptor',descriptor_type:'SMILES',match_type:match}},return_type:'mol_definition'})); }
@@ -970,9 +998,10 @@ async function openFindDb(){
 /* ================= context menu ================= */
 const ctxMenu=$('#ctxMenu');
 function closeCtx(){ ctxMenu.hidden=true; }
+let ctxAtom=null;
 cv.addEventListener('contextmenu', e=>{
   e.preventDefault(); if (editingText) commitText();
-  const p=toDoc(e), h=hitTest(p,'mouse');
+  const p=toDoc(e), h=hitTest(p,'mouse'); ctxAtom = h && h.type==='atom' ? h.id : null;
   if (h && (h.type==='atom'||h.type==='bond')){ const id = h.type==='atom'? h.id : ix.bond.get(h.id).a; if (!sel.has('a'+id)){ sel=new Set(withGroups(fragmentKeys(id))); render(); scheduleAnalysis(); } }
   else if (h && keyOf(h)){ if (!sel.has(keyOf(h))){ sel=new Set(withGroups([keyOf(h)])); render(); } }
   const hasAtoms = selAtoms().length>0 || (!sel.size && doc.atoms.length>0);
@@ -988,6 +1017,7 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
   else if (c==='lookup') lookupOnline();
   else if (c==='analysis') openAnalysisDialog();
+  else if (c==='stereo') openStereoGroups();
   else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb(); else if (c==='3d') open3d();
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();

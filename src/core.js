@@ -96,7 +96,7 @@ function sanitizeDoc(d){
     for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g)},['id','x','y','el','charge','lp','rad','color','g']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined},['id','x','y','el','charge','lp','rad','color','g','stg']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color)},['id','a','b','order','stereo','dbPos','color']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
@@ -340,6 +340,10 @@ function renderAtomDecor(d, ix, a, info, out){
   if (info.visible){
     for (const it of info.items) out.push(`<text x="${f2(it.x)}" y="${f2(it.y)}" font-size="${f2(it.size)}" font-weight="${fw}" fill="${col}">${esc(it.t)}</text>`);
   }
+  if (a.stg){ // enhanced stereo label, ChemDraw style: abs, &1, or1
+    const dv=freeDirs(info, 1+(a.rad?1:0)+(a.lp||0)+(!info.visible&&a.charge?1:0)).slice(-1)[0]||V(0,-1), r=info.visible? Math.max(fs*0.9,(info.box.x1-info.box.x0)/2+fs*0.45) : fs*0.85;
+    const c=add(a,mul(dv,r)), m=/^(abs|and|or)(\d*)$/.exec(a.stg), t = m[1]==='abs'? 'abs' : (m[1]==='and'?'&':'or')+(m[2]||'1');
+    out.push(`<text x="${f2(c.x)}" y="${f2(c.y+fs*0.25)}" font-size="${f2(fs*0.72)}" font-weight="${fw}" fill="${col}" text-anchor="middle">${t}</text>`); }
   const need = (!info.visible && a.charge ? 1:0) + (a.rad?1:0) + (a.lp||0);
   if (!need) return;
   const dirsFree=freeDirs(info, need); let k=0;
@@ -517,6 +521,11 @@ function toOCL(d, ix, atomIds, opts={}){
     if (b.order===1 && b.stereo==='hash') t=M.cBondTypeDown;
     const bi=mol.addBond(i1,i2); mol.setBondType(bi,t);
   }
+  // enhanced stereo (abs / and n / or n) on stereocentres, written by OCL as V3000 STEABS/STERAC/STEREL collections
+  const grouped=ids.filter(id=>{ const a=ix.atom.get(id); return a && a.stg && map.has(id); });
+  if (grouped.length){ mol.ensureHelperArrays(M.cHelperParities);
+    for (const id of grouped){ const i=map.get(id), m=/^(abs|and|or)(\d*)$/.exec(ix.atom.get(id).stg); if (!mol.isAtomStereoCenter(i)) continue;
+      mol.setAtomESR(i, m[1]==='abs'? M.cESRTypeAbs : m[1]==='and'? M.cESRTypeAnd : M.cESRTypeOr, Math.max(0,(+m[2]||1)-1)); } }
   return {mol, map, generic, owner};
 }
 // convert an OCL molecule (with coordinates) to doc atoms/bonds
@@ -528,6 +537,10 @@ function fromOCL(mol, offset){
     const a={id:0,x:mol.getAtomX(i)*L,y:mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
     atoms.push(a); ids.push(a);
   }
+  // keep AND/OR stereo groups from V3000 molfiles (ABS is the default and stays unlabelled)
+  try{ mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
+    for (let i=0;i<n;i++){ if (!mol.isAtomStereoCenter(i)) continue; const t=mol.getAtomESRType(i);
+      if (t===OCL.Molecule.cESRTypeAnd) atoms[i].stg='and'+(mol.getAtomESRGroup(i)+1); else if (t===OCL.Molecule.cESRTypeOr) atoms[i].stg='or'+(mol.getAtomESRGroup(i)+1); } }catch(e){}
   for (let b=0;b<mol.getAllBonds();b++){
     const t=mol.getBondType(b), ord=mol.getBondOrder(b);
     let stereo='none';

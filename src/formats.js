@@ -104,6 +104,7 @@ const FORMATS = (()=>{
           if (a.el!=='C') n.attrs.Element=String(ZOF(a.el));
           if (a.charge) n.attrs.Charge=String(a.charge);
           if (a.rad) n.attrs.Radical='Doublet';
+          if (a.stg){ const m=/^(abs|and|or)(\d*)$/.exec(a.stg); n.attrs.EnhancedStereoType={abs:'Absolute',and:'And',or:'Or'}[m[1]]; if (m[1]!=='abs') n.attrs.EnhancedStereoGroupNum=m[2]||'1'; }
           if (a.color) n.attrs.color=colorIdx(a.color);
           if (lb.visible){ const h=implicitH(a,bondSum(ix,aid)); n.attrs.NumHydrogens=String(h);
             label(a.el+(h?'H'+(h>1?h:''):'')+(a.charge? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : '')); }
@@ -172,7 +173,7 @@ const FORMATS = (()=>{
   const OBJ={CDXML:0x8000,page:0x8001,group:0x8002,fragment:0x8003,n:0x8004,b:0x8005,t:0x8006,graphic:0x8007,scheme:0x800d,step:0x800e,arrow:0x8027};
   const OBJN=Object.fromEntries(Object.entries(OBJ).map(([k,v])=>[v,k]));
   const P={CreationProgram:[0x3,'str'],Name:[0x8,'str'],p:[0x200,'pt2'],BoundingBox:[0x204,'rect'],Head3D:[0x207,'pt3'],Tail3D:[0x208,'pt3'],Center3D:[0x20d,'pt3'],MajorAxisEnd3D:[0x20e,'pt3'],MinorAxisEnd3D:[0x20f,'pt3'],
-    color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],
+    color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
     Order:[0x600,'i16'],Display:[0x601,'i16'],DoublePosition:[0x603,'i16'],B:[0x604,'u32'],E:[0x605,'u32'],Justification:[0x701,'i8'],LabelAlignment:[0x705,'i8'],InterpretChemically:[0x708,'bool'],
     BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelJustification:[0x823,'i8'],
     GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
@@ -184,7 +185,7 @@ const FORMATS = (()=>{
     Display:['Solid','Dash','Hash','WedgedHashBegin','WedgedHashEnd','Bold','WedgeBegin','WedgeEnd','Wavy','HollowWedgeBegin','HollowWedgeEnd','WavyWedgeBegin','WavyWedgeEnd','Dot','DashDot'],
     GraphicType:['Undefined','Line','Arc','Rectangle','Oval','Orbital','Bracket','Symbol'],
     SymbolType:['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Dagger','DoubleDagger','Plus','Minus','Racemic','Absolute','Relative'],
-    Radical:['None','Singlet','Doublet','Triplet'], LabelAlignment:['Auto','Left','Center','Right','Above','Below','Best'],
+    Radical:['None','Singlet','Doublet','Triplet'], EnhancedStereoType:['Unspecified','None','Absolute','Or','And'], LabelAlignment:['Auto','Left','Center','Right','Above','Below','Best'],
   };
   const EMAP={ Order:{'1':1,'2':2,'3':4,'1.5':0x80}, DoublePosition:{Center:0x100,Right:0x101,Left:0x102}, LineType:{Solid:0,Dashed:1,Bold:2,Wavy:4},
     ArrowheadHead:{Full:2,HalfLeft:3,HalfRight:4}, ArrowheadType:{Solid:1,Hollow:2,Angle:3}, FillType:{None:1,Solid:2,Shaded:4}, NoGo:{None:1,Cross:2,Hash:3},
@@ -325,6 +326,7 @@ const FORMATS = (()=>{
           if (label && z===6 && /^[A-Z]/.test(label) && !/^C(H\d*)?$/.test(label)){ const lb=label.replace(/[+-]\d*$/,''); if (ABBR[lb]) el=lb; else if (!ELEMENTS.includes(lb) && !/^[A-Z][a-z]?(H\d*)?$/.test(lb)) el=lb; }
         }
         const a={id:nid++, x:p.x, y:p.y, el, charge:+(n.attrs.Charge||0)||0, lp:0, rad: n.attrs.Radical==='Doublet'?1:0, h: n.attrs.NumHydrogens!=null? +n.attrs.NumHydrogens : 0};
+        const est=n.attrs.EnhancedStereoType; if (est==='And'||est==='Or') a.stg=est.toLowerCase()+(+n.attrs.EnhancedStereoGroupNum||1); else if (est==='Absolute' && n.attrs.EnhancedStereoGroupNum) a.stg='abs';
         atoms.push(a); nodeMap.set(n.attrs.id, a.id);
       }
       const posOf=id=>{ const a=atoms.find(x=>x.id===id); return a? V(a.x,a.y) : null; };
