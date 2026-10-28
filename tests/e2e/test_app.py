@@ -574,3 +574,13 @@ def test_renamed_to_lone_pair_and_old_saves_still_load(browser):
     pg.reload(); pg.wait_for_timeout(600)
     assert pg.evaluate("project.name") == "Old Skeletal work" and pg.evaluate("doc.atoms[0].el") == "O"
     pg.context.close()
+
+
+def test_octet_error_for_extra_lone_pairs(page):
+    # NH(NH2)2 with two lone pairs drawn on the central N: 3 bonds + 2 pairs = 10 electrons
+    page.evaluate("""(()=>{ tryLoadText('N(N)N'); const c=doc.atoms.find(a=>ix.adj.get(a.id).length===2);
+      const h={id:nid(), x:c.x, y:c.y-14.4, el:'H', charge:0, lp:0, rad:0}; doc.atoms.push(h); doc.bonds.push({id:nid(), a:c.id, b:h.id, order:1, stereo:'none'});
+      c.lp=2; changed(); })()""")
+    assert page.is_visible("#valWarn") and "10 electrons" in page.inner_text("#valWarn") and "octet" in page.inner_text("#valWarn")
+    page.evaluate("doc.atoms.find(a=>a.lp===2).lp=1; changed()")
+    assert page.is_hidden("#valWarn")

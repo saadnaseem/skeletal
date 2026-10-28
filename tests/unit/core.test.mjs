@@ -103,3 +103,17 @@ test('sanitizeDoc clamps drawing settings and keeps only positive integer group 
   assert.equal(d.texts[0].g, 2);
   assert.equal(s({ styleOv: { evil: 1 } }).styleOv, undefined);
 });
+
+test('valence check counts drawn lone pairs against the octet', () => {
+  const ve = get('valenceError'), bi = get('buildIndex');
+  const why = (smi, pick, set) => { const d = docFromSmiles(get, smi); const a = d.atoms.find(pick(bi(d))); Object.assign(a, set); const e = ve(a, bi(d)); return e ? e.why : null; };
+  const mid = ix => a => ix.adj.get(a.id).length === 2;
+  assert.match(why('N(N)N', mid, { lp: 2 }), /10 electrons .*octet/);      // the reported case: NH(NH2)2 with two lone pairs
+  assert.equal(why('N(N)N', mid, { lp: 1 }), null);
+  assert.equal(why('O', () => a => a.el === 'O', { lp: 2 }), null);        // water
+  assert.match(why('O', () => a => a.el === 'O', { lp: 3 }), /10 electrons/);
+  assert.equal(why('[OH-]', () => a => a.el === 'O', { lp: 3 }), null);   // hydroxide really has three pairs
+  assert.equal(why('C[CH-]C', () => a => a.charge === -1, { lp: 1 }), null); // carbanion
+  assert.equal(why('FS(F)(F)F', () => a => a.el === 'S', { lp: 1 }), null);  // SF4: S may expand its octet
+  assert.match(why('[NH4+]', () => a => a.el === 'N', { lp: 1 }), /10 electrons/);
+});
