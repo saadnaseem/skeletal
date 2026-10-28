@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = f => path.join(root, 'src', f);
 
 // Order matters: later files use globals defined by earlier ones.
-const APP_FILES = ['core.js', 'nmr.js', 'pdf.js', 'solvents.js', 'formats.js', 'ms.js', 'view3d.js', 'app.js'];
+const APP_FILES = ['core.js', 'nmr.js', 'pdf.js', 'solvents.js', 'formats.js', 'ms.js', 'view3d.js', 'nmrguide.js', 'app.js'];
 
 const ocl = await build({
   stdin: { contents: "export * from 'openchemlib'; export * as InChI from 'inchi-js';", resolveDir: root },
