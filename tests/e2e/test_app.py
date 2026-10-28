@@ -333,3 +333,83 @@ def test_context_menu_copy_smiles_and_lookup_selects_structure(page):
 def test_saved_html_keeps_menus(page, tmp_path, open_page):
     html = page.evaluate("buildProjectHtml()")
     assert 'id="alignMenu"' in html and 'id="ctxMenu"' in html
+
+
+def test_stereo_drawn_from_smiles_is_not_mirrored(page):
+    # L-alanine inserted from SMILES must be drawn as (S): read the screen geometry back through a molfile built here
+    page.evaluate("tryLoadText('C[C@H](N)C(=O)O')")
+    assert page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).smiles") == page.evaluate("OCL.Molecule.fromSmiles('C[C@H](N)C(=O)O').toIsomericSmiles()")
+    mol = page.evaluate("""(()=>{ const ix2=buildIndex(doc), id=new Map(doc.atoms.map((a,i)=>[a.id,i+1]));
+      const L2=['','x','',`${String(doc.atoms.length).padStart(3)}${String(doc.bonds.length).padStart(3)}  0  0  1  0  0  0  0  0999 V2000`]; // chiral flag set: absolute stereo
+      for (const a of doc.atoms) L2.push(`${(a.x/14.4).toFixed(4).padStart(10)}${(-a.y/14.4).toFixed(4).padStart(10)}    0.0000 ${a.el.padEnd(3)} 0  0  0  0  0  0  0  0  0  0  0  0`);
+      for (const b of doc.bonds) L2.push(`${String(id.get(b.a)).padStart(3)}${String(id.get(b.b)).padStart(3)}${String(b.order).padStart(3)}${String({wedge:1,hash:6}[b.stereo]||0).padStart(3)}`);
+      L2.push('M  END'); return L2.join('\\n'); })()""")
+    # a molfile with y up, as every other program expects: OCL must read the same configuration
+    assert page.evaluate("(m)=>OCL.Molecule.fromMolfile(m).toIsomericSmiles()", mol) == page.evaluate("OCL.Molecule.fromSmiles('C[C@H](N)C(=O)O').toIsomericSmiles()")
+
+
+def test_inchi_and_key_offline(page):
+    page.evaluate("tryLoadText('C[C@H](N)C(=O)O'); sel.clear()")
+    page.wait_for_function("document.getElementById('anKey') && document.getElementById('anKey').textContent.length > 20")
+    assert page.inner_text("#anKey").strip() == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"
+    page.evaluate("loadProject(newProject()); tryLoadText('InChI=1S/C8H10N4O2/c1-10-4-9-6-5(10)7(13)12(3)8(14)11(6)2/h4H,1-3H3')")
+    page.wait_for_function("doc.atoms.length===14")
+
+
+def test_save_as_lists_formats_and_exports(page):
+    page.evaluate("tryLoadText('CC(=O)O.OCC>>CC(=O)OCC'); sel.clear()")
+    page.keyboard.press("Control+Shift+s")
+    assert page.locator("#dialog table.fmt tr").count() >= 24
+    out = page.evaluate("""(async()=>{ const r={}; for (const id of ['cdxml','cdx','mol','molV3','sdf','rxn','smiles','smarts','inchi','cml','mrv','jme','chemfig','eps','gif','jpeg']){
+        try{ const x=(await exportData(id)).data; r[id] = typeof x==='string' ? x.slice(0,40) : (x.length ?? x.size); }catch(e){ r[id]='ERR '+e.message; } } return r; })()""")
+    assert not [k for k, v in out.items() if str(v).startswith("ERR")], out
+    assert out["cdxml"].startswith("<?xml") and out["rxn"].startswith("$RXN") and out["inchi"].startswith("InChI=1S/")
+    cdx = page.evaluate("(async()=>Array.from((await exportData('cdx')).data.slice(0,8)))()")
+    assert bytes(cdx) == b"VjCD0100"
+
+
+def test_cdxml_and_cdx_round_trip_through_open(page):
+    page.evaluate("tryLoadText('C[C@H](N)C(=O)O'); sel.clear()")
+    want = smiles(page)
+    for fmt in ("cdxml", "cdx", "cml", "mrv"):
+        got = page.evaluate(f"""(()=>{{ const d=normalizeDoc({{...newDoc(), ...FORMATS.read('{fmt}', FORMATS.write('{fmt}', subDoc(null)))}}); const x=buildIndex(d);
+          return toOCL(d,x,d.atoms.map(a=>a.id)).mol.toIsomericSmiles(); }})()""")
+        assert got == want, fmt
+    page.evaluate("loadProject(newProject())")
+    page.evaluate("insertForeign(FORMATS.read('cdxml', `<?xml version=\"1.0\"?><CDXML><page><fragment><n id=\"1\" p=\"10 10\"/><n id=\"2\" p=\"24.4 10\" Element=\"8\"/><b B=\"1\" E=\"2\"/></fragment></page></CDXML>`),'t.cdxml')")
+    assert smiles(page) == "CO"
+
+
+def test_mass_spectrum_dialog(page):
+    page.evaluate("tryLoadText('CC(=O)Nc1ccc(O)cc1'); sel.clear()")
+    page.click("#bMs")
+    assert "152.0706" in page.inner_text("#dialog")
+    page.click("[data-mt=msms]")
+    page.wait_for_selector("#dialog tr[data-peak]")
+    assert "110.0600" in page.inner_text("#dialog")
+    page.click("#dialog tr[data-peak]")
+    assert page.locator('#dialog line[stroke="#d6336c"]').count() >= 1
+    page.click("[data-mt=iso]")
+    assert "M+1" in page.inner_text("#dialog")
+
+
+def test_lasso_selects_inside_loop(page):
+    page.evaluate("tryLoadText('c1ccccc1'); tryLoadText('CCO'); sel.clear(); fit()")
+    page.keyboard.press("l")
+    pts = page.evaluate("""(()=>{ const c=components(doc,ix); const b=bboxOf(c[0].map(i=>ix.atom.get(i))); const r=cv.getBoundingClientRect();
+      const cx=(b.x0+b.x1)/2, cy=(b.y0+b.y1)/2, R=Math.max(b.x1-b.x0,b.y1-b.y0)*0.75;
+      return [...Array(20).keys()].map(k=>[r.left+(cx+R*Math.cos(k/20*6.283))*view.z+view.ox, r.top+(cy+R*Math.sin(k/20*6.283))*view.z+view.oy]); })()""")
+    page.mouse.move(*pts[0]); page.mouse.down()
+    for p in pts[1:]: page.mouse.move(*p)
+    page.mouse.up()
+    assert page.evaluate("selAtoms().length") == 6
+
+
+def test_find_in_databases_builds_links(page):
+    page.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O'); sel.clear()")
+    page.click("#bFindDb")
+    page.wait_for_selector("#dialog [data-u]")
+    urls = page.evaluate("[...document.querySelectorAll('#dialog [data-u]')].map(b=>b.dataset.u)")
+    assert any("pubchem.ncbi.nlm.nih.gov/#query=" in u and "tab=similarity" in u for u in urls)
+    assert any(u.startswith("https://www.rcsb.org/search?request=") for u in urls)
+    assert any("BSYNRYMUTXBXSQ-UHFFFAOYSA-N" in u for u in urls)

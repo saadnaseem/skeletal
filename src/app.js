@@ -659,8 +659,17 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
   if (tool.id!=='select') setTool('select');
   changed(); fitIfNeeded();
 }
+// a drawing read from another program's file: paste it in (or make it the page when the page is empty)
+function insertForeign(r, name){
+  const d=normalizeDoc({...newDoc(), ...r, style:doc.style});
+  if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
+  if (hasContent(doc)) pasteDoc(d,0,viewCenter()); else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page, styleOv:doc.styleOv, labelSize:doc.labelSize}); sel.clear(); changed(); fit(); }
+  toast('Opened '+(name||'drawing'));
+}
 function tryLoadText(txt, quiet){
   try{
+    if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
+    if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
       const mol=OCL.Molecule.fromMolfile(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
@@ -1260,6 +1269,8 @@ $('#fileIn').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
   try{
     if (/\.png$/i.test(f.name)){ const s=readPngMeta(new Uint8Array(await f.arrayBuffer())); if(!s){ toast('This PNG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(s)),0,viewCenter()); return; }
+    const fm=/\.(cdxml|cdx|cml|mrv)$/i.exec(f.name);
+    if (fm){ const k=fm[1].toLowerCase(); const data = k==='cdx' ? new Uint8Array(await f.arrayBuffer()) : await f.text(); insertForeign(FORMATS.read(k,data), f.name); return; }
     const t=await f.text();
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Skeletal project inside'); return; } confirmOpenProject(pj); return; }
