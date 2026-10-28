@@ -72,7 +72,7 @@ An independent pass: fresh install, unit and browser tests, and hands-on use on 
 
 | # | Finding | Fix |
 | --- | --- | --- |
-| 11 | `npm test` found no files on Node 20, the documented minimum. The quoted glob is only expanded by Node 21+, and CI runs Node 22, so it never showed up there. | The script now passes the `tests/unit/` folder, which works on Node 20 and later. |
+| 11 | `npm test` found no files on Node 20, the documented minimum. The quoted glob is only expanded by Node 21+, and CI runs Node 22, so it never showed up there. | The glob is now unquoted, so the shell expands it the same way for every Node version. (Passing the folder instead worked on Node 20 but broke Node 22.) |
 | 12 | There was no way to line structures up or space them evenly. In ChemDraw this is a routine last step before a scheme goes into a paper. | New **Align** menu: left, center, right, top, middle and bottom alignment, equal spacing across or down, and **Scheme row** (align middles, then space evenly). Compound numbers and curly arrows move with their structure. Two browser tests added. |
 | 13 | Found while adding #12: **Save project (.html)** keeps only the top-level elements it knows by id, so any new top-level element is silently dropped, and the reopened file breaks. The existing round-trip test caught this. | The Align menu is on the list. Anyone adding a new top-level element needs to add it there too. |
 

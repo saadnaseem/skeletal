@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/unit/",
+    "test": "node --test tests/unit/*.test.mjs",
     "test:e2e": "python3 -m pytest tests/e2e -q",
     "test:all": "npm run build && npm test && npm run test:e2e",
     "validate": "node scripts/validate.mjs"
