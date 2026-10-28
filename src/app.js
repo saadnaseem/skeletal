@@ -655,6 +655,9 @@ function tryLoadText(txt, quiet){
       if (!hasXY) mol.inventCoordinates();
       insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
     }
+    if (/^InChI=/.test(txt)){ OCL.InChI.molfileFromInchi(txt.split(/\s+/)[0]).then(r=>{ if (!r.molfile) throw new Error(r.message);
+        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); insertFragments([{kind:'frag',f:molToFragment(mol)}]); closeDialog(); })
+        .catch(()=>toast('That InChI could not be read')); return true; }
     if (txt.startsWith('{')){ const d=JSON.parse(txt); if (d && d.atoms){ pasteDoc(normalizeDoc(d),0,viewCenter()); return true; } }
     const line=txt.split(/\s+/)[0];
     if (line.includes('>')){
@@ -973,9 +976,21 @@ function analyzeNow(){
     html+=row('Rotatable bonds', p.rotatableBondCount, null);
     html+=row('Stereocenters', p.stereoCenterCount, null);
   }
+  if (!r.generic) html+=`<dt>InChI</dt><dd class="code" id="anInchi">\u2026</dd><span></span><dt>InChIKey</dt><dd class="code" id="anKey">\u2026</dd><span></span>`;
   if (r.molfile) html+=row('Molfile', '<span style="color:var(--ink-2)">V2000</span>', r.molfile);
   const rx=reactionSmiles(); if (rx) html+=row('Reaction SMILES', esc(rx), rx, 'code');
   props.innerHTML=html;
+  if (!r.generic && r.molfile){ const tok=++_inchiTok;
+    inchiOf(r.molfile).then(v=>{ if (tok!==_inchiTok) return; const set=(id,t)=>{ const e=$('#'+id); if (!e) return; e.textContent=t||'\u2014'; if (t){ const b=document.createElement('button'); b.className='mini'; b.dataset.copy=t; b.textContent='Copy'; e.nextElementSibling.replaceWith(b); } };
+      set('anInchi',v.inchi); set('anKey',v.key); }); }
+}
+// InChI and InChIKey from the bundled IUPAC InChI library (WebAssembly, offline)
+let _inchiTok=0; const _inchiCache=new Map();
+async function inchiOf(molfile){
+  if (_inchiCache.has(molfile)) return _inchiCache.get(molfile);
+  let v={inchi:'',key:''};
+  try{ const r=await OCL.InChI.inchiFromMolfile(molfile); if (r.inchi){ v.inchi=r.inchi; v.key=(await OCL.InChI.inchikeyFromInchi(r.inchi)).inchikey; } }catch(e){ console.warn(e); }
+  if (_inchiCache.size>50) _inchiCache.clear(); _inchiCache.set(molfile,v); return v;
 }
 function reactionSmiles(){
   const ar=doc.arrows.find(r=>!CURVED.has(r.type) && r.type!=='resonance' && r.type!=='retro'); if (!ar) return null;
@@ -1199,7 +1214,7 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 
 function openSmilesDialog(){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
-  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C) or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
+  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
   dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
   const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }

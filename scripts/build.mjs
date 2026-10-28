@@ -11,7 +11,7 @@ const src = f => path.join(root, 'src', f);
 const APP_FILES = ['core.js', 'nmr.js', 'pdf.js', 'solvents.js', 'formats.js', 'app.js'];
 
 const ocl = await build({
-  stdin: { contents: "export * from 'openchemlib';", resolveDir: root },
+  stdin: { contents: "export * from 'openchemlib'; export * as InChI from 'inchi-js';", resolveDir: root },
   bundle: true, minify: true, format: 'iife', globalName: 'OCL', write: false, logLevel: 'silent',
 });
 const oclCode = ocl.outputFiles[0].text;

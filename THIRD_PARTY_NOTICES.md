@@ -1,5 +1,67 @@
 # Third-party notices
 
+## inchi-js and the IUPAC InChI library (bundled into dist/skeletal.html)
+
+inchi-js 0.2.0, https://www.npmjs.com/package/inchi-js, MIT. It wraps the official IUPAC/InChI Trust InChI C library compiled to WebAssembly (InChI is distributed by the InChI Trust under the MIT license).
+
+```
+MIT License
+
+Copyright (c) 2026 cheminfo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+This package bundles WebAssembly compiled from the official IUPAC InChI
+C library (https://github.com/IUPAC-InChI/InChI). The `inchi_web.c`
+JSON-emitting wrapper used in the WASM build is adapted from
+https://github.com/IUPAC-InChI/InChI-Web-Demo. Both are distributed
+under the MIT License, reproduced below:
+
+--------------------------------------------------------------------------------
+IUPAC InChI — https://github.com/IUPAC-InChI/InChI
+--------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2024 InChI Project
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## OpenChemLib JS (bundled into dist/skeletal.html)
 
 Version 9.25.1, https://github.com/cheminfo/openchemlib-js, BSD-3-Clause:
