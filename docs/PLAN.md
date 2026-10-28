@@ -131,4 +131,4 @@ The format cross-check also found that stereochemistry was mirrored between the 
 | Analysis block (formula, exact mass, MW, m/z, elemental analysis, cLogP, LogS, tPSA) and the "Anal. Calcd" line | Done. Elemental analysis uses IUPAC standard atomic weights |
 | Enhanced stereo labels (abs, &n, or n) | Done. Written to V3000 molfiles and CDXML/CDX, and read back. RDKit reads the same groups |
 | TLC plate tool | Done |
-| EPS checked against PDF in Ghostscript | **Blocked.** Homebrew can't install Ghostscript on macOS 14 with Command Line Tools 15.1, because its Python 3.15 dependency fails to compile |
+| EPS checked against PDF in Ghostscript | **Done.** Homebrew couldn't install Ghostscript on macOS 14, so the WebAssembly build was used instead (`@okathira/ghostpdl-wasm`, which has npm provenance), kept outside the repo. EPS and PDF render pixel-identical at 300 dpi for four test drawings covering wedges, ions, a colored atom, curved and equilibrium arrows, sub- and superscripts, °, curly quotes, the Symbol-font arrow and bold-italic serif text. Re-run with `scripts/check_eps_render.mjs` and `scripts/check_eps_compare.py` |

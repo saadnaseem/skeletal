@@ -137,7 +137,6 @@ An independent pass: fresh install, unit and browser tests, and hands-on use on 
 | 15 | Low | Exporting InChI recomputed the 2D layout and lost the wedges. | Drawn coordinates are now used. |
 
 ### Still open
-- **EPS** output follows the PDF writer, but no PostScript interpreter was available to render it. Run it through Ghostscript or Illustrator before relying on it.
 - **MS/MS** is a rule-based estimate, and its relative intensities are rough. A learned model such as CFM-ID would be better, but it can't run offline in a single file.
 - **Still missing from the competitor survey:**
   - an option to show all C and H
@@ -146,3 +145,5 @@ An independent pass: fresh install, unit and browser tests, and hands-on use on 
   - polymer brackets
   - orbitals
   - image-to-structure
+
+- **EPS verified (October 2026):** Ghostscript, as a WebAssembly build, renders our EPS and PDF identically, pixel for pixel, at 300 dpi.
