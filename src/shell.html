@@ -251,6 +251,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       <div class="row"><button class="tb full" id="bSolv2">NMR solvent and impurity peaks</button></div>
       <div class="row"><button class="tb full" id="bAddInfo">Add formula and mass to drawing</button></div>
       <div class="row"><button class="tb full" id="bLookup" title="Find the name and CAS number on PubChem (needs internet)">Look up name and CAS number</button></div>
+      <div class="row"><button class="tb full" id="bFindDb" title="Search PubChem, RCSB PDB ligands, ChEMBL or Google for this structure">Find in databases</button></div>
     </section>
     <section>
       <h2>Text</h2>
@@ -397,6 +398,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <button role="menuitem" data-cmd="nmr" data-need="atoms"><span>Predict NMR</span></button>
   <button role="menuitem" data-cmd="ms" data-need="atoms"><span>Mass spectrum and MS/MS</span></button>
   <button role="menuitem" data-cmd="lookup" data-need="atoms"><span>Look up name and CAS number</span></button>
+  <button role="menuitem" data-cmd="finddb" data-need="atoms"><span>Find in PubChem, PDB, ChEMBL…</span></button>
   <div class="menusep" role="separator"></div>
   <button role="menuitem" data-cmd="group" data-need="sel"><span>Group</span><kbd>Ctrl G</kbd></button>
   <button role="menuitem" data-cmd="ungroup" data-need="sel"><span>Ungroup</span><kbd>Ctrl Shift G</kbd></button>

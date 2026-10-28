@@ -924,6 +924,38 @@ function addTextUnder(ids, text){
   doc.texts.push({id:nid(), x:(bb.x0+bb.x1)/2, y:below+L*0.95, text}); changed(); toast('Added below the structure');
 }
 
+/* ================= find in databases ================= */
+// Opens the drawn structure in public databases. Only the SMILES or InChIKey leaves the computer, and only on click.
+function rcsbUrl(smi, match){ return 'https://www.rcsb.org/search?request='+encodeURIComponent(JSON.stringify({query:{type:'terminal',service:'chemical',parameters:{value:smi,type:'descriptor',descriptor_type:'SMILES',match_type:match}},return_type:'mol_definition'})); }
+async function openFindDb(){
+  const {ids,comps}=lookupIds();
+  if (!ids.length){ toast('Draw or select a structure first'); return; }
+  if (comps.length>1){ toast('Select one structure to search for (click it with the Select tool)'); return; }
+  let r=null; try{ r=analysisFor(ids); }catch(e){}
+  if (!r || r.generic){ toast(r? 'Structures with R, X or custom labels can\u2019t be searched' : 'Could not interpret this structure'); return; }
+  const smi=r.smiles, key=(await inchiOf(r.molfile)).key;
+  const pc=t=>'https://pubchem.ncbi.nlm.nih.gov/#query='+encodeURIComponent(smi)+'&tab='+t;
+  const DBS=[
+    ['PubChem', [['Exact', pc('identity')], ['Similar (Tanimoto)', pc('similarity')], ['Substructure', pc('substructure')], ['Superstructure', pc('superstructure')]]],
+    ['RCSB PDB ligands', [['Exact', rcsbUrl(smi,'graph-exact')], ['Similar', rcsbUrl(smi,'graph-relaxed')], ['Substructure', rcsbUrl(smi,'sub-struct-graph-relaxed')]]],
+    ['ChEMBL', [['Compound page', 'chembl']]],
+    ['Web', [['Google (InChIKey)', key? 'https://www.google.com/search?q='+encodeURIComponent('"'+key+'"') : null], ['Google Scholar', key? 'https://scholar.google.com/scholar?q='+encodeURIComponent('"'+key+'"') : null]]],
+  ];
+  openDialog(`<div class="dialog-inner"><h3>Find in databases</h3><p class="code" style="word-break:break-all">${esc(smi)}${key?'<br>'+esc(key):''}</p>
+    <table class="peaks fmt"><tbody>${DBS.map(([db,acts])=>`<tr><td><b>${db}</b></td><td style="text-align:right">${acts.map(([n,u])=>`<button class="mini" ${u?`data-u="${esc(u)}"`:'disabled'}>${esc(n)}</button>`).join(' ')}</td></tr>`).join('')}</tbody></table>
+    <p class="note">Each button opens a new tab and sends only the SMILES or InChIKey shown above. For the name and CAS number, use Look up name and CAS number.</p>
+    <div class="actions"><button class="tb" id="fdCas">Look up name and CAS number</button><button class="tb primary" data-close>Done</button></div></div>`);
+  $('#fdCas').onclick=()=>lookupOnline();
+  dialog.querySelectorAll('[data-u]').forEach(b=>b.onclick=async()=>{
+    if (b.dataset.u!=='chembl'){ openExternal(b.dataset.u); return; }
+    const w=window.open('about:blank','_blank'); if (w) w.opener=null;
+    try{ const j=await fetch('https://www.ebi.ac.uk/chembl/api/data/molecule.json?only=molecule_chembl_id&molecule_structures__standard_inchi_key='+encodeURIComponent(key)).then(x=>x.json());
+      const id=j.molecules && j.molecules[0] && j.molecules[0].molecule_chembl_id;
+      if (id){ if (w) w.location='https://www.ebi.ac.uk/chembl/explore/compound/'+id; else openExternal('https://www.ebi.ac.uk/chembl/explore/compound/'+id); }
+      else { if (w) w.close(); toast('ChEMBL has no compound with this exact structure'); } }
+    catch(err){ if (w) w.close(); toast('ChEMBL could not be reached'); } });
+}
+
 /* ================= context menu ================= */
 const ctxMenu=$('#ctxMenu');
 function closeCtx(){ ctxMenu.hidden=true; }
@@ -944,7 +976,7 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   if (c==='smiles') copySmiles();
   else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
   else if (c==='lookup') lookupOnline();
-  else if (c==='nmr') openNmr(); else if (c==='ms') openMs();
+  else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb();
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
   else if (c==='delete') deleteSel();
@@ -1021,6 +1053,7 @@ function reactionSmiles(){
 }
 $('#bLookup').onclick=()=>lookupOnline();
 $('#bMs').onclick=()=>openMs();
+$('#bFindDb').onclick=()=>openFindDb();
 $('#props').addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, 'Copied'); });
 $('#bAddInfo').addEventListener('click', ()=>{
   if (!lastAnalysis){ toast('Draw a structure first'); return; }
