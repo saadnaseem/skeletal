@@ -2,12 +2,12 @@
 function newProject(){ return {v:2, uid:Math.random().toString(36).slice(2,10), name:'Untitled project', pages:[{id:1,name:'Page 1',doc:newDoc()}], cur:0, versions:[], nextPage:2, modified:Date.now()}; }
 let project = newProject();
 let doc = project.pages[0].doc, ix = buildIndex(doc);
-function setDoc(d){ doc=d; project.pages[project.cur].doc=d; }
+function setDoc(d){ doc=d; project.pages[project.cur].doc=d; useStyle(d); }
 const pageState = new Map();
 let sel = new Set();          // keys: a<id>, r<id> (arrow), t<id>, p<id>
 let hover = null, drag = null, preview = null;
 let view = {z:3, ox:0, oy:0};
-let tool = {id:'bond', bond:{order:1,stereo:'none'}, ring:6, arom:true, el:'N', arrow:'reaction', charge:1, textStyle:{}};
+let tool = {lasso:false, id:'bond', bond:{order:1,stereo:'none'}, ring:6, arom:true, el:'N', arrow:'reaction', charge:1, textStyle:{}};
 let undoStack=[], redoStack=[], clip=null, spaceDown=false, editingText=null;
 const cv=document.getElementById('cv'), stage=document.getElementById('stage');
 const $=s=>document.querySelector(s);
@@ -19,10 +19,11 @@ function redo(){ if(!redoStack.length) return; undoStack.push(JSON.stringify(doc
 function updateUndoButtons(){ $('#bUndo').disabled=!undoStack.length; $('#bRedo').disabled=!redoStack.length; }
 function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
 function syncPageUI(){ const e=$('#expArea'); if(!e) return; const has=!!doc.page; e.disabled=!has; if(!has) e.value='crop'; const p=doc.page; $('#pageInfo').textContent = p ? `${(PAGE_PRESETS[p.preset]||{n:'Custom'}).n.split(' (')[0]}, ${p.across} × ${p.down} ${p.across*p.down>1?'sheets':'sheet'} (${inch(p.w*p.across)} × ${inch(p.h*p.down)} in)` : 'Free canvas'; }
-function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus}[t]; if(!m||!m.has(id)) sel.delete(k);} }
+function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[t]; if(!m||!m.has(id)) sel.delete(k);} }
 let _saveT=null;
 let _saveWarned=false;
-function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } },300); }
+const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
+function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } }),400); }
 
 /* ================= model edits ================= */
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
@@ -133,6 +134,7 @@ function hitTest(p, ptype){
   if (best) return best;
   for (const t of doc.texts){ const m=textMetrics(doc,t); if (Math.abs(p.x-t.x)<=m.w/2+2 && Math.abs(p.y-t.y)<=m.h/2+2) return {type:'text',id:t.id}; }
   for (const q of doc.pluses){ if (dist(q,p)<Math.max(5,rB)) return {type:'plus',id:q.id}; }
+  for (const q of doc.plates){ const b=plateBBox(doc,q); if (p.x>=b.x0&&p.x<=b.x1&&p.y>=b.y0&&p.y<=b.y1) return {type:'plate',id:q.id}; }
   bd=rB;
   for (const b of doc.bonds){ const d=segDist(p,ix.atom.get(b.a),ix.atom.get(b.b)); if (d<bd){bd=d;best={type:'bond',id:b.id};} }
   if (best) return best;
@@ -150,7 +152,7 @@ function handleHit(p, r){
   const bb=selBBox(); if (bb && sel.size>0 && !ar){ const hp=V((bb.x0+bb.x1)/2, bb.y0-22/view.z); if (dist(p,hp)<r) return {type:'handle',h:'rotate'}; }
   return null;
 }
-function keyOf(h){ if(!h) return null; if (h.type==='atom') return 'a'+h.id; if (h.type==='arrow') return 'r'+h.id; if (h.type==='text') return 't'+h.id; if (h.type==='plus') return 'p'+h.id; return null; }
+function keyOf(h){ if(!h) return null; if (h.type==='atom') return 'a'+h.id; if (h.type==='arrow') return 'r'+h.id; if (h.type==='text') return 't'+h.id; if (h.type==='plus') return 'p'+h.id; if (h.type==='plate') return 'l'+h.id; return null; }
 function fragmentKeys(atomId){ const c=components(doc,ix).find(c=>c.includes(atomId)); return (c||[atomId]).map(id=>'a'+id); }
 function selAtoms(){ return [...sel].filter(k=>k[0]==='a').map(k=>+k.slice(1)); }
 function selPoints(){
@@ -159,7 +161,8 @@ function selPoints(){
     if (t==='a'){ const a=ix.atom.get(id); if(a) pts.push(a); }
     else if (t==='r'){ const r=ix.arrow.get(id); if(r){ pts.push(...arrowSamples(r)); } }
     else if (t==='t'){ const x=ix.text.get(id); if(x){ const m=textMetrics(doc,x); pts.push(V(x.x-m.w/2,x.y-m.h/2),V(x.x+m.w/2,x.y+m.h/2)); } }
-    else if (t==='p'){ const q=ix.plus.get(id); if(q) pts.push(V(q.x-4,q.y-4),V(q.x+4,q.y+4)); } }
+    else if (t==='p'){ const q=ix.plus.get(id); if(q) pts.push(V(q.x-4,q.y-4),V(q.x+4,q.y+4)); }
+    else if (t==='l'){ const q=ix.plate.get(id); if(q){ const b=plateBBox(doc,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); } } }
   return pts;
 }
 function selBBox(){ const pts=selPoints(); if(!pts.length) return null; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);} const pad=6; return {x0:x0-pad,y0:y0-pad,x1:x1+pad,y1:y1+pad}; }
@@ -168,19 +171,27 @@ function moveSel(dx,dy){
     if (t==='a'){ const a=ix.atom.get(id); a.x+=dx; a.y+=dy; }
     else if (t==='r'){ const r=ix.arrow.get(id); r.x1+=dx;r.y1+=dy;r.x2+=dx;r.y2+=dy; if(r.cx!=null){r.cx+=dx;r.cy+=dy;} }
     else if (t==='t'){ const x=ix.text.get(id); x.x+=dx; x.y+=dy; }
-    else if (t==='p'){ const q=ix.plus.get(id); q.x+=dx; q.y+=dy; } }
+    else if (t==='p'){ const q=ix.plus.get(id); q.x+=dx; q.y+=dy; }
+    else if (t==='l'){ const q=ix.plate.get(id); q.x+=dx; q.y+=dy; } }
 }
 function transformSel(fn){ // fn maps point->point
   for (const k of sel){ const t=k[0], id=+k.slice(1);
     if (t==='a'){ const a=ix.atom.get(id); const q=fn(a); a.x=q.x; a.y=q.y; }
     else if (t==='r'){ const r=ix.arrow.get(id); const c=CURVED.has(r.type)?arrowControl(r):null; const p1=fn(V(r.x1,r.y1)), p2=fn(V(r.x2,r.y2)); r.x1=p1.x;r.y1=p1.y;r.x2=p2.x;r.y2=p2.y; if(c){const q=fn(c); r.cx=q.x; r.cy=q.y;} }
     else if (t==='t'){ const x=ix.text.get(id); const q=fn(x); x.x=q.x; x.y=q.y; }
-    else if (t==='p'){ const p=ix.plus.get(id); const q=fn(p); p.x=q.x; p.y=q.y; } }
+    else if (t==='p'){ const p=ix.plus.get(id); const q=fn(p); p.x=q.x; p.y=q.y; }
+    else if (t==='l'){ const p=ix.plate.get(id); const q=fn(p); p.x=q.x; p.y=q.y; } }
 }
 
 /* ================= rendering ================= */
 const SELC='#2459a8';
+// pointer moves can arrive faster than the screen refreshes: while one is handled, redraws wait for the next frame
+let _deferRender=0, _renderQueued=false;
 function render(){
+  if (_deferRender){ if (!_renderQueued){ _renderQueued=true; requestAnimationFrame(()=>{ _renderQueued=false; renderNow(); }); } return; }
+  renderNow();
+}
+function renderNow(){
   ix=buildIndex(doc);
   const {svg, labels}=renderDoc(doc,ix);
   const z=view.z, ov=[];
@@ -191,7 +202,8 @@ function render(){
   for (const k of sel){ const t=k[0], id=+k.slice(1);
     if (t==='r'){ const pts=arrowSamples(ix.arrow.get(id)); ov.push(`<polyline points="${pts.map(p=>f2(p.x)+','+f2(p.y)).join(' ')}" fill="none" stroke="${SELC}" stroke-opacity=".22" stroke-width="${f2(L*0.34)}" stroke-linecap="round"/>`); }
     if (t==='t'){ const x=ix.text.get(id); const m=textMetrics(doc,x); ov.push(`<rect x="${f2(x.x-m.w/2-2)}" y="${f2(x.y-m.h/2-2)}" width="${f2(m.w+4)}" height="${f2(m.h+4)}" fill="${SELC}" fill-opacity=".14" stroke="${SELC}" stroke-width="1" vector-effect="non-scaling-stroke"/>`); }
-    if (t==='p'){ const q=ix.plus.get(id); ov.push(`<circle cx="${q.x}" cy="${q.y}" r="6" fill="${SELC}" fill-opacity=".2"/>`); } }
+    if (t==='p'){ const q=ix.plus.get(id); ov.push(`<circle cx="${q.x}" cy="${q.y}" r="6" fill="${SELC}" fill-opacity=".2"/>`); }
+    if (t==='l'){ const b=plateBBox(doc,ix.plate.get(id)); ov.push(`<rect x="${f2(b.x0-2)}" y="${f2(b.y0-2)}" width="${f2(b.x1-b.x0+4)}" height="${f2(b.y1-b.y0+4)}" fill="${SELC}" fill-opacity=".08" stroke="${SELC}" stroke-width="1" vector-effect="non-scaling-stroke"/>`); } }
   if (hover && !drag){
     if (hover.type==='atom'){ const a=ix.atom.get(hover.id); if(a) ov.push(`<circle cx="${a.x}" cy="${a.y}" r="${f2(L*0.26)}" fill="none" stroke="${SELC}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`); }
     if (hover.type==='bond'){ const b=ix.bond.get(hover.id); if(b){ const A=ix.atom.get(b.a),B=ix.atom.get(b.b); ov.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="${SELC}" stroke-opacity=".3" stroke-width="${f2(L*0.3)}" stroke-linecap="round"/>`);} }
@@ -199,6 +211,11 @@ function render(){
   }
   if (infoSite){ if (infoSite.atom!=null){ const a=ix.atom.get(infoSite.atom); if(a) ov.push(`<circle cx="${a.x}" cy="${a.y}" r="${f2(L*0.34)}" fill="#f2b705" fill-opacity=".35" stroke="#c48f00" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`); }
     if (infoSite.bond!=null){ const b=ix.bond.get(infoSite.bond); if(b){ const A=ix.atom.get(b.a),B=ix.atom.get(b.b); ov.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#f2b705" stroke-opacity=".5" stroke-width="${f2(L*0.4)}" stroke-linecap="round"/>`);} } }
+  // valence errors: a red box like ChemDraw's (on screen only, never exported)
+  const bad=[]; for (const a of doc.atoms){ const e=valenceError(a,ix); if (e) bad.push([a,e]); }
+  for (const [a] of bad){ const lb=labels.get(a.id), b=lb&&lb.visible&&lb.box ? lb.box : {x0:a.x-L*0.22,y0:a.y-L*0.22,x1:a.x+L*0.22,y1:a.y+L*0.22};
+    ov.push(`<rect x="${f2(b.x0-1)}" y="${f2(b.y0-1)}" width="${f2(b.x1-b.x0+2)}" height="${f2(b.y1-b.y0+2)}" fill="#e03131" fill-opacity=".12" stroke="#e03131" stroke-width="1.4" vector-effect="non-scaling-stroke"/>`); }
+  const vw=$('#valWarn'); if (vw){ vw.hidden=!bad.length; if (bad.length){ vw.textContent = bad.length===1 ? '\u26A0 '+bad[0][1].why : `\u26A0 ${bad.length} atoms have too many bonds`; vw._ids=bad.map(([a])=>a.id); } }
   // selection frame & handles
   if (tool.id==='select' && sel.size){
     const ar=selectedArrowSingle();
@@ -218,10 +235,12 @@ function render(){
     if (preview.lines) for (const [a,b] of preview.lines) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="${SELC}" stroke-width="${S().lineWidth*1.4}" stroke-linecap="round"/>`);
     if (preview.rect){ const r=preview.rect; ov.push(`<rect x="${f2(Math.min(r.x0,r.x1))}" y="${f2(Math.min(r.y0,r.y1))}" width="${f2(Math.abs(r.x1-r.x0))}" height="${f2(Math.abs(r.y1-r.y0))}" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
     if (preview.arrow){ const o=[]; renderArrow(doc,preview.arrow,o,SELC); ov.push(o.join('')); }
+    if (preview.poly){ ov.push(`<path d="M${preview.poly.map(q=>f2(q.x)+' '+f2(q.y)).join('L')}Z" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
+    if (preview.guides) for (const [a,b] of preview.guides) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="#d6336c" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
     if (preview.label) ov.push(`<text x="${f2(preview.label.x)}" y="${f2(preview.label.y)}" font-size="${f2(11/z)}" fill="${SELC}" font-family="${esc(FONT)}">${esc(preview.label.t)}</text>`);
   }
   cv.innerHTML=`<g transform="translate(${f2(view.ox)},${f2(view.oy)}) scale(${view.z})">${renderPageBackdrop()}${ov.join('')}${svg}</g>`;
-  $('#empty').style.display = (doc.atoms.length||doc.arrows.length||doc.texts.length||doc.pluses.length)?'none':'';
+  $('#empty').style.display = hasContent(doc)?'none':'';
   $('#zoomval').textContent=Math.round(view.z/3*100)+'%';
 }
 
@@ -242,6 +261,8 @@ cv.addEventListener('pointerdown', e=>{
   if (e.button===1 || spaceDown || tool.id==='hand'){ drag={mode:'pan', sx:e.clientX, sy:e.clientY, ox:view.ox, oy:view.oy}; cv.classList.add('pan'); return; }
   if (e.button!==0 && e.pointerType==='mouse') return;
   const p=toDoc(e), h=hitTest(p,e.pointerType);
+  if (e.pointerType==='mouse'){ const now=performance.now(), lp=lastPress; lastPress={t:now,x:e.clientX,y:e.clientY};
+    if (lp && now-lp.t<450 && Math.hypot(e.clientX-lp.x,e.clientY-lp.y)<6 && doubleAt(p)){ lastPress=null; return; } }
   drag={mode:'tool', start:p, last:p, sx:e.clientX, sy:e.clientY, hit:h, moved:false, shift:e.shiftKey, alt:e.altKey, ptype:e.pointerType};
   if (e.pointerType==='touch' && h && (h.type==='atom'||h.type==='text')){
     const d0=drag; clearTimeout(longPressT);
@@ -250,7 +271,8 @@ cv.addEventListener('pointerdown', e=>{
   }
   beginTool(drag);
 });
-window.addEventListener('pointermove', e=>{
+window.addEventListener('pointermove', e=>{ _deferRender++; try{ onPointerMove(e); } finally { _deferRender--; } });
+function onPointerMove(e){
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if (pinch && pointers.size===2){
     const [p1,p2]=[...pointers.values()]; const d=Math.hypot(p1.x-p2.x,p1.y-p2.y), m=V((p1.x+p2.x)/2,(p1.y+p2.y)/2);
@@ -265,7 +287,7 @@ window.addEventListener('pointermove', e=>{
   drag.alt=e.altKey; drag.cur=p;
   if (drag.moved) moveTool(drag,p);
   drag.last=p;
-});
+}
 function endPointer(e){
   pointers.delete(e.pointerId);
   if (pinch){ if (pointers.size<2) pinch=null; return; }
@@ -285,11 +307,15 @@ cv.addEventListener('wheel', e=>{
   else { view.ox-=e.deltaX; view.oy-=e.deltaY; render(); }
 },{passive:false});
 function zoomAt(sx,sy,f){ const nz=Math.min(20,Math.max(0.15,view.z*f)); const wx=(sx-view.ox)/view.z, wy=(sy-view.oy)/view.z; view.z=nz; view.ox=sx-wx*nz; view.oy=sy-wy*nz; render(); }
-cv.addEventListener('dblclick', e=>{
-  const p=toDoc(e), h=hitTest(p,'mouse');
-  if (h && h.type==='text') startTextEdit(ix.text.get(h.id));
-  else if (h && h.type==='atom' && (tool.id==='select')) openLabelDialog(h.id);
-});
+// double-click, detected from two quick presses: the native dblclick event is lost because the first click re-renders the canvas
+function doubleAt(p){
+  const h=hitTest(p,'mouse');
+  if (h && h.type==='plate'){ openTlcDialog(h.id); return true; }
+  if (h && h.type==='text'){ startTextEdit(ix.text.get(h.id)); return true; }
+  if (h && h.type==='atom' && tool.id==='select'){ openLabelDialog(h.id); return true; }
+  return false;
+}
+let lastPress=null;
 
 function ensureUndo(d){ if (!d.undoPushed){ pushUndo(); d.undoPushed=true; } }
 
@@ -300,7 +326,7 @@ function beginTool(d){
     const k = h ? (h.type==='bond' ? null : keyOf(h)) : null;
     if (h && h.type==='bond'){ const b=ix.bond.get(h.id); d.bondKeys=['a'+b.a,'a'+b.b]; d.sub = sel.has('a'+b.a)&&sel.has('a'+b.b) ? 'move' : 'pending'; return; }
     if (k){ d.key=k; d.sub = sel.has(k) ? 'move' : 'pending'; return; }
-    d.sub='rect'; if (!d.shift){ sel.clear(); render(); }
+    d.sub = tool.lasso ? 'lasso' : 'rect'; if (d.sub==='lasso') d.path=[d.start]; if (!d.shift){ sel.clear(); render(); }
     return;
   }
   if (tool.id==='erase'){ if (h && h.type!=='handle'){ ensureUndo(d); eraseAt(h); render(); } return; }
@@ -312,6 +338,7 @@ function eraseAt(h){
   else if (h.type==='arrow') doc.arrows=doc.arrows.filter(r=>r.id!==h.id);
   else if (h.type==='text') doc.texts=doc.texts.filter(r=>r.id!==h.id);
   else if (h.type==='plus') doc.pluses=doc.pluses.filter(r=>r.id!==h.id);
+  else if (h.type==='plate') doc.plates=doc.plates.filter(r=>r.id!==h.id);
   ix=buildIndex(doc);
 }
 function bondTarget(d,p){
@@ -330,11 +357,17 @@ function moveTool(d,p){
     if (d.sub==='pending'){
       // decide: dragging an unselected atom moves just the atom; others select fragment then move
       if (d.key && d.key[0]==='a'){ d.sub='atom'; d.atomId=+d.key.slice(1); }
-      else { if (!d.shift) sel.clear(); if (d.bondKeys) fragmentKeys(+d.bondKeys[0].slice(1)).forEach(k=>sel.add(k)); else sel.add(d.key); d.sub='move'; }
+      else { if (!d.shift) sel.clear(); withGroups(d.bondKeys ? fragmentKeys(+d.bondKeys[0].slice(1)) : [d.key]).forEach(k=>sel.add(k)); d.sub='move'; }
     }
-    if (d.sub==='move'){ ensureUndo(d); moveSel(p.x-d.last.x,p.y-d.last.y); render(); return; }
+    if (d.sub==='move'){ ensureUndo(d);
+      if (!d.applied){ d.applied=V(0,0); d.guide=guideSetup(); }
+      let off=sub(p,d.start), lines=[];
+      if (!d.alt && d.guide) ({off,lines}=snapToGuides(d.guide,off));
+      moveSel(off.x-d.applied.x, off.y-d.applied.y); d.applied=off;
+      preview = lines.length ? {guides:lines} : null; render(); return; }
     if (d.sub==='atom'){ ensureUndo(d); const a=ix.atom.get(d.atomId); a.x+=p.x-d.last.x; a.y+=p.y-d.last.y; render(); return; }
     if (d.sub==='rect'){ preview={rect:{x0:d.start.x,y0:d.start.y,x1:p.x,y1:p.y}}; render(); return; }
+    if (d.sub==='lasso'){ if (dist(p,d.path[d.path.length-1])>2/view.z) d.path.push(p); preview={poly:d.path}; render(); return; }
     if (d.sub==='handle'){
       ensureUndo(d); const h=d.hit;
       if (h.h==='rotate'){
@@ -382,13 +415,24 @@ function endTool(d,p){
         for (const a of doc.atoms) if (inR(a)) sel.add('a'+a.id);
         for (const ar of doc.arrows) if (inR(V(ar.x1,ar.y1))&&inR(V(ar.x2,ar.y2))) sel.add('r'+ar.id);
         for (const t of doc.texts) if (inR(t)) sel.add('t'+t.id);
-        for (const q of doc.pluses) if (inR(q)) sel.add('p'+q.id); }
+        for (const q of doc.pluses) if (inR(q)) sel.add('p'+q.id);
+        for (const q of doc.plates) if (inR(q)) sel.add('l'+q.id); }
+      return;
+    }
+    if (d.sub==='lasso' && d.moved && d.path.length>2){
+      const P=d.path, inP=q=>{ let c=false; for (let i=0,j=P.length-1;i<P.length;j=i++){ const a=P[i], b=P[j]; if ((a.y>q.y)!==(b.y>q.y) && q.x < (b.x-a.x)*(q.y-a.y)/(b.y-a.y)+a.x) c=!c; } return c; };
+      for (const a of doc.atoms) if (inP(a)) sel.add('a'+a.id);
+      for (const ar of doc.arrows) if (inP(V(ar.x1,ar.y1))&&inP(V(ar.x2,ar.y2))) sel.add('r'+ar.id);
+      for (const t of doc.texts) if (inP(t)) sel.add('t'+t.id);
+      for (const q of doc.pluses) if (inP(q)) sel.add('p'+q.id);
+      for (const q of doc.plates) if (inP(q)) sel.add('l'+q.id);
       return;
     }
     if (!d.moved){
-      if (d.sub==='rect'){ if(!d.shift) sel.clear(); return; }
+      if (d.sub==='rect' || d.sub==='lasso'){ if(!d.shift) sel.clear(); return; }
       if (d.sub==='handle') return;
       let keys = d.bondKeys ? fragmentKeys(+d.bondKeys[0].slice(1)) : d.key && d.key[0]==='a' ? fragmentKeys(+d.key.slice(1)) : [d.key];
+      keys=withGroups(keys);
       if (d.shift){ const all=keys.every(k=>sel.has(k)); keys.forEach(k=> all? sel.delete(k) : sel.add(k)); }
       else { sel.clear(); keys.forEach(k=>sel.add(k)); }
       return;
@@ -511,6 +555,7 @@ function commitText(){
 }
 
 /* ================= keyboard ================= */
+let _nudge={depth:-1,t:0}; // consecutive arrow-key nudges share one undo step
 const HOTKEY_EL={c:'C',n:'N',o:'O',s:'S',p:'P',f:'F',l:'Cl',b:'Br',i:'I',h:'H'};
 window.addEventListener('keydown', e=>{
   if (e.target.closest && e.target.closest('input,textarea,select,.dialog')) return;
@@ -519,19 +564,24 @@ window.addEventListener('keydown', e=>{
   if (mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
   if (mod && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
   if (mod && e.key.toLowerCase()==='a'){ e.preventDefault(); selectAll(); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase()==='c'){ e.preventDefault(); copySmiles(); return; }
   if (mod && e.key.toLowerCase()==='c'){ e.preventDefault(); clip=subDoc(sel.size?sel:null); copyImage(); return; }
   if (mod && e.key.toLowerCase()==='x'){ e.preventDefault(); if(!sel.size) return; clip=subDoc(sel); copyImage(); deleteSel(); return; }
+  if (mod && e.shiftKey && e.key.toLowerCase()==='s'){ e.preventDefault(); openSaveAs(); return; }
+  if (mod && e.key.toLowerCase()==='g'){ e.preventDefault(); e.shiftKey? ungroupSel() : groupSel(); return; }
   if (mod && e.key.toLowerCase()==='d'){ e.preventDefault(); if(sel.size){ clip=subDoc(sel); pasteDoc(clip, L); } return; }
   if (mod) return;
   if (e.key==='Escape'){ sel.clear(); preview=null; closeInfo(); render(); return; }
   if (e.key==='Delete'||e.key==='Backspace'){
     e.preventDefault();
     if (sel.size){ deleteSel(); return; }
-    if (hover){ pushUndo(); eraseAt(hover); hover=null; changed(); }
+    if (hover) toast('Select something first, or use the eraser');
     return;
   }
   if (e.key==='['||e.key===']'){ if(!sel.size) return; const bb=selBBox(); const c=V((bb.x0+bb.x1)/2,(bb.y0+bb.y1)/2); pushUndo(); transformSel(q=>rotAround(q,c,(e.key===']'?1:-1)*Math.PI/12)); changed(); return; }
-  if (e.key.startsWith('Arrow') && sel.size){ e.preventDefault(); const s=e.shiftKey?5:1; pushUndo(); moveSel(e.key==='ArrowLeft'?-s:e.key==='ArrowRight'?s:0, e.key==='ArrowUp'?-s:e.key==='ArrowDown'?s:0); changed(); return; }
+  if (e.key.startsWith('Arrow') && sel.size){ e.preventDefault(); const s=e.shiftKey?5:1;
+    if (!(_nudge.depth===undoStack.length && !redoStack.length && Date.now()-_nudge.t<1500)) pushUndo();
+    _nudge={depth:undoStack.length, t:Date.now()}; moveSel(e.key==='ArrowLeft'?-s:e.key==='ArrowRight'?s:0, e.key==='ArrowUp'?-s:e.key==='ArrowDown'?s:0); changed(); return; }
   const k=e.key;
   if (hover && hover.type==='atom'){
     const a=ix.atom.get(hover.id); if(!a) return;
@@ -548,25 +598,27 @@ window.addEventListener('keydown', e=>{
     if (k==='x'){ pushUndo(); b.order=1; b.stereo='hash'; changed(); return; }
   }
   const map={v:'select',e:'erase',t:'text'};
-  if (map[k]) setTool(map[k]);
+  if (k==='v') setTool('select',{lasso:false});
+  else if (k==='l') setTool('select',{lasso:true});
+  else if (map[k]) setTool(map[k]);
   else if (k==='1') setTool('bond',{order:1,stereo:'none'});
   else if (k==='2') setTool('bond',{order:2,stereo:'none'});
   else if (k==='3') setTool('bond',{order:3,stereo:'none'});
   else if (k==='a') setTool('arrow',{arrow:'reaction'});
 });
 window.addEventListener('keyup', e=>{ if (e.key===' '){ spaceDown=false; cv.classList.remove('pan'); } });
-function selectAll(){ sel.clear(); doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); if(tool.id!=='select') setTool('select'); render(); scheduleAnalysis(); }
+function selectAll(){ sel.clear(); doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); if(tool.id!=='select') setTool('select'); render(); scheduleAnalysis(); }
 function deleteSel(){
   if (!sel.size) return; pushUndo();
   const ka=new Set(selAtoms());
   doc.atoms=doc.atoms.filter(a=>!ka.has(a.id));
-  doc.arrows=doc.arrows.filter(r=>!sel.has('r'+r.id)); doc.texts=doc.texts.filter(t=>!sel.has('t'+t.id)); doc.pluses=doc.pluses.filter(p=>!sel.has('p'+p.id));
+  doc.arrows=doc.arrows.filter(r=>!sel.has('r'+r.id)); doc.texts=doc.texts.filter(t=>!sel.has('t'+t.id)); doc.pluses=doc.pluses.filter(p=>!sel.has('p'+p.id)); doc.plates=doc.plates.filter(q=>!sel.has('l'+q.id));
   sel.clear(); changed();
 }
 
 /* ================= sub-documents, clipboard ================= */
 function subDoc(keys){
-  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms};
+  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms, ...(doc.labelSize?{labelSize:doc.labelSize}:{}), ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{})};
   const all = !keys || !keys.size;
   const aSet=new Set(all? doc.atoms.map(a=>a.id) : [...keys].filter(k=>k[0]==='a').map(k=>+k.slice(1)));
   d.atoms=doc.atoms.filter(a=>aSet.has(a.id)).map(a=>({...a}));
@@ -574,10 +626,11 @@ function subDoc(keys){
   d.arrows=doc.arrows.filter(r=>all||keys.has('r'+r.id)).map(r=>({...r}));
   d.texts=doc.texts.filter(t=>all||keys.has('t'+t.id)).map(t=>({...t}));
   d.pluses=doc.pluses.filter(p=>all||keys.has('p'+p.id)).map(p=>({...p}));
+  d.plates=doc.plates.filter(q=>all||keys.has('l'+q.id)).map(q=>JSON.parse(JSON.stringify(q)));
   return d;
 }
 function contentBBox(d){
-  const pts=[]; d.atoms.forEach(a=>pts.push(a)); d.arrows.forEach(r=>pts.push(...arrowSamples(r))); d.texts.forEach(t=>{const m=textMetrics(d,t); pts.push(V(t.x-m.w/2,t.y-m.h/2),V(t.x+m.w/2,t.y+m.h/2));}); d.pluses.forEach(p=>pts.push(p));
+  const pts=[]; d.atoms.forEach(a=>pts.push(a)); d.arrows.forEach(r=>pts.push(...arrowSamples(r))); d.texts.forEach(t=>{const m=textMetrics(d,t); pts.push(V(t.x-m.w/2,t.y-m.h/2),V(t.x+m.w/2,t.y+m.h/2));}); d.pluses.forEach(p=>pts.push(p)); (d.plates||[]).forEach(q=>{ const b=plateBBox(d,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); });
   if (!pts.length) return null; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);} return {x0,y0,x1,y1};
 }
 function pasteDoc(src, offset, at){
@@ -586,11 +639,13 @@ function pasteDoc(src, offset, at){
   let dx=offset||0, dy=offset||0;
   if (at && bb){ dx=at.x-(bb.x0+bb.x1)/2; dy=at.y-(bb.y0+bb.y1)/2; }
   sel.clear();
-  for (const a of src.atoms){ const n={...a,id:nid(),x:a.x+dx,y:a.y+dy}; idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
+  const gMap=new Map(); let gNext=maxGroup()+1; const G=o=>{ if (o.g==null) return o; if (!gMap.has(o.g)) gMap.set(o.g,gNext++); o.g=gMap.get(o.g); return o; };
+  for (const a of src.atoms){ const n=G({...a,id:nid(),x:a.x+dx,y:a.y+dy}); idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
   for (const b of src.bonds){ doc.bonds.push({...b,id:nid(),a:idMap.get(b.a),b:idMap.get(b.b)}); }
-  for (const r of src.arrows){ const n={...r,id:nid(),x1:r.x1+dx,y1:r.y1+dy,x2:r.x2+dx,y2:r.y2+dy}; if(r.cx!=null){n.cx=r.cx+dx;n.cy=r.cy+dy;} doc.arrows.push(n); sel.add('r'+n.id); }
-  for (const t of src.texts){ const n={...t,id:nid(),x:t.x+dx,y:t.y+dy}; doc.texts.push(n); sel.add('t'+n.id); }
-  for (const p of src.pluses){ const n={...p,id:nid(),x:p.x+dx,y:p.y+dy}; doc.pluses.push(n); sel.add('p'+n.id); }
+  for (const r of src.arrows){ const n=G({...r,id:nid(),x1:r.x1+dx,y1:r.y1+dy,x2:r.x2+dx,y2:r.y2+dy}); if(r.cx!=null){n.cx=r.cx+dx;n.cy=r.cy+dy;} doc.arrows.push(n); sel.add('r'+n.id); }
+  for (const t of src.texts){ const n=G({...t,id:nid(),x:t.x+dx,y:t.y+dy}); doc.texts.push(n); sel.add('t'+n.id); }
+  for (const p of src.pluses){ const n=G({...p,id:nid(),x:p.x+dx,y:p.y+dy}); doc.pluses.push(n); sel.add('p'+n.id); }
+  for (const q of src.plates||[]){ const n=G({...JSON.parse(JSON.stringify(q)),id:nid(),x:q.x+dx,y:q.y+dy}); doc.plates.push(n); sel.add('l'+n.id); }
   if (tool.id!=='select') setTool('select');
   changed();
 }
@@ -633,8 +688,17 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
   if (tool.id!=='select') setTool('select');
   changed(); fitIfNeeded();
 }
+// a drawing read from another program's file: paste it in (or make it the page when the page is empty)
+function insertForeign(r, name){
+  const d=normalizeDoc({...newDoc(), ...r, style:doc.style});
+  if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
+  if (hasContent(doc)) pasteDoc(d,0,viewCenter()); else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page, styleOv:doc.styleOv, labelSize:doc.labelSize}); sel.clear(); changed(); fit(); }
+  toast('Opened '+(name||'drawing'));
+}
 function tryLoadText(txt, quiet){
   try{
+    if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
+    if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
       const mol=OCL.Molecule.fromMolfile(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
@@ -642,6 +706,9 @@ function tryLoadText(txt, quiet){
       if (!hasXY) mol.inventCoordinates();
       insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
     }
+    if (/^InChI=/.test(txt)){ OCL.InChI.molfileFromInchi(txt.split(/\s+/)[0]).then(r=>{ if (!r.molfile) throw new Error(r.message);
+        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); insertFragments([{kind:'frag',f:molToFragment(mol)}]); closeDialog(); })
+        .catch(()=>toast('That InChI could not be read')); return true; }
     if (txt.startsWith('{')){ const d=JSON.parse(txt); if (d && d.atoms){ pasteDoc(normalizeDoc(d),0,viewCenter()); return true; } }
     const line=txt.split(/\s+/)[0];
     if (line.includes('>')){
@@ -660,7 +727,7 @@ function tryLoadText(txt, quiet){
   }catch(err){ if(!quiet) console.warn(err); return false; }
 }
 function viewCenter(){ return V((cv.clientWidth/2-view.ox)/view.z,(cv.clientHeight/2-view.oy)/view.z); }
-function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
+function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
 
 /* ================= clean, flip ================= */
 function cleanUp(){
@@ -673,8 +740,8 @@ function cleanUp(){
     let cx=0,cy=0; for (const id of comp){ const a=ix.atom.get(id); cx+=a.x; cy+=a.y; } cx/=comp.length; cy/=comp.length;
     mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
     mol.inventCoordinates(); scaleLayout(mol);
-    let nx=0,ny=0; for (const id of comp){ const i=map.get(id); nx+=mol.getAtomX(i)*L; ny+=-mol.getAtomY(i)*L; } nx/=comp.length; ny/=comp.length;
-    for (const id of comp){ const a=ix.atom.get(id), i=map.get(id); a.x=mol.getAtomX(i)*L-nx+cx; a.y=-mol.getAtomY(i)*L-ny+cy; }
+    let nx=0,ny=0; for (const id of comp){ const i=map.get(id); nx+=mol.getAtomX(i)*L; ny+=mol.getAtomY(i)*L; } nx/=comp.length; ny/=comp.length;
+    for (const id of comp){ const a=ix.atom.get(id), i=map.get(id); a.x=mol.getAtomX(i)*L-nx+cx; a.y=mol.getAtomY(i)*L-ny+cy; }
     // stereo bonds as re-derived by OCL
     const inv=new Map([...map].map(([k,v])=>[v,k]));
     const stereoOf=new Map();
@@ -700,11 +767,357 @@ function flip(axis){
   if (!keys) sel.clear();
   changed();
 }
-function selectAllSilent(){ doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); }
+/* ================= align, distribute ================= */
+// The pieces that move as one: each connected structure, straight arrow, plus sign and free text.
+// Compound labels and curly arrows ride along with the structure (or arrow) they sit on, and don't count toward its box.
+function bboxOf(pts){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);} return {x0,y0,x1,y1}; }
+function fragPoints(ids){
+  const pts=[];
+  for (const id of ids){ const a=ix.atom.get(id), lb=layoutLabel(doc,ix,a);
+    if (lb.visible && lb.box) pts.push(V(lb.box.x0,lb.box.y0),V(lb.box.x1,lb.box.y1)); else pts.push(a); }
+  return pts;
+}
+function layoutUnits(keys){
+  const units=[], riders=[];
+  for (const comp of components(doc,ix,[...keys].filter(k=>k[0]==='a').map(k=>+k.slice(1))))
+    units.push({keys:comp.map(id=>'a'+id), bb:bboxOf(fragPoints(comp)), kind:'frag'});
+  for (const k of keys){ const t=k[0], id=+k.slice(1);
+    if (t==='r'){ const r=ix.arrow.get(id); if (CURVED.has(r.type)) riders.push({key:k, at:quadPt(V(r.x1,r.y1),arrowControl(r),V(r.x2,r.y2),0.5)}); else units.push({keys:[k], bb:bboxOf(arrowSamples(r)), kind:'arrow'}); }
+    else if (t==='p'){ const q=ix.plus.get(id); units.push({keys:[k], bb:{x0:q.x-4,y0:q.y-4,x1:q.x+4,y1:q.y+4}, kind:'plus'}); }
+    else if (t==='l'){ units.push({keys:[k], bb:plateBBox(doc,ix.plate.get(id)), kind:'plate'}); }
+    else if (t==='t'){ const x=ix.text.get(id), m=textMetrics(doc,x); riders.push({key:k, at:V(x.x,x.y), bb:{x0:x.x-m.w/2,y0:x.y-m.h/2,x1:x.x+m.w/2,y1:x.y+m.h/2}}); }
+  }
+  // pieces in one group become one unit
+  const gOf=keys=>{ for (const k of keys){ const o=objOf(k); if (o && o.g) return o.g; } return 0; };
+  const byG=new Map();
+  for (let i=units.length-1;i>=0;i--){ const u=units[i], g=gOf(u.keys); if (!g) continue;
+    const m=byG.get(g); if (!m){ byG.set(g,u); continue; }
+    m.keys.push(...u.keys); m.bb={x0:Math.min(m.bb.x0,u.bb.x0),y0:Math.min(m.bb.y0,u.bb.y0),x1:Math.max(m.bb.x1,u.bb.x1),y1:Math.max(m.bb.y1,u.bb.y1)}; if (u.kind==='frag') m.kind='frag'; units.splice(i,1); }
+  for (let i=riders.length-1;i>=0;i--){ const rd=riders[i], o=objOf(rd.key); if (!o.g) continue;
+    const u=byG.get(o.g);
+    if (u){ u.keys.push(rd.key); if (u.kind==='text' && rd.bb) u.bb={x0:Math.min(u.bb.x0,rd.bb.x0),y0:Math.min(u.bb.y0,rd.bb.y0),x1:Math.max(u.bb.x1,rd.bb.x1),y1:Math.max(u.bb.y1,rd.bb.y1)}; }
+    else { const bb=rd.bb||{x0:rd.at.x,y0:rd.at.y,x1:rd.at.x,y1:rd.at.y}; const nu={keys:[rd.key], bb:{...bb}, kind:'text'}; byG.set(o.g,nu); units.push(nu); }
+    riders.splice(i,1); }
+  for (const rd of riders){
+    let best=null, bd=L*1.6;
+    for (const u of units){ if (u.kind==='plus') continue;
+      const dx=Math.max(u.bb.x0-rd.at.x,0,rd.at.x-u.bb.x1), dy=Math.max(u.bb.y0-rd.at.y,0,rd.at.y-u.bb.y1), dd=Math.hypot(dx,dy);
+      if (dd<bd){ bd=dd; best=u; } }
+    if (best) best.keys.push(rd.key);
+    else units.push({keys:[rd.key], bb: rd.bb || {x0:rd.at.x,y0:rd.at.y,x1:rd.at.x,y1:rd.at.y}, kind:'text'});
+  }
+  return units;
+}
+/* smart guides: while dragging, snap the selection's edges and centers to other pieces (Alt turns it off) */
+function guideSetup(){
+  const mine=layoutUnits(sel); if (!mine.length) return null;
+  const rest=new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id),...doc.plates.map(q=>'l'+q.id)].filter(k=>!sel.has(k)));
+  const others=rest.size ? layoutUnits(rest).map(u=>u.bb).slice(0,400) : [];
+  return others.length ? {mov:bboxOf(mine.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)])), others} : null;
+}
+function snapToGuides(g, off){
+  const thr=6/view.z, m={x0:g.mov.x0+off.x, x1:g.mov.x1+off.x, y0:g.mov.y0+off.y, y1:g.mov.y1+off.y};
+  const lines=[]; const out=V(off.x,off.y);
+  for (const ax of ['x','y']){
+    const lo=ax+'0', hi=ax+'1', mine=[m[lo],(m[lo]+m[hi])/2,m[hi]];
+    let best=null;
+    for (const o of g.others){ const theirs=[o[lo],(o[lo]+o[hi])/2,o[hi]];
+      for (let i=0;i<3;i++) for (let j=0;j<3;j++){ const dd=theirs[j]-mine[i], sc=Math.abs(dd)+(i===1&&j===1?0:thr); // a center match always beats an edge match
+        if (Math.abs(dd)<thr && (!best || sc<best.sc-1e-6)) best={dd,sc,at:theirs[j],o}; } }
+    if (!best) continue;
+    out[ax]+=best.dd;
+    const c=ax==='x'?'y':'x', lo2=c+'0', hi2=c+'1', mlo=(c==='x'?m.x0:m.y0)+(c==='x'?out.x-off.x:out.y-off.y), mhi=(c==='x'?m.x1:m.y1)+(c==='x'?out.x-off.x:out.y-off.y);
+    const a=Math.min(best.o[lo2],mlo)-6, b=Math.max(best.o[hi2],mhi)+6;
+    lines.push(ax==='x' ? [V(best.at,a),V(best.at,b)] : [V(a,best.at),V(b,best.at)]);
+  }
+  return {off:out, lines};
+}
+
+/* groups: objects sharing a g id select, move and align together */
+function objOf(k){ const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[k[0]]; return m && m.get(+k.slice(1)); }
+function allObjects(){ return [...doc.atoms,...doc.arrows,...doc.texts,...doc.pluses,...doc.plates]; }
+function maxGroup(){ let m=0; for (const o of allObjects()) if (o.g>m) m=o.g; return m; }
+function withGroups(keys){
+  const gs=new Set(); for (const k of keys){ const o=objOf(k); if (o && o.g) gs.add(o.g); }
+  if (!gs.size) return keys;
+  const out=new Set(keys);
+  for (const [t,arr] of [['a',doc.atoms],['r',doc.arrows],['t',doc.texts],['p',doc.pluses],['l',doc.plates]]) for (const o of arr) if (gs.has(o.g)) out.add(t+o.id);
+  return [...out];
+}
+function groupSel(){
+  if (!sel.size){ toast('Select a structure and its label to group them'); return; }
+  const keys=new Set(sel); for (const id of selAtoms()) fragmentKeys(id).forEach(k=>keys.add(k));
+  pushUndo(); const g=maxGroup()+1; for (const k of keys){ const o=objOf(k); if (o) o.g=g; }
+  sel=new Set(keys); changed(); toast('Grouped. Click any part to select the group; Ctrl+Shift+G ungroups.');
+}
+function ungroupSel(){
+  const os=[...sel].map(objOf).filter(o=>o && o.g); if (!os.length){ toast('Nothing grouped in the selection'); return; }
+  pushUndo(); for (const o of os) delete o.g; changed(); toast('Ungrouped');
+}
+function moveKeys(keys,dx,dy){ const s=sel; sel=new Set(keys); moveSel(dx,dy); sel=s; }
+let alignGap=0; try{ alignGap=+localStorage.getItem('skeletal.alignGap')||0; }catch(e){} // fixed gap in bond lengths; 0 keeps the outer pieces in place
+// mode: left | center | right | top | middle | bottom | hspace | vspace | row (middle, then hspace)
+function arrange(mode){
+  const all=!sel.size; const keys = all ? new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id),...doc.plates.map(q=>'l'+q.id)]) : sel;
+  const units=layoutUnits(keys);
+  if (units.length<2){ toast(all ? 'Draw at least two structures to align' : 'Select two or more structures to align'); return; }
+  pushUndo();
+  if (mode==='row'){ arrangeUnits(units,'middle'); arrangeUnits(layoutUnits(keys),'hspace'); }
+  else arrangeUnits(units,mode);
+  changed();
+}
+function arrangeUnits(units,mode){
+  const B=bboxOf(units.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)]));
+  const cx=(B.x0+B.x1)/2, cy=(B.y0+B.y1)/2;
+  if (mode==='hspace' || mode==='vspace'){
+    const h=mode==='hspace', lo=h?'x0':'y0', hi=h?'x1':'y1';
+    units.sort((a,b)=>(a.bb[lo]+a.bb[hi])-(b.bb[lo]+b.bb[hi]));
+    const used=units.reduce((s,u)=>s+u.bb[hi]-u.bb[lo],0);
+    let gap = alignGap>0 ? alignGap*L : (B[hi]-B[lo]-used)/(units.length-1);
+    if (gap<L*0.8 && !(alignGap>0)) gap=L*0.8; // overlapping pieces: spread them out instead
+    let at=B[lo];
+    for (const u of units){ const d=at-u.bb[lo]; moveKeys(u.keys, h?d:0, h?0:d); at+=u.bb[hi]-u.bb[lo]+gap; }
+  } else {
+    for (const u of units){ const b=u.bb;
+      const dx = mode==='left'? B.x0-b.x0 : mode==='right'? B.x1-b.x1 : mode==='center'? cx-(b.x0+b.x1)/2 : 0;
+      const dy = mode==='top'? B.y0-b.y0 : mode==='bottom'? B.y1-b.y1 : mode==='middle'? cy-(b.y0+b.y1)/2 : 0;
+      moveKeys(u.keys,dx,dy); }
+  }
+}
+
+function selectAllSilent(){ doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); }
+
+/* ================= SMILES copy, online lookup (PubChem) ================= */
+// The only network use in the app. It runs only when the user asks, and sends just the SMILES or the typed name.
+const PUBCHEM='https://pubchem.ncbi.nlm.nih.gov/rest/pug';
+function lookupIds(){
+  const ids=selAtoms().length? selAtoms() : doc.atoms.map(a=>a.id);
+  return {ids, comps:components(doc,ix,ids)};
+}
+function copySmiles(){
+  const {ids}=lookupIds(); if (!ids.length){ toast('Nothing to copy'); return; }
+  let r=null; try{ r=analysisFor(ids); }catch(e){}
+  if (!r){ toast('Could not interpret this structure'); return; }
+  copyText(r.smiles, (selAtoms().length? 'SMILES of the selection' : 'SMILES')+' copied: '+(r.smiles.length>60? r.smiles.slice(0,57)+'\u2026' : r.smiles));
+}
+async function pcFetch(path, body){
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),12000);
+  try{
+    const res=await fetch(PUBCHEM+path, body ? {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body, signal:ctl.signal} : {signal:ctl.signal});
+    if (res.status===404) return null;
+    if (!res.ok) throw new Error('PubChem returned '+res.status);
+    return await res.json();
+  } finally { clearTimeout(t); }
+}
+async function pubchemNameToSmiles(name){
+  const j=await pcFetch('/compound/name/'+encodeURIComponent(name)+'/property/SMILES/JSON');
+  const p=j && j.PropertyTable && j.PropertyTable.Properties[0]; return p ? (p.SMILES || p.IsomericSMILES || p.CanonicalSMILES) : null;
+}
+function casValid(c){ const m=/^(\d{2,7})-(\d{2})-(\d)$/.exec(c); if (!m) return false; const d=(m[1]+m[2]).split('').reverse(); return d.reduce((s,x,i)=>s+(+x)*(i+1),0)%10===+m[3]; }
+async function pubchemLookup(smiles){
+  const j=await pcFetch('/compound/smiles/cids/JSON', 'smiles='+encodeURIComponent(smiles));
+  const cid=j && j.IdentifierList && j.IdentifierList.CID && j.IdentifierList.CID[0];
+  if (!cid) return null;
+  const [pj,sj]=await Promise.all([pcFetch(`/compound/cid/${cid}/property/Title,IUPACName,InChIKey,MolecularFormula/JSON`), pcFetch(`/compound/cid/${cid}/synonyms/JSON`)]);
+  const p=(pj && pj.PropertyTable.Properties[0])||{};
+  const syn=(sj && sj.InformationList && sj.InformationList.Information[0].Synonym)||[];
+  return {cid, title:p.Title||'', iupac:p.IUPACName||'', inchikey:p.InChIKey||'', cas:[...new Set(syn.filter(casValid))], synonyms:syn.filter(x=>!casValid(x)).slice(0,8)};
+}
+const webSearchUrl=q=>'https://www.google.com/search?q='+encodeURIComponent(q);
+function openExternal(url){ const w=window.open(url,'_blank','noopener,noreferrer'); if (!w) toast('Your browser blocked the new tab; allow pop-ups for this page'); }
+async function lookupOnline(){
+  const {ids,comps}=lookupIds();
+  if (!ids.length){ toast('Draw or select a structure first'); return; }
+  if (comps.length>1){ toast('Select one structure to look up (click it with the Select tool)'); return; }
+  let r=null; try{ r=analysisFor(ids); }catch(e){}
+  if (!r){ toast('Could not interpret this structure'); return; }
+  if (r.generic){ toast('Structures with R, X or custom labels can\u2019t be looked up'); return; }
+  const smi=r.smiles;
+  openDialog(`<h3>Name and CAS number</h3><p class="code" style="word-break:break-all">${esc(smi)}</p><div id="lkOut"><p>Looking this structure up on PubChem\u2026</p></div>
+    <p class="note">Sends only the SMILES above to PubChem (US National Library of Medicine). CAS numbers come from PubChem\u2019s synonym list; check important ones on CAS Common Chemistry.</p>
+    <div class="actions"><button class="tb" id="lkWeb">Search the web</button><button class="tb" data-close>Close</button></div>`);
+  let q=`"${smi}" CAS number`;
+  $('#lkWeb').onclick=()=>openExternal(webSearchUrl(q));
+  let res;
+  try{ res=await pubchemLookup(smi); }
+  catch(err){ if ($('#lkOut')) $('#lkOut').innerHTML='<p class="err">PubChem could not be reached. Check your internet connection, or use Search the web.</p>'; return; }
+  const out=$('#lkOut'); if (!out) return; // dialog closed meanwhile
+  if (!res){ out.innerHTML='<p>PubChem has no record of this exact structure (stereochemistry counts). Try Search the web, or remove stereo bonds and look up again.</p>'; return; }
+  q = res.title ? `${res.title} CAS number` : `${res.inchikey} CAS number`;
+  const casRow=c=>`<li><b class="code">${esc(c)}</b> <button class="mini" data-cp="${esc(c)}">Copy</button> <button class="mini" data-add="CAS ${esc(c)}">Add to drawing</button> <button class="mini" data-url="https://commonchemistry.cas.org/detail?cas_rn=${encodeURIComponent(c)}">Verify</button></li>`;
+  out.innerHTML=`<dl class="lk">
+      <dt>Name</dt><dd>${esc(res.title)||'\u2014'} ${res.title?`<button class="mini" data-cp="${esc(res.title)}">Copy</button> <button class="mini" data-add="${esc(res.title)}">Add to drawing</button>`:''}</dd>
+      ${res.iupac?`<dt>IUPAC</dt><dd>${esc(res.iupac)} <button class="mini" data-cp="${esc(res.iupac)}">Copy</button></dd>`:''}
+      <dt>CAS RN</dt><dd>${res.cas.length? `<ul class="caslist">${casRow(res.cas[0])}</ul>${res.cas.length>1?`<details><summary>${res.cas.length-1} more listed (often deprecated or for mixtures)</summary><ul class="caslist">${res.cas.slice(1,8).map(casRow).join('')}</ul></details>`:''}` : 'None listed on PubChem'}</dd>
+      <dt>InChIKey</dt><dd class="code">${esc(res.inchikey)} <button class="mini" data-cp="${esc(res.inchikey)}">Copy</button></dd>
+      <dt>PubChem</dt><dd><button class="mini" data-url="https://pubchem.ncbi.nlm.nih.gov/compound/${res.cid}">Open CID ${res.cid}</button></dd>
+    </dl>`;
+  out.onclick=e=>{ const b=e.target.closest('button'); if (!b) return;
+    if (b.dataset.cp) copyText(b.dataset.cp,'Copied');
+    else if (b.dataset.url) openExternal(b.dataset.url);
+    else if (b.dataset.add) addTextUnder(ids, b.dataset.add); };
+}
+function addTextUnder(ids, text){
+  const bb=bboxOf(fragPoints(ids)); pushUndo();
+  const below=doc.texts.filter(t=>t.x>=bb.x0 && t.x<=bb.x1 && t.y>bb.y1 && t.y<bb.y1+L*4).reduce((m,t)=>Math.max(m,t.y),bb.y1);
+  const t={id:nid(), x:(bb.x0+bb.x1)/2, y:0, text, ...(text.includes('\n')?{align:'left'}:{})};
+  t.y = below + L*0.6 + textMetrics(doc,t).h/2; // top of the block sits just under the structure, however many lines it has
+  doc.texts.push(t); changed(); toast('Added below the structure');
+}
+
+/* ================= TLC plate editor ================= */
+// lanes are typed as "label: Rf, Rf, Rf-Rf" (a range is a streak); spots get a style from the menu
+function parseLanes(txt, style){
+  return txt.split('\n').map(l=>l.trim()).filter(Boolean).slice(0,20).map(line=>{
+    const m=/^([^:]*):?(.*)$/.exec(line), hasColon=line.includes(':'), label=(hasColon? m[1] : line).trim(), rest=hasColon? m[2] : '';
+    const spots=rest.split(/[,;]/).map(x=>x.trim()).filter(Boolean).map(x=>{ const r=/^(\d*\.?\d+)\s*(?:-|–|to)\s*(\d*\.?\d+)$/.exec(x);
+      if (r) return {rf:Math.min(1,+r[1]), to:Math.min(1,+r[2]), style}; const v=parseFloat(x); return Number.isFinite(v)? {rf:Math.min(1,Math.max(0,v)), style} : null; }).filter(Boolean);
+    return {label:label.slice(0,40), spots};
+  });
+}
+const lanesText=q=>q.lanes.map(l=>`${l.label}: ${l.spots.map(sp=>sp.to!=null? `${sp.rf}-${sp.to}` : sp.rf).join(', ')}`).join('\n');
+function openTlcDialog(editId){
+  const old = editId!=null ? ix.plate.get(editId) : null;
+  const q = old ? JSON.parse(JSON.stringify(old)) : {id:0, x:0, y:0, w:0, h:L*7, origin:0.12, front:0.9, solvent:'30% EtOAc/hexanes', showRf:false,
+    lanes:[{label:'SM', spots:[{rf:0.6,style:'fill'}]}, {label:'co', spots:[{rf:0.6,style:'fill'},{rf:0.25,style:'fill'}]}, {label:'Rxn', spots:[{rf:0.25,style:'fill'}]}]};
+  const style0 = (q.lanes.flatMap(l=>l.spots)[0]||{}).style || 'fill';
+  const autoW = n=>{ const fs=S().fontSize; return Math.max(L*2.5, (n+1)*Math.max(L*1.15, fs*1.6, q.showRf? fs*3.6 : 0)); }; // room for Rf labels
+  const preview=()=>{ const d={...newDoc(), style:doc.style, styleOv:doc.styleOv, labelSize:doc.labelSize, plates:[{...q, x:0, y:0, w:q.w||autoW(q.lanes.length)}]};
+    const {svg}=renderDoc(d, buildIndex(d)); useStyle(doc); const b=plateBBox(d,d.plates[0]), pad=6;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f2(b.x0-pad)} ${f2(b.y0-pad)} ${f2(b.x1-b.x0+2*pad)} ${f2(b.y1-b.y0+2*pad)}" style="width:100%;max-height:260px">${svg}</svg>`; };
+  openDialog(`<div class="dialog-inner"><h3>${old?'Edit':'Insert'} TLC plate</h3>
+    <div class="nmrgrid"><div>
+      <label style="font-size:13px">Lanes, one per line: <span class="code">label: Rf, Rf</span> (a range such as <span class="code">0.2-0.45</span> is a streak)</label>
+      <textarea id="tlLanes" style="height:96px">${esc(lanesText(q))}</textarea>
+      <div class="dset" style="margin-top:8px">
+        <label for="tlSolv">Eluent</label><span><input id="tlSolv" style="width:100%" value="${esc(q.solvent)}"></span>
+        <label for="tlStyle">Spots</label><span><select class="sel" id="tlStyle"><option value="fill">Filled</option><option value="outline">Circled (pencil)</option><option value="faint">Faint (grey)</option></select></span>
+        <label for="tlH">Height</label><span><input type="number" id="tlH" min="20" max="600" step="1" value="${Math.round(q.h)}"> pt</span>
+        <label for="tlW">Width</label><span><input type="number" id="tlW" min="20" max="900" step="1" value="${q.w?Math.round(q.w):''}" placeholder="auto"> pt</span>
+        <label for="tlO">Origin</label><span><input type="number" id="tlO" min="0" max="0.5" step="0.01" value="${q.origin}"> of height</span>
+        <label for="tlF">Solvent front</label><span><input type="number" id="tlF" min="0.5" max="1" step="0.01" value="${q.front}"> of height</span>
+      </div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="tlRf"${q.showRf?' checked':''}> Show Rf values</label>
+    </div><div class="nmrbox" id="tlPrev">${preview()}</div></div>
+    <p class="note">Rf is measured from the origin (dashed line) to the solvent front. Drawn with the page's line width and label font; double-click the plate later to edit it.</p>
+    <div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="tlGo">${old?'Update':'Insert'}</button></div></div>`);
+  dialog.classList.add('wide'); $('#tlStyle').value=style0;
+  const read=()=>{ q.lanes=parseLanes($('#tlLanes').value, $('#tlStyle').value); q.solvent=$('#tlSolv').value.slice(0,200); q.showRf=$('#tlRf').checked;
+    q.h=Math.min(600,Math.max(20,+$('#tlH').value||L*5)); q.w=+$('#tlW').value>0? Math.min(900,Math.max(20,+$('#tlW').value)) : 0;
+    q.origin=Math.min(0.5,Math.max(0,+$('#tlO').value)); q.front=Math.min(1,Math.max(0.5,+$('#tlF').value)); $('#tlPrev').innerHTML=preview(); };
+  dialog.querySelectorAll('#tlLanes,#tlSolv,#tlStyle,#tlH,#tlW,#tlO,#tlF,#tlRf').forEach(el=>el.addEventListener('input',read));
+  $('#tlGo').onclick=()=>{ read(); if (!q.lanes.length){ toast('Add at least one lane'); return; }
+    const out={...q, w:q.w||autoW(q.lanes.length)};
+    pushUndo();
+    if (old){ Object.assign(old, {...out, id:old.id, x:old.x, y:old.y}); }
+    else { const db=contentBBox(doc), c=viewCenter(); // to the right of the drawing, like inserted structures
+      const n={...out, id:nid(), x: db? db.x1+L*2+out.w/2 : c.x, y: db? (db.y0+db.y1)/2 : c.y}; doc.plates.push(n); sel=new Set(['l'+n.id]); if (tool.id!=='select') setTool('select'); }
+    closeDialog(); changed(); if (!old) fitIfNeeded(); };
+}
+
+/* ================= enhanced stereochemistry ================= */
+// stereocentres (doc atom ids) among the given atoms, found by OpenChemLib on each whole structure
+function stereoCentres(ids){
+  const want=new Set(ids), out=[];
+  for (const comp of components(doc,ix).filter(c=>c.some(id=>want.has(id)))){
+    const {mol,map}=toOCL(doc,ix,comp,{skipH:true}); mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
+    for (const id of comp) if (want.has(id) && map.has(id) && mol.isAtomStereoCenter(map.get(id))) out.push(id); }
+  return out;
+}
+function openStereoGroups(){
+  const pool = ctxAtom!=null ? [ctxAtom] : selAtoms().length ? selAtoms() : doc.atoms.map(a=>a.id);
+  let ids=stereoCentres(pool); if (!ids.length && ctxAtom!=null) ids=stereoCentres(selAtoms().length? selAtoms() : doc.atoms.map(a=>a.id));
+  if (!ids.length){ toast('No stereocentres here. Draw a wedge or hash bond first.'); return; }
+  const used=new Set(doc.atoms.map(a=>a.stg).filter(Boolean));
+  const next=t=>{ for (let n=1;n<33;n++) if (!used.has(t+n)) return n; return 1; };
+  const btn=(v,label,hint)=>`<button class="tb" data-stg="${v}" title="${esc(hint)}">${esc(label)}</button>`;
+  const groups=t=>[...used].filter(x=>x.startsWith(t)).sort();
+  openDialog(`<div class="dialog-inner"><h3>Stereo group</h3><p>${ids.length} stereocentre${ids.length>1?'s':''} ${ctxAtom!=null&&ids.length===1?'(the atom you clicked)':selAtoms().length?'in the selection':'in the drawing'}. Labels follow the ChemDraw and MDL V3000 conventions.</p>
+    <div class="row" style="flex-wrap:wrap">${btn('abs','abs','Absolute: the configuration is known as drawn')}
+      ${btn('and'+next('and'),'New & group (&'+next('and')+')','AND: a racemic mixture of the drawn configuration and its mirror image')}
+      ${btn('or'+next('or'),'New or group (or'+next('or')+')','OR: one of the two, but which is not known (relative configuration)')}
+      ${[...groups('and'),...groups('or')].map(g=>btn(g,'Add to '+g.replace('and','&'),'Join an existing group')).join('')}
+      ${btn('','Clear','Remove the label')}</div>
+    <p class="note">abs: absolute, as drawn. &amp;n: racemic (both enantiomers, e.g. "rac"). or n: relative; one enantiomer, unknown which (e.g. "rel"). Centres in the same group keep their relative configuration. Saved in V3000 molfiles and ChemDraw files.</p>
+    <div class="actions"><button class="tb" data-close>Close</button></div></div>`);
+  dialog.querySelectorAll('[data-stg]').forEach(b=>b.onclick=()=>{ pushUndo(); for (const id of ids){ const a=ix.atom.get(id); if (b.dataset.stg) a.stg=b.dataset.stg; else delete a.stg; } closeDialog(); changed(); toast(b.dataset.stg? 'Stereo group set' : 'Stereo label removed'); });
+}
+
+/* ================= find in databases ================= */
+// Opens the drawn structure in public databases. Only the SMILES or InChIKey leaves the computer, and only on click.
+function rcsbUrl(smi, match){ return 'https://www.rcsb.org/search?request='+encodeURIComponent(JSON.stringify({query:{type:'terminal',service:'chemical',parameters:{value:smi,type:'descriptor',descriptor_type:'SMILES',match_type:match}},return_type:'mol_definition'})); }
+async function openFindDb(){
+  const {ids,comps}=lookupIds();
+  if (!ids.length){ toast('Draw or select a structure first'); return; }
+  if (comps.length>1){ toast('Select one structure to search for (click it with the Select tool)'); return; }
+  let r=null; try{ r=analysisFor(ids); }catch(e){}
+  if (!r || r.generic){ toast(r? 'Structures with R, X or custom labels can\u2019t be searched' : 'Could not interpret this structure'); return; }
+  const smi=r.smiles, key=(await inchiOf(r.molfile)).key;
+  const pc=t=>'https://pubchem.ncbi.nlm.nih.gov/#query='+encodeURIComponent(smi)+'&tab='+t;
+  const DBS=[
+    ['PubChem', [['Exact', pc('identity')], ['Similar (Tanimoto)', pc('similarity')], ['Substructure', pc('substructure')], ['Superstructure', pc('superstructure')]]],
+    ['RCSB PDB ligands', [['Exact', rcsbUrl(smi,'graph-exact')], ['Similar', rcsbUrl(smi,'graph-relaxed')], ['Substructure', rcsbUrl(smi,'sub-struct-graph-relaxed')]]],
+    ['ChEMBL', [['Compound page', 'chembl']]],
+    ['Web', [['Google (InChIKey)', key? 'https://www.google.com/search?q='+encodeURIComponent('"'+key+'"') : null], ['Google Scholar', key? 'https://scholar.google.com/scholar?q='+encodeURIComponent('"'+key+'"') : null]]],
+  ];
+  openDialog(`<div class="dialog-inner"><h3>Find in databases</h3><p class="code" style="word-break:break-all">${esc(smi)}${key?'<br>'+esc(key):''}</p>
+    <table class="peaks fmt"><tbody>${DBS.map(([db,acts])=>`<tr><td><b>${db}</b></td><td style="text-align:right">${acts.map(([n,u])=>`<button class="mini" ${u?`data-u="${esc(u)}"`:'disabled'}>${esc(n)}</button>`).join(' ')}</td></tr>`).join('')}</tbody></table>
+    <p class="note">Each button opens a new tab and sends only the SMILES or InChIKey shown above. For the name and CAS number, use Look up name and CAS number.</p>
+    <div class="actions"><button class="tb" id="fdCas">Look up name and CAS number</button><button class="tb primary" data-close>Done</button></div></div>`);
+  $('#fdCas').onclick=()=>lookupOnline();
+  dialog.querySelectorAll('[data-u]').forEach(b=>b.onclick=async()=>{
+    if (b.dataset.u!=='chembl'){ openExternal(b.dataset.u); return; }
+    const w=window.open('about:blank','_blank'); if (w) w.opener=null;
+    try{ const j=await fetch('https://www.ebi.ac.uk/chembl/api/data/molecule.json?only=molecule_chembl_id&molecule_structures__standard_inchi_key='+encodeURIComponent(key)).then(x=>x.json());
+      const id=j.molecules && j.molecules[0] && j.molecules[0].molecule_chembl_id;
+      if (id){ if (w) w.location='https://www.ebi.ac.uk/chembl/explore/compound/'+id; else openExternal('https://www.ebi.ac.uk/chembl/explore/compound/'+id); }
+      else { if (w) w.close(); toast('ChEMBL has no compound with this exact structure'); } }
+    catch(err){ if (w) w.close(); toast('ChEMBL could not be reached'); } });
+}
+
+/* ================= context menu ================= */
+const ctxMenu=$('#ctxMenu');
+function closeCtx(){ ctxMenu.hidden=true; }
+let ctxAtom=null, ctxPlate=null;
+cv.addEventListener('contextmenu', e=>{
+  e.preventDefault(); if (editingText) commitText();
+  const p=toDoc(e), h=hitTest(p,'mouse'); ctxAtom = h && h.type==='atom' ? h.id : null; ctxPlate = h && h.type==='plate' ? h.id : null;
+  ctxMenu.querySelector('[data-cmd=tlc]').hidden = ctxPlate==null;
+  if (h && (h.type==='atom'||h.type==='bond')){ const id = h.type==='atom'? h.id : ix.bond.get(h.id).a; if (!sel.has('a'+id)){ sel=new Set(withGroups(fragmentKeys(id))); render(); scheduleAnalysis(); } }
+  else if (h && keyOf(h)){ if (!sel.has(keyOf(h))){ sel=new Set(withGroups([keyOf(h)])); render(); } }
+  const hasAtoms = selAtoms().length>0 || (!sel.size && doc.atoms.length>0);
+  ctxMenu.querySelectorAll('[data-need=atoms]').forEach(b=>b.disabled=!hasAtoms);
+  ctxMenu.querySelectorAll('[data-need=sel]').forEach(b=>b.disabled=!sel.size);
+  ctxMenu.hidden=false;
+  const w=ctxMenu.offsetWidth, hh=ctxMenu.offsetHeight;
+  ctxMenu.style.left=Math.max(4,Math.min(e.clientX, innerWidth-w-4))+'px'; ctxMenu.style.top=Math.max(4,Math.min(e.clientY, innerHeight-hh-4))+'px';
+});
+ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disabled) return; closeCtx();
+  const c=b.dataset.cmd;
+  if (c==='smiles') copySmiles();
+  else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
+  else if (c==='lookup') lookupOnline();
+  else if (c==='analysis') openAnalysisDialog();
+  else if (c==='stereo') openStereoGroups();
+  else if (c==='tlc') openTlcDialog(ctxPlate);
+  else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb(); else if (c==='3d') open3d();
+  else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
+  else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
+  else if (c==='delete') deleteSel();
+};
+document.addEventListener('pointerdown', e=>{ if (!ctxMenu.contains(e.target)) closeCtx(); });
+window.addEventListener('keydown', e=>{ if (e.key==='Escape') closeCtx(); }, true);
 
 /* ================= analysis ================= */
 let _anT=null;
-function scheduleAnalysis(){ clearTimeout(_anT); _anT=setTimeout(analyzeNow,120); }
+// analysis runs only when asked (Analyze button): editing just marks the shown results as out of date
+function scheduleAnalysis(){
+  const props=$('#props'), scope=$('#scope'), has=doc.atoms.length>0;
+  $('#bAnalyze').disabled=!has;
+  if (!has){ props.innerHTML=''; props.classList.remove('stale'); scope.textContent='Nothing drawn yet'; lastAnalysis=null; return; }
+  if (props.innerHTML){ props.classList.add('stale'); scope.textContent='Drawing changed. Press Analyze to update.'; }
+  else scope.textContent = (selAtoms().length? 'Selection' : 'Whole drawing')+': press Analyze for SMILES, formula, mass, InChI and properties';
+}
 const fmtFormula=f=>esc(f).replace(/(\d+)/g,'<sub>$1</sub>').replace(/([+-])$/,'<sup>$1</sup>');
 function analysisFor(ids){
   const {mol,generic}=toOCL(doc,ix,ids);
@@ -717,7 +1130,7 @@ function analysisFor(ids){
 }
 let lastAnalysis=null;
 function analyzeNow(){
-  const props=$('#props'), scope=$('#scope');
+  const props=$('#props'), scope=$('#scope'); props.classList.remove('stale');
   const selIds=selAtoms();
   const ids = selIds.length? selIds : doc.atoms.map(a=>a.id);
   if (!ids.length){ props.innerHTML=''; scope.textContent='Nothing drawn yet'; lastAnalysis=null; return; }
@@ -733,16 +1146,30 @@ function analyzeNow(){
   html+=row('Formula', fmtFormula(r.formula), r.formula);
   html+=row('MW', r.mw.toFixed(2)+' g/mol', r.mw.toFixed(2));
   html+=row('Exact mass', r.exact.toFixed(4), r.exact.toFixed(4));
+  if (!r.generic){ try{ const {mol}=toOCL(doc,ix,ids,{skipH:true}); const a=MS.adducts(mol); const m=a.rows[0]; if (m && Number.isFinite(m.mz)) html+=row(`m/z ${esc(m.label)}`, m.mz.toFixed(4), m.mz.toFixed(4)); }catch(e){} }
   if (r.props){ const p=r.props;
     html+=row('cLogP', p.logP.toFixed(2), null);
+    html+=row('LogS', p.logS.toFixed(2), null);
     html+=row('tPSA', p.polarSurfaceArea.toFixed(1)+' Å²', null);
     html+=row('H-bond donors / acceptors', p.donorCount+' / '+p.acceptorCount, null);
     html+=row('Rotatable bonds', p.rotatableBondCount, null);
     html+=row('Stereocenters', p.stereoCenterCount, null);
   }
+  if (!r.generic) html+=`<dt>InChI</dt><dd class="code" id="anInchi">\u2026</dd><span></span><dt>InChIKey</dt><dd class="code" id="anKey">\u2026</dd><span></span>`;
   if (r.molfile) html+=row('Molfile', '<span style="color:var(--ink-2)">V2000</span>', r.molfile);
   const rx=reactionSmiles(); if (rx) html+=row('Reaction SMILES', esc(rx), rx, 'code');
   props.innerHTML=html;
+  if (!r.generic && r.molfile){ const tok=++_inchiTok;
+    inchiOf(r.molfile).then(v=>{ if (tok!==_inchiTok) return; const set=(id,t)=>{ const e=$('#'+id); if (!e) return; e.textContent=t||'\u2014'; if (t){ const b=document.createElement('button'); b.className='mini'; b.dataset.copy=t; b.textContent='Copy'; e.nextElementSibling.replaceWith(b); } };
+      set('anInchi',v.inchi); set('anKey',v.key); }); }
+}
+// InChI and InChIKey from the bundled IUPAC InChI library (WebAssembly, offline)
+let _inchiTok=0; const _inchiCache=new Map();
+async function inchiOf(molfile){
+  if (_inchiCache.has(molfile)) return _inchiCache.get(molfile);
+  let v={inchi:'',key:''};
+  try{ const r=await OCL.InChI.inchiFromMolfile(molfile); if (r.inchi){ v.inchi=r.inchi; v.key=(await OCL.InChI.inchikeyFromInchi(r.inchi)).inchikey; } }catch(e){ console.warn(e); }
+  if (_inchiCache.size>50) _inchiCache.clear(); _inchiCache.set(molfile,v); return v;
 }
 function reactionSmiles(){
   const ar=doc.arrows.find(r=>!CURVED.has(r.type) && r.type!=='resonance' && r.type!=='retro'); if (!ar) return null;
@@ -756,13 +1183,54 @@ function reactionSmiles(){
   if (!R.length||!P.length) return null;
   return R.join('.')+'>'+A.join('.')+'>'+P.join('.');
 }
+$('#bLookup').onclick=()=>lookupOnline();
+$('#bMs').onclick=()=>openMs();
+$('#bGuide').onclick=()=>openNmrGuide();
+$('#bAnalyze').onclick=()=>analyzeNow();
+$('#valWarn').onclick=()=>{ const ids=$('#valWarn')._ids||[]; if (!ids.length) return; if (tool.id!=='select') setTool('select'); sel=new Set(ids.map(id=>'a'+id)); render(); toast('Selected the atoms with too many bonds'); };
+$('#bTlc').onclick=()=>openTlcDialog();
+$('#b3d').onclick=()=>open3d();
+$('#bFindDb').onclick=()=>openFindDb();
 $('#props').addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, 'Copied'); });
-$('#bAddInfo').addEventListener('click', ()=>{
-  if (!lastAnalysis){ toast('Draw a structure first'); return; }
+/* ChemDraw-style analysis block: pick the lines, preview, copy or add under the structure */
+const ANALYSIS_ITEMS=[['formula','Chemical Formula',1],['exact','Exact Mass',1],['mw','Molecular Weight',1],['mz','m/z (isotope peaks)',1],['ea','Elemental Analysis',1],['logp','cLogP',0],['logs','LogS',0],['tpsa','tPSA',0]];
+let anaPick; try{ anaPick=JSON.parse(localStorage.getItem('skeletal.analysis')||'null'); }catch(e){}
+anaPick = anaPick || Object.fromEntries(ANALYSIS_ITEMS.map(([k,,on])=>[k,!!on]));
+function analysisText(ids, pick){
+  const r=analysisFor(ids); if (!r) return null;
+  const {mol}=toOCL(doc,ix,ids,{skipH:true}); const comp=MS.composition(mol), counts=comp.counts, f=MS.hill(counts);
+  const L2=[];
+  if (pick.formula) L2.push(`Chemical Formula: ${f}`);
+  if (pick.exact) L2.push(`Exact Mass: ${MS.massOf(counts).toFixed(2)}`);
+  if (pick.mw) L2.push(`Molecular Weight: ${r.mw.toFixed(2)}`);
+  if (pick.mz){ const pk=MS.nominal(MS.isotopes(counts, comp.charge||0)).filter(p=>p.rel>=1).slice(0,4); if (pk.length) L2.push('m/z: '+pk.map(p=>`${p.mz.toFixed(2)} (${p.rel.toFixed(1)}%)`).join(', ')); }
+  const ea=MS.elemental(counts);
+  if (pick.ea && ea) L2.push('Elemental Analysis: '+ea.rows.map(x=>`${x.el}, ${x.pct.toFixed(2)}`).join('; '));
+  if (r.props){ if (pick.logp) L2.push(`cLogP: ${r.props.logP.toFixed(2)}`); if (pick.logs) L2.push(`LogS: ${r.props.logS.toFixed(2)}`); if (pick.tpsa) L2.push(`tPSA: ${r.props.polarSurfaceArea.toFixed(2)}`); }
+  // journal sentence for combustion analysis (C, H, N, S only, as reported)
+  const chn = ea ? ea.rows.filter(x=>/^(C|H|N|S)$/.test(x.el)) : [];
+  const journal = chn.length ? `Anal. Calcd for ${f}: ${chn.map(x=>`${x.el}, ${x.pct.toFixed(2)}`).join('; ')}. Found: ${chn.map(x=>`${x.el}, \u2014`).join('; ')}.` : '';
+  return {text:L2.join('\n'), journal, generic:r.generic};
+}
+function openAnalysisDialog(){
   const ids = selAtoms().length? selAtoms() : doc.atoms.map(a=>a.id);
-  let x0=1e9,x1=-1e9,y1=-1e9; for(const id of ids){ const a=ix.atom.get(id); x0=Math.min(x0,a.x); x1=Math.max(x1,a.x); y1=Math.max(y1,a.y); }
-  pushUndo(); doc.texts.push({id:nid(), x:(x0+x1)/2, y:y1+L*1.9, text:`${lastAnalysis.formula}\nMW ${lastAnalysis.mw.toFixed(2)}`}); changed();
-});
+  if (!ids.length){ toast('Draw a structure first'); return; }
+  const draw=()=>{ const a=analysisText(ids, anaPick); if (!a){ toast('Could not interpret this structure'); return; }
+    openDialog(`<div class="dialog-inner"><h3>Analysis</h3><p>${selAtoms().length?'For the selection.':'For the whole drawing.'} Values as in ChemDraw\u2019s Analysis window.</p>
+      <div class="row" style="flex-wrap:wrap;gap:4px 14px">${ANALYSIS_ITEMS.map(([k,n])=>`<label class="chk"><input type="checkbox" data-ana="${k}"${anaPick[k]?' checked':''}> ${n}</label>`).join('')}</div>
+      <pre class="code" id="anaPrev" style="white-space:pre-wrap;margin:10px 0;padding:8px;border:1px solid var(--line);border-radius:6px">${esc(a.text)||'Pick at least one line.'}</pre>
+      ${a.journal?`<p class="note" style="margin:0 0 4px">Journal line for combustion analysis:</p><pre class="code" style="white-space:pre-wrap;margin:0 0 10px">${esc(a.journal)}</pre>`:''}
+      ${a.generic?'<p class="note">Generic groups (R, X, custom labels) are left out.</p>':''}
+      <p class="note">Elemental analysis uses IUPAC standard atomic weights; m/z lists the most abundant isotope peaks of the neutral molecule; LogS and cLogP are OpenChemLib estimates.</p>
+      <div class="actions" style="flex-wrap:wrap"><button class="tb" id="anaCopy">Copy</button>${a.journal?'<button class="tb" id="anaJ">Copy journal line</button>':''}<button class="tb primary" id="anaAdd">Add to drawing</button><button class="tb" data-close>Close</button></div></div>`);
+    dialog.querySelectorAll('[data-ana]').forEach(c=>c.onchange=()=>{ anaPick[c.dataset.ana]=c.checked; try{ localStorage.setItem('skeletal.analysis',JSON.stringify(anaPick)); }catch(e){} draw(); });
+    $('#anaCopy').onclick=()=>copyText(a.text,'Analysis copied');
+    const j=$('#anaJ'); if (j) j.onclick=()=>copyText(a.journal,'Journal line copied');
+    $('#anaAdd').onclick=()=>{ if (!a.text) return; closeDialog(); addTextUnder(ids, a.text); };
+  };
+  draw();
+}
+$('#bAddInfo').addEventListener('click', openAnalysisDialog);
 
 /* ================= export ================= */
 let _meas=null;
@@ -781,6 +1249,48 @@ function exportSVG(d, {pxPerPt=null, transparent=true, region=null}={}){
   const out=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${f2(x)} ${f2(y)} ${f2(w)} ${f2(h)}">${meta}${bg}${svg}</svg>`;
   return {svg:out, w, h};
 }
+// raster formats other than PNG: JPEG and WebP from the canvas, GIF with the encoder below; all on white unless GIF is transparent
+async function rasterBlob(d, type, region){
+  const ppp=300/72, transparent = type==='gif' && $('#transp').checked;
+  const e=exportSVG(d,{pxPerPt:ppp, transparent:false, region}); const w=Math.round(e.w*ppp), h=Math.round(e.h*ppp);
+  const c=await svgToCanvas(e.svg, w, h, transparent);
+  if (type==='gif'){ const g=c.getContext('2d'); return new Blob([gifEncode(g.getImageData(0,0,w,h).data, w, h, transparent)],{type:'image/gif'}); }
+  return await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Encoding failed')), 'image/'+type, 0.95));
+}
+function svgToCanvas(svgStr, wpx, hpx, transparent){
+  return new Promise((res,rej)=>{ const img=new Image();
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); res(c); };
+    img.onerror=()=>rej(new Error('Could not render image')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr); });
+}
+// GIF89a with a fixed palette: index 0 transparent/white, 32 greys for antialiased line art, then a 6×6×6 colour cube
+function gifEncode(px, w, h, transparent){
+  const pal=[[255,255,255]]; for (let i=0;i<32;i++){ const v=Math.round(i*255/31); pal.push([v,v,v]); }
+  for (let r=0;r<6;r++) for (let g=0;g<6;g++) for (let b=0;b<6;b++) pal.push([r*51,g*51,b*51]);
+  while (pal.length<256) pal.push([0,0,0]);
+  const idx=new Uint8Array(w*h);
+  for (let i=0,p=0;i<idx.length;i++,p+=4){ const r=px[p],g=px[p+1],b=px[p+2],a=px[p+3];
+    if (transparent && a<128){ idx[i]=0; continue; }
+    const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+    idx[i] = mx-mn<14 ? 1+Math.round((r+g+b)/3/255*31) : 33+Math.round(r/51)*36+Math.round(g/51)*6+Math.round(b/51); }
+  // LZW, minimum code size 8
+  const out=[]; let cur=0, nb=0; const emit=(code,size)=>{ cur|=code<<nb; nb+=size; while (nb>=8){ out.push(cur&255); cur>>=8; nb-=8; } };
+  const CLEAR=256, EOI=257; let dict=new Map(), next=258, size=9;
+  emit(CLEAR,size); let prefix=idx[0];
+  for (let i=1;i<idx.length;i++){ const k=idx[i], key=prefix*256+k, hit=dict.get(key);
+    if (hit!==undefined){ prefix=hit; continue; }
+    emit(prefix,size);
+    if (next<4096){ dict.set(key,next++); if (next>(1<<size) && size<12) size++; }
+    else { emit(CLEAR,size); dict=new Map(); next=258; size=9; }
+    prefix=k; }
+  emit(prefix,size); emit(EOI,size); if (nb>0) out.push(cur&255);
+  const bytes=[...'GIF89a'].map(ch=>ch.charCodeAt(0)), le=v=>[v&255,v>>8&255];
+  bytes.push(...le(w),...le(h),0xF7,0,0); for (const c of pal) bytes.push(...c);
+  if (transparent) bytes.push(0x21,0xF9,4,1,0,0,0,0);
+  bytes.push(0x2C,0,0,0,0,...le(w),...le(h),0,8);
+  const res=new Uint8Array(bytes.length + out.length + Math.ceil(out.length/255) + 2); res.set(bytes); let o=bytes.length;
+  for (let i=0;i<out.length;i+=255){ const n=Math.min(255,out.length-i); res[o++]=n; for (let j=0;j<n;j++) res[o++]=out[i+j]; }
+  res[o++]=0; res[o++]=0x3B; return res.subarray(0,o);
+}
 function svgToPngBlob(svgStr, wpx, hpx, transparent){
   return new Promise((res,rej)=>{
     const img=new Image();
@@ -790,7 +1300,7 @@ function svgToPngBlob(svgStr, wpx, hpx, transparent){
   });
 }
 function exportRegion(){ return (doc.page && $('#expArea').value==='doc') ? pageBounds(doc) : null; }
-function exportTarget(){ const d=subDoc(exportRegion()? null : (sel.size?sel:null)); if(!d.atoms.length&&!d.arrows.length&&!d.texts.length&&!d.pluses.length) return null; return d; }
+function exportTarget(){ const d=subDoc(exportRegion()? null : (sel.size?sel:null)); if(!hasContent(d)) return null; return d; }
 async function makePng(d, pxPerPt, transparent, region){
   if (region){ const w=region.x1-region.x0, h=region.y1-region.y0; const maxPpp=Math.min(14000/Math.max(w,h), Math.sqrt(1.2e8/(w*h))); if (pxPerPt>maxPpp){ pxPerPt=maxPpp; makePng.reduced=Math.round(pxPerPt*72); } else makePng.reduced=0; } else makePng.reduced=0;
   const e=exportSVG(d,{pxPerPt,transparent,region});
@@ -848,11 +1358,86 @@ async function downloadPng(){
   saveFile(fileBase()+'.png', await pngWithMeta(blob,used,JSON.stringify(d)));
 }
 function downloadSvg(){ const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; } const {svg}=exportSVG(d,{transparent:$('#transp').checked, region:exportRegion()}); saveFile(fileBase()+'.svg', '<?xml version="1.0" encoding="UTF-8"?>\n'+svg); }
+/* ================= Save as: every export format in one place ================= */
+const EXPORTS = [
+  {g:'Images', items:[
+    {id:'png', n:'PNG', ext:'png', note:'600 dpi, transparent if set; reopens here for editing'},
+    {id:'jpeg', n:'JPEG', ext:'jpg', note:'300 dpi on white'},
+    {id:'webp', n:'WebP', ext:'webp', note:'300 dpi on white'},
+    {id:'gif', n:'GIF', ext:'gif', note:'300 dpi, 256 colours'},
+    {id:'svg', n:'SVG', ext:'svg', note:'Vector; PowerPoint can convert it to shapes'},
+    {id:'pdf', n:'PDF', ext:'pdf', note:'Vector, standard fonts; pages and sheets'},
+    {id:'eps', n:'EPS', ext:'eps', note:'Vector PostScript for LaTeX and older publishing tools'} ]},
+  {g:'Structure files', items:[
+    {id:'cdxml', n:'ChemDraw XML', ext:'cdxml', f:1, note:'Opens in ChemDraw with styles, labels and arrows'},
+    {id:'cdx', n:'ChemDraw binary', ext:'cdx', f:1, bin:1, note:'Classic ChemDraw document'},
+    {id:'mol', n:'MDL Molfile V2000', ext:'mol', f:1},
+    {id:'molV3', n:'MDL Molfile V3000', ext:'mol', f:1},
+    {id:'sdf', n:'SD file', ext:'sdf', f:1, note:'One record per structure'},
+    {id:'rxn', n:'MDL RXN V2000', ext:'rxn', f:1, note:'Reactants and products from the drawn arrow'},
+    {id:'rxnV3', n:'MDL RXN V3000', ext:'rxn', f:1},
+    {id:'smiles', n:'SMILES', ext:'smi', text:1},
+    {id:'smarts', n:'SMARTS', ext:'sma', f:1, text:1},
+    {id:'inchi', n:'InChI', ext:'inchi', text:1, note:'Official IUPAC InChI, computed offline'},
+    {id:'inchikey', n:'InChIKey', ext:'txt', text:1},
+    {id:'cml', n:'Chemical Markup Language', ext:'cml', f:1},
+    {id:'mrv', n:'Marvin', ext:'mrv', f:1},
+    {id:'jme', n:'JME / JSME', ext:'jme', f:1, text:1},
+    {id:'chemfig', n:'chemfig (LaTeX)', ext:'tex', f:1, text:1} ]},
+  {g:'3D coordinates (generated conformer of the largest structure)', items:[
+    {id:'xyz', n:'XYZ', ext:'xyz', note:'For quantum chemistry and molecular viewers'},
+    {id:'pdb', n:'PDB', ext:'pdb', note:'With CONECT records, for docking and PyMOL'},
+    {id:'sdf3d', n:'SD file (3D)', ext:'sdf'} ]},
+  {g:'Project', items:[
+    {id:'html', n:'Skeletal project', ext:'html', note:'The editor with all pages and versions inside'},
+    {id:'json', n:'Skeletal JSON', ext:'json'} ]},
+];
+function exportDoc(){ return subDoc(sel.size?sel:null); }
+async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
+  const d=exportDoc(); if (!hasContent(d)) throw new Error('Nothing to export yet');
+  const ids=d.atoms.map(a=>a.id), dix=buildIndex(d);
+  const mol=()=>{ if (!ids.length) throw new Error('There are no structures to export'); const {mol,generic}=toOCL(d,dix,ids); if (generic) toast('Generic labels (R, X) are written as unknown atoms'); return mol; };
+  switch (id){
+    case 'jpeg': case 'webp': case 'gif': return {data:await rasterBlob(exportTarget(), id, exportRegion())};
+    case 'eps': { const {svg}=exportSVG(exportTarget(),{transparent:true, region:exportRegion()}); return {data:PDF.eps(svg), mime:'application/postscript'}; }
+    case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
+    case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
+    case 'json': return {data:JSON.stringify(project)};
+    case 'xyz': case 'pdb': case 'sdf3d': { const comps=components(d,dix).sort((a,b)=>b.length-a.length); const r=toOCL(d,dix,comps[0],{skipH:true}); if (r.generic) throw new Error('Generic labels have no 3D geometry');
+      const m3=await VIEW3D.conformer(r.mol); return {data: id==='xyz'? VIEW3D.xyz(m3) : id==='pdb'? VIEW3D.pdb(m3) : m3.mol.toMolfile()+'$$$$\n'}; }
+  }
+  const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
+  if (it && it.f){ if (typeof FORMATS==='undefined' || !FORMATS.write) throw new Error('This format is not available in this build');
+    const out=FORMATS.write(id, d); return {data:out, mime: it.bin? 'application/octet-stream' : 'text/plain'}; }
+  throw new Error('Unknown format');
+}
+async function exportAs(id, copy){
+  if (id==='png') return downloadPng(); if (id==='svg') return downloadSvg(); if (id==='pdf'){ closeDialog(); return exportPdfDialog(); } if (id==='html') return saveHtml();
+  const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
+  try{
+    const {data}=await exportData(id);
+    if (copy){ copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); return; }
+    saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+  }catch(err){ toast(err.message||'Export failed'); }
+}
+function openSaveAs(){
+  const has = typeof FORMATS!=='undefined' && FORMATS.write;
+  const row=it=>`<tr><td><b>${esc(it.n)}</b> <span class="code" style="color:var(--ink-2)">.${it.ext}</span>${it.note?`<div class="note" style="margin:2px 0 0">${esc(it.note)}</div>`:''}</td>
+    <td style="white-space:nowrap;text-align:right">${it.text?`<button class="mini" data-x="${it.id}" data-copy-x="1">Copy</button> `:''}<button class="mini"${it.f&&!has?' disabled':''} data-x="${it.id}">${it.id==='pdf'?'Options…':'Download'}</button></td></tr>`;
+  openDialog(`<div class="dialog-inner"><h3>Save as</h3><p>${sel.size? 'Exports the selection.' : 'Exports the whole page.'} Images follow the Export settings (area, transparency).</p>
+    ${EXPORTS.map(g=>`<h4 style="margin:14px 0 4px;font-size:13px">${g.g}</h4><table class="peaks fmt"><tbody>${g.items.map(row).join('')}</tbody></table>`).join('')}
+    <p class="note">Not offered: ISIS Sketch and TGF, SMD, PICT, MIF, SWF, WMF and Sybyl SLN. These are retired or closed formats that current software no longer reads; SVG, PDF and EPS cover their uses.</p>
+    <div class="actions"><button class="tb primary" data-close>Done</button></div></div>`);
+  dialog.classList.add('wide');
+  dialog.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exportAs(b.dataset.x, !!b.dataset.copyX));
+}
 function saveDrawing(){ saveFile(fileBase()+'.json', JSON.stringify(project)); }
 $('#fileIn').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
   try{
     if (/\.png$/i.test(f.name)){ const s=readPngMeta(new Uint8Array(await f.arrayBuffer())); if(!s){ toast('This PNG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(s)),0,viewCenter()); return; }
+    const fm=/\.(cdxml|cdx|cml|mrv)$/i.exec(f.name);
+    if (fm){ const k=fm[1].toLowerCase(); const data = k==='cdx' ? new Uint8Array(await f.arrayBuffer()) : await f.text(); insertForeign(FORMATS.read(k,data), f.name); return; }
     const t=await f.text();
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Skeletal project inside'); return; } confirmOpenProject(pj); return; }
@@ -884,7 +1469,8 @@ function polyIcon(n, inner){ const pts=[]; for(let k=0;k<n;k++){ const t=-Math.P
   return ic(s); }
 const TOOLS = [
   {g:'basic', items:[
-    {id:'select', t:'Select and move (V)', i:ic('<path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1.1-2.6-6.6L6 18z" fill="currentColor" stroke-width="1.2"/>')},
+    {id:'select', o:{lasso:false}, t:'Select and move (V): drag a box', i:ic('<path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1.1-2.6-6.6L6 18z" fill="currentColor" stroke-width="1.2"/>')},
+    {id:'select', o:{lasso:true}, t:'Lasso select (L): drag a freehand loop', i:ic('<path d="M12 4c5 0 8 2.2 8 5s-3.6 5-8 5c-1.7 0-3.3-.3-4.5-.9" stroke-dasharray="2.4 2"/><path d="M7.5 13.1C5.4 12.2 4 10.7 4 9c0-2.8 3.6-5 8-5"/><path d="M7.5 13.1c-.6 1.6.2 3.4 1.6 4.4 1 .7 1.1 2 .3 2.9"/>')},
     {id:'erase', t:'Eraser (E)', i:ic('<path d="M4 16l9-9 6 6-7 7H7z"/><path d="M9 11l6 6M12 20h8"/>')},
     {id:'text', t:'Text (T)', i:ic('<path d="M6 5h12M12 5v14M9 19h6"/>')},
   ]},
@@ -965,9 +1551,14 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 
 function openSmilesDialog(){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
-  openDialog(`<h3>Insert from SMILES</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C) or a molfile.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
+  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
   dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
-  const go=()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string first.'; return; } if (tryLoadText(v)){ closeDialog(); } else $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; };
+  const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+    if (tryLoadText(v,true)){ closeDialog(); return; }
+    if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
+    $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
+    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; } $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
 function openElementDialog(){
@@ -990,8 +1581,35 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; changed(); }; }
-function syncStyleUI(){ document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
-$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); doc.style=b.dataset.p; changed(); });
+function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
+// changing the style or bond length rescales the drawing so bonds keep the style's length
+function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
+$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; }); changed(); }); // a journal style replaces custom settings, as in ChemDraw
+const PRESET_NOTES = {
+  acs:'ACS Document 1996 (ChemDraw): bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18%, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Used by ACS journals and Organic Syntheses.',
+  rsc:'RSC 1-column (ChemDraw 22 style sheet): bond length 12.2 pt, line width 0.45 pt, bold width 1.6 pt, bond spacing 20%, hash spacing 1.75 pt, margin 1.25 pt, Helvetica/Arial 7 pt labels.',
+  nature:'Nature Reviews structure guide: fixed length 0.381 cm (10.8 pt), line width 0.021 cm, bold width 0.055 cm, bond spacing 18%, hash spacing 0.06 cm, margin 0.042 cm, Arial 6 pt labels.',
+  slides:'Slides: ACS geometry with heavier lines and bold 11 pt labels for presentations.',
+};
+function syncDrawSet(){
+  const base=PRESETS[doc.style]||PRESETS.acs, ov=doc.styleOv||{};
+  document.querySelectorAll('#drawSet [data-ov]').forEach(inp=>{ const k=inp.dataset.ov, pct=inp.hasAttribute('data-pct'), f=v=>pct? String(Math.round(v*100)) : String(+v.toFixed(2));
+    inp.placeholder=f(base[k]); if (document.activeElement!==inp) inp.value = ov[k]!=null ? f(ov[k]) : ''; });
+}
+$('#drawSet').addEventListener('change', e=>{
+  const inp=e.target.closest('[data-ov]'); if (!inp) return;
+  const k=inp.dataset.ov, [lo,hi]=STYLE_LIMITS[k], raw=inp.value.trim();
+  const ov={...(doc.styleOv||{})};
+  if (raw==='' || !Number.isFinite(+raw)) delete ov[k];
+  else ov[k]=Math.min(hi,Math.max(lo, inp.hasAttribute('data-pct') ? +raw/100 : +raw));
+  if (JSON.stringify(ov)===JSON.stringify(doc.styleOv||{})) return; // nothing changed (e.g. a second change event on blur)
+  pushUndo();
+  restyle(doc,()=>{ if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv; });
+  changed();
+});
+$('#drawSet').addEventListener('focusout', ()=>setTimeout(syncDrawSet,0));
+$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); restyle(doc,()=>{ delete doc.styleOv; }); changed(); toast('Drawing settings reset to the style defaults'); };
+$('#bOvAll').onclick=()=>{ for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; }); useStyle(doc); changed(); toast('Drawing settings applied to every page'); };
 $('#colorAtoms').addEventListener('change', e=>{ pushUndo(); doc.colorAtoms=e.target.checked; changed(); });
 
 /* ================= templates ================= */
@@ -1004,10 +1622,38 @@ const TEMPLATES=[
 function renderTemplates(){ $('#tpl').innerHTML=TEMPLATES.map(([n,s])=>`<button data-s="${esc(s)}">${esc(n)}</button>`).join(''); $('#tpl').onclick=e=>{ const b=e.target.closest('[data-s]'); if(b){ tryLoadText(b.dataset.s); closePanelMobile(); } }; }
 
 /* ================= wiring ================= */
+// side panel sections fold up; which ones are folded is remembered per browser
+(()=>{
+  let folded=[]; try{ folded=JSON.parse(localStorage.getItem('skeletal.folded')||'[]'); }catch(e){}
+  const save=()=>{ try{ localStorage.setItem('skeletal.folded', JSON.stringify([...document.querySelectorAll('.panel section.collapsed h2')].map(h=>h.textContent))); }catch(e){} };
+  document.querySelectorAll('.panel section > h2').forEach(h=>{
+    const name=h.textContent, sec=h.parentElement, b=document.createElement('button');
+    b.className='sechead'; b.textContent=name; h.textContent=''; h.appendChild(b);
+    const set=c=>{ sec.classList.toggle('collapsed',c); b.setAttribute('aria-expanded', String(!c)); };
+    set(folded.includes(name));
+    b.onclick=()=>{ set(!sec.classList.contains('collapsed')); save(); };
+  });
+})();
 $('#bUndo').onclick=undo; $('#bRedo').onclick=redo;
 $('#bClean').onclick=cleanUp; $('#bFlipH').onclick=()=>flip('h'); $('#bFlipV').onclick=()=>flip('v');
+const alignMenu=$('#alignMenu');
+function closeAlignMenu(){ if (alignMenu.hidden) return; alignMenu.hidden=true; $('#bAlign').setAttribute('aria-expanded','false'); }
+$('#bAlign').onclick=e=>{
+  e.stopPropagation();
+  if (!alignMenu.hidden){ closeAlignMenu(); return; }
+  alignMenu.hidden=false; $('#bAlign').setAttribute('aria-expanded','true');
+  const r=$('#bAlign').getBoundingClientRect(), w=alignMenu.offsetWidth;
+  alignMenu.style.left=Math.max(8,Math.min(r.left, innerWidth-w-8))+'px'; alignMenu.style.top=(r.bottom+4)+'px';
+  alignMenu.querySelector('button').focus();
+};
+alignMenu.onclick=e=>{ const b=e.target.closest('[data-align]'); if (!b) return; const m=b.dataset.align; if (m==='group') groupSel(); else if (m==='ungroup') ungroupSel(); else arrange(m); };
+$('#alignGap').value = alignGap>0 ? String(alignGap) : '';
+$('#alignGap').addEventListener('change', e=>{ const v=+e.target.value; alignGap = Number.isFinite(v) && v>0 ? Math.min(20,v) : 0; e.target.value = alignGap? String(alignGap) : ''; try{ localStorage.setItem('skeletal.alignGap', String(alignGap)); }catch(err){} });
+alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeAlignMenu(); $('#bAlign').focus(); } });
+document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
 $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
+$('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bSaveHtml').onclick=saveHtml; $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>$('#fileIn').click();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
 $('#bNew').onclick=()=>{
@@ -1018,7 +1664,7 @@ $('#bNew').onclick=()=>{
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
-$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; } changed(); toast('ACS Document 1996 applied to every page'); };
+$('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=st; delete pg.doc.labelSize; delete pg.doc.styleOv; }); useStyle(doc); changed(); toast(`${PRESETS[st].name} applied to every page`); };
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
@@ -1051,7 +1697,7 @@ function switchPage(i){
   renderPages();
 }
 function addPage(copyOf){
-  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
+  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{}), ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
   project.pages.splice(project.cur+1,0,{id, name: copyOf ? copyOf.name+' copy' : 'Page '+(project.pages.length+1), doc:d});
   switchPage(project.cur+1); autosave();
 }
@@ -1079,7 +1725,7 @@ function pageMenu(i){
   const mv=dlt=>{ const j=i+dlt; [project.pages[i],project.pages[j]]=[project.pages[j],project.pages[i]]; project.cur=j; closeDialog(); renderPages(); autosave(); };
   $('#pmL').onclick=()=>mv(-1); $('#pmR').onclick=()=>mv(1);
   $('#pmDel').onclick=()=>{
-    const empty=!p.doc.atoms.length&&!p.doc.arrows.length&&!p.doc.texts.length&&!p.doc.pluses.length;
+    const empty=!hasContent(p.doc);
     const del=()=>{ project.pages.splice(i,1); pageState.delete(p.id); project.cur=Math.max(0,Math.min(i,project.pages.length-1)); doc=project.pages[project.cur].doc; undoStack=[]; redoStack=[]; sel.clear(); closeDialog(); changed(); fit(); renderPages(); toast('Page deleted'); };
     if (empty) del(); else openDialog(`<h3>Delete ${esc(p.name)}?</h3><p>Everything on this page will be removed. Saved versions keep their own copy.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="pmDel2">Delete page</button></div>`), $('#pmDel2').onclick=del;
   };
@@ -1117,7 +1763,7 @@ function buildProjectHtml(){
   dp.querySelectorAll('script:not([data-sk])').forEach(s=>s.remove());
   [...dp.head.children].forEach(c=>{ if (!c.hasAttribute('data-sk')) c.remove(); });
   [...dp.body.attributes].forEach(a=>dp.body.removeAttribute(a.name));
-  [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast'].includes(c.id) || (c.tagName==='SCRIPT' && c.hasAttribute('data-sk')))) c.remove(); });
+  [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast'].includes(c.id) || c.hasAttribute('data-sk'))) c.remove(); });
   const slot=dp.getElementById('sk-project');
   const data={...project, modified:Date.now()};
   slot.textContent=JSON.stringify(data).replace(/</g,'\\u003c');
@@ -1134,7 +1780,7 @@ function extractProject(html){
   const m=html.match(/<script[^>]*id="sk-project"[^>]*>([\s\S]*?)<\/script>/i); if(!m || !m[1].trim()) return null;
   try{ return JSON.parse(m[1]); }catch(e){ return null; }
 }
-function projectIsEmpty(){ return project.pages.every(p=>!p.doc.atoms.length&&!p.doc.arrows.length&&!p.doc.texts.length&&!p.doc.pluses.length) && !project.versions.length; }
+function projectIsEmpty(){ return project.pages.every(p=>!hasContent(p.doc)) && !project.versions.length; }
 function confirmOpenProject(p){
   const go=()=>{ closeDialog(); loadProject(p); toast(`Opened ${project.name}`); };
   if (projectIsEmpty()) { go(); return; }
@@ -1182,10 +1828,10 @@ function pageExportSVG(d, mode){
   if (mode==='tiles' && d.page){ const p=d.page, out=[]; for (let j=0;j<p.down;j++) for (let i=0;i<p.across;i++){ out.push(exportSVG(d,{transparent:t, region:{x0:p.x+i*p.w,y0:p.y+j*p.h,x1:p.x+(i+1)*p.w,y1:p.y+(j+1)*p.h}}).svg); } return out; }
   return [exportSVG(d,{transparent:t}).svg];
 }
-function hasContent(d){ return d.atoms.length||d.arrows.length||d.texts.length||d.pluses.length; }
+function hasContent(d){ return d.atoms.length||d.arrows.length||d.texts.length||d.pluses.length||(d.plates&&d.plates.length); }
 function exportPdf(which, mode='crop'){
   let svgs=[];
-  if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); }
+  if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); useStyle(doc); }
   else if (mode!=='crop' && doc.page){ svgs.push(...pageExportSVG(doc, mode)); }
   else { const d=subDoc(sel.size?sel:null); if (hasContent(d)) svgs.push(...pageExportSVG(d,'crop')); }
   if (!svgs.length){ toast('Nothing to export yet'); return; }
@@ -1221,6 +1867,234 @@ function openNmr(){
   let res; try{ res=NMR.predict(mol); }catch(e){ console.warn(e); toast('Could not predict a spectrum for this structure'); return; }
   nmrState={res, comp, owner, mol, tab:'H', generic, multi:comps.length>1, solvent:(nmrState&&nmrState.solvent)||''};
   renderNmr();
+}
+/* ================= NMR structure-solving guide ================= */
+let guideTab='solve';
+const fmtSub=f=>esc(f).replace(/([A-Za-z\)])(\d+)/g,'$1<sub>$2</sub>');
+function guideScaleSVG(rows, lo, hi, step){ // shift chart: high ppm on the left, as on a spectrum
+  const W=660, padL=250, padR=12, rowH=17, top=8, H=top+rows.length*rowH+30, X=v=>padL+(hi-v)/(hi-lo)*(W-padL-padR);
+  let g='';
+  for (let v=Math.ceil(lo/step)*step; v<=hi; v+=step) g+=`<line x1="${f2(X(v))}" y1="${top}" x2="${f2(X(v))}" y2="${top+rows.length*rowH}" stroke="#e3e7eb"/><text x="${f2(X(v))}" y="${top+rows.length*rowH+13}" font-size="10" text-anchor="middle" fill="#56626f">${v}</text>`;
+  g+=`<text x="${(W+padL)/2}" y="${H-3}" font-size="10.5" text-anchor="middle" fill="#56626f">δ (ppm)</text>`;
+  rows.forEach((r,i)=>{ const y=top+i*rowH, [label,a,b,,,,soft]=r;
+    g+=`<text x="${padL-6}" y="${y+12}" font-size="10.5" text-anchor="end" fill="#18212b">${esc(label)}</text>`;
+    g+=`<rect x="${f2(X(b))}" y="${y+3}" width="${f2(Math.max(2,X(a)-X(b)))}" height="${rowH-6}" rx="3" fill="${soft?'#ffffff':'#86aef0'}" stroke="#2459a8" stroke-width="${soft?1:0.6}"${soft?' stroke-dasharray="3 2"':''}/>`; });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="Arial, Helvetica, sans-serif" class="msplot">${g}</svg>`;
+}
+function multipletSVG(rel){ const n=rel.length, w=Math.max(30,n*9), mx=Math.max(...rel); let g='';
+  rel.forEach((v,i)=>{ const x=w/2+(i-(n-1)/2)*8, h=4+26*v/mx; g+=`<line x1="${x}" y1="34" x2="${x}" y2="${34-h}" stroke="#2459a8" stroke-width="2"/>`; });
+  return `<svg viewBox="0 0 ${w} 36" width="${w}" height="36">${g}</svg>`; }
+function structSVG(smi, maxH=110){ try{ const f=layoutSmiles(smi); const d={...newDoc(), style:'acs'}; let id=1; const m=new Map();
+    f.atoms.forEach((a,i)=>{ const n={...a,id:id++}; m.set(i,n.id); d.atoms.push(n); }); f.bonds.forEach(b=>d.bonds.push({id:id++,a:m.get(b.a),b:m.get(b.b),order:b.order,stereo:b.stereo}));
+    const {svg}=renderDoc(d,buildIndex(d)); useStyle(doc); const bb=bboxOf(d.atoms); const pad=12;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f2(bb.x0-pad)} ${f2(bb.y0-pad)} ${f2(bb.x1-bb.x0+2*pad)} ${f2(bb.y1-bb.y0+2*pad)}" style="max-height:${maxH}px;max-width:100%">${svg}</svg>`; }catch(e){ return ''; } }
+function openNmrGuide(tab){
+  if (tab) guideTab=tab;
+  const G=NMRG, src=keys=>keys.map(k=>`<a href="#" data-src="${k}" title="${esc(G.SRC[k][0])}">${{reich:'Reich',wiscH:'UW',wiscC:'UW',fulmer:'Fulmer',bc:'Bright & Chen',dou:'LibreTexts',reusch:'Reusch',hmdb:'HMDB'}[k]}</a>`).join(', ');
+  const T=[['solve','How to solve'],['h1','¹H shifts'],['c13','¹³C shifts'],['split','Splitting'],['aro','Benzene patterns'],['methods','Methods'],['examples','Worked examples'],['sources','Sources']];
+  let body='';
+  if (guideTab==='solve'){
+    body=`<ol class="guide-steps">${G.WORKFLOW.map(([h,t])=>`<li><b>${esc(h)}.</b> ${esc(t)}</li>`).join('')}</ol>
+      <h4>Calculators</h4>
+      <div class="guide-calc"><label>Formula <input id="gcF" value="C9H10O2" style="width:130px"></label> <span id="gcFout"></span></div>
+      <div class="guide-calc"><label>Nominal mass M <input id="gc13" type="number" value="150" style="width:80px"></label> <span id="gc13out"></span></div>
+      <div class="guide-calc"><label>Integrals <input id="gcI" value="2.0, 2.0, 3.1, 2.9" style="width:170px"></label> <label>total H <input id="gcIH" type="number" value="10" style="width:60px"></label> <span id="gcIout"></span></div>
+      <p class="note">DBE: tetravalent atoms count like C, trivalent (N, P) add ½, halogens count like H, O and S drop out ${src(['dou'])}. Rule of 13: CₙH₍ₙ₊ᵣ₎ from M = 13n + r, then O replaces CH₄, N replaces CH₂, S replaces C₂H₈, Cl replaces C₂H₁₁, Br replaces C₆H₇ ${src(['bc'])}; candidates still need checking against the spectra. Integrals are relative: only the formula turns them into H counts ${src(['reich'])}.</p>`;
+  } else if (guideTab==='h1'){
+    body=`${guideScaleSVG(G.H1,0,13,1)}<p class="note">Dashed bars: sources disagree on the bounds. Ranges are for CDCl₃ and are guides, not limits; aromatic solvents (C₆D₆, pyridine-d₅) can move signals by 0.5–0.8 ppm.</p>
+      <table class="peaks"><thead><tr><th>Environment</th><th>δ (ppm)</th><th>Typical</th><th>Source</th></tr></thead><tbody>${G.H1.map(r=>`<tr><td>${esc(r[0])}${r[4]?`<div class="note" style="margin:0">${esc(r[4])}</div>`:''}</td><td>${r[1]}–${r[2]}${r[6]?' (soft)':''}</td><td>${esc(r[3])}</td><td>${src(r[5])}</td></tr>`).join('')}</tbody></table>
+      <h4>Exchangeable protons (OH, NH, SH)</h4><p class="note" style="margin-top:0">Their shifts depend on solvent, concentration and temperature by several ppm, so no fixed range is given. Fast exchange (traces of acid, old CDCl₃) broadens them and removes their coupling; a drop of D₂O makes them disappear ${src(['reich'])}.</p>
+      <table class="peaks"><tbody>${G.H1X.map(([a,b])=>`<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</tbody></table>
+      <h4>Solvent peaks to ignore</h4><table class="peaks"><thead><tr><th>Solvent</th><th>¹H residual</th><th>H₂O / HOD</th><th>¹³C</th></tr></thead><tbody>${G.SOLVENTS.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table><p class="note">${src(['fulmer'])}. Full impurity tables: NMR solvent and impurity peaks.</p>`;
+  } else if (guideTab==='c13'){
+    body=`${guideScaleSVG(G.C13,-20,220,20)}<p class="note">Dashed bars: soft bounds. Peak heights in routine ¹³C spectra are not proportional to the number of carbons; quaternary carbons are weak ${src(['reusch'])}.</p>
+      <table class="peaks"><thead><tr><th>Carbon</th><th>δ (ppm)</th><th>Typical</th><th>Source</th></tr></thead><tbody>${G.C13.map(r=>`<tr><td>${esc(r[0])}${r[4]?`<div class="note" style="margin:0">${esc(r[4])}</div>`:''}</td><td>${r[1]}–${r[2]}${r[6]?' (soft)':''}</td><td>${esc(r[3])}</td><td>${src(r[5])}</td></tr>`).join('')}</tbody></table>`;
+  } else if (guideTab==='split'){
+    body=`<p style="margin-top:0">n equivalent neighbours split a signal into n + 1 lines with Pascal-triangle intensities (first-order spectra only). Equivalent protons do not split each other.</p>
+      <table class="peaks"><thead><tr><th>Neighbours</th><th>Pattern</th><th>Intensities</th><th></th></tr></thead><tbody>${G.PASCAL.map(([n,k,r])=>`<tr><td>${k}</td><td>${n}</td><td>${r.join(' : ')}</td><td>${multipletSVG(r)}</td></tr>`).join('')}</tbody></table>
+      <ul class="guide-steps">
+        <li><b>Different neighbours, different J:</b> build a splitting tree, largest J first, giving dd, dt, ddd, tq… One combined n only works when the J values happen to be equal.</li>
+        <li><b>Matching partners:</b> coupled signals share the same J (an ethyl q and t both show J ≈ 7). In a first-order multiplet the outer-line spacing equals the sum of all its J.</li>
+        <li><b>Second-order effects:</b> when Δν/J &lt; 5 (Δν in Hz = Δδ × spectrometer MHz) lines lean toward their partner (roofing) and intensities distort; below 1 the pattern is strongly second order. An AB quartet still gives J directly, but its shifts must be calculated, not read as midpoints. Higher fields help, except AA′XX′ systems (para-disubstituted rings, X–CH₂CH₂–Y), which never become first order.</li>
+        <li><b>Isopropyl:</b> the outer lines of a septet carry 1/64 of the intensity, so it often looks like a quintet.</li>
+      </ul>
+      <h4>Typical coupling constants (Hz)</h4><table class="peaks"><thead><tr><th>Coupling</th><th>Typical</th><th>Notes</th></tr></thead><tbody>${G.J.map(([a,b,c])=>`<tr><td>${esc(a)}</td><td>${esc(b)}</td><td>${esc(c)}</td></tr>`).join('')}</tbody></table><p class="note">${src(['reich'])}</p>`;
+  } else if (guideTab==='aro'){
+    const opts=Object.keys(G.ZH).map(k=>`<option value="${k}">${k==='H'?'H':k.replace(/(\d)/g,'<sub>$1</sub>')}</option>`).join('');
+    body=`<p style="margin-top:0"><b>Most benzene patterns are not strictly first order.</b> The descriptions below are what you typically see at 300–500 MHz ${src(['reich'])}.</p>
+      <table class="peaks"><tbody>${G.ARO.map(([n,smi,h,t])=>`<tr><td style="width:150px">${structSVG(smi,90)}</td><td><b>${esc(n)}</b> <span class="note">(${esc(h)})</span><div>${esc(t)}</div></td></tr>`).join('')}</tbody></table>
+      <h4>Predict ring-proton shifts</h4><p class="note" style="margin-top:0">δ ≈ 7.36 + Z(ortho) + Z(meta) + Z(para) (Reich, dilute CDCl₃). Donors (NH₂, OH, OR) shield ortho and para; acceptors (C=O, NO₂) deshield, ortho most.</p>
+      <div class="guide-calc">${[1,2,3,4,5,6].map(i=>`<label>C${i} <select class="sel" data-zpos="${i}">${opts}</select></label>`).join(' ')}</div><div id="gzOut" class="code" style="margin-top:6px"></div>`;
+  } else if (guideTab==='methods'){
+    body=`<table class="peaks"><thead><tr><th>Experiment</th><th>Shows</th><th>Notes</th></tr></thead><tbody>${G.METHODS.map(([a,b,c])=>`<tr><td><b>${esc(a)}</b></td><td>${esc(b)}</td><td>${esc(c)}</td></tr>`).join('')}</tbody></table><p class="note">${src(['reich','reusch'])}</p>`;
+  } else if (guideTab==='examples'){
+    body=G.EXAMPLES.map((ex,i)=>`<div class="guide-ex"><div class="row" style="align-items:flex-start;gap:14px;flex-wrap:nowrap"><div style="flex:1">
+        <b>Problem ${i+1}:</b> ${fmtSub(ex.formula)} (M = ${ex.M})
+        <table class="peaks" style="margin:6px 0"><thead><tr><th>¹H δ</th><th>Mult.</th><th>J (Hz)</th><th>Int.*</th></tr></thead><tbody>${ex.h1.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <div>¹³C δ: ${esc(ex.c13)}</div><div class="note" style="margin:2px 0 0">Data: ${src([ex.src])}, CDCl₃. *Integrations are the values the structure implies.</div></div></div>
+      <details><summary>Show the solution step by step</summary><ol class="guide-steps">${ex.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>
+        <div class="row" style="align-items:center">${structSVG(ex.smiles,110)}<button class="tb" data-ex="${i}">Insert this structure</button><button class="tb" data-exnmr="${i}">Compare with predicted NMR</button></div></details></div>`).join('');
+  } else {
+    body=`<ul class="guide-steps">${Object.entries(G.SRC).map(([k,[n,u]])=>`<li><a href="#" data-src="${k}">${esc(n)}</a></li>`).join('')}</ul><p class="note">Ranges were cross-checked between these sources; where they disagree the guide shows a soft (dashed) range or describes the dependence instead of a number. Values are teaching guides, not limits: confirm structures with your own spectra and 2D experiments.</p>`;
+  }
+  openDialog(`<div class="dialog-inner guide"><h3>Solving a structure from NMR</h3><div class="tabs" style="flex-wrap:wrap">${T.map(([k,n])=>`<button data-gtab="${k}" aria-pressed="${guideTab===k}">${n}</button>`).join('')}</div>${body}
+    <div class="actions"><button class="tb" id="gNmr">Predict NMR of my drawing</button><button class="tb primary" data-close>Close</button></div></div>`);
+  dialog.classList.add('wide');
+  dialog.querySelectorAll('[data-gtab]').forEach(b=>b.onclick=()=>openNmrGuide(b.dataset.gtab));
+  dialog.querySelectorAll('[data-src]').forEach(a=>a.onclick=e=>{ e.preventDefault(); openExternal(G.SRC[a.dataset.src][1]); });
+  $('#gNmr').onclick=()=>{ closeDialog(); openNmr(); };
+  if (guideTab==='solve'){
+    const upF=()=>{ try{ const c=G.parseFormula($('#gcF').value), d=G.dbe(c); $('#gcFout').innerHTML=`DBE = <b>${d}</b>${Number.isInteger(d)&&d>=0? (d>=4?' (a benzene ring is likely)':'') : ' (not possible for a neutral molecule: check the formula)'}`; }catch(e){ $('#gcFout').textContent=e.message; } };
+    const up13=()=>{ try{ const M=+$('#gc13').value; const out=[];
+        for (const N of [0,1,2]) for (const O of [0,1,2,3,4]){ if ((N%2)!==(M%2)) continue; const r=G.rule13(M,{O,N}); if (r.plausible && r.formula.H>0 && r.dbe<=12) out.push(`${fmtSub(G.hill(r.formula))} <span class="note">(DBE ${r.dbe})</span>`); }
+        $('#gc13out').innerHTML = out.length? 'Candidates: '+out.slice(0,8).join(', ') : 'No C/H/N/O candidates'; }catch(e){ $('#gc13out').textContent=e.message; } };
+    const upI=()=>{ const v=$('#gcI').value.split(/[,\s]+/).filter(Boolean), r=G.scaleIntegrals(v, +$('#gcIH').value);
+      $('#gcIout').innerHTML = r.length ? r.map(x=>`<b>${Number.isInteger(x.h)?x.h:x.h.toFixed(2)}H</b>`).join(' : ') + (+$('#gcIH').value? '' : ' (ratio; add the total H to get counts)') : ''; };
+    ['gcF'].forEach(id=>$('#'+id).addEventListener('input',upF)); $('#gc13').addEventListener('input',up13); ['gcI','gcIH'].forEach(id=>$('#'+id).addEventListener('input',upI));
+    upF(); up13(); upI();
+  }
+  if (guideTab==='aro'){
+    const sels=[...dialog.querySelectorAll('[data-zpos]')]; sels[0].value='OCH3'; sels[3].value='C(O)CH3';
+    const up=()=>{ const subs={}; sels.forEach(x=>{ if (x.value!=='H') subs[+x.dataset.zpos]=x.value; }); const r=G.aromaticH(subs);
+      $('#gzOut').innerHTML = Object.keys(r).length ? Object.entries(r).map(([p,d])=>`H${p}: ${d.toFixed(2)}`).join('  ·  ') : 'No ring H left'; };
+    sels.forEach(x=>x.onchange=up); up();
+  }
+  if (guideTab==='examples'){
+    dialog.querySelectorAll('[data-ex]').forEach(b=>b.onclick=()=>{ closeDialog(); tryLoadText(G.EXAMPLES[+b.dataset.ex].smiles); });
+    dialog.querySelectorAll('[data-exnmr]').forEach(b=>b.onclick=()=>{ closeDialog(); tryLoadText(G.EXAMPLES[+b.dataset.exnmr].smiles); openNmr(); });
+  }
+}
+
+/* ================= 3D view dialog ================= */
+let v3={seed:17, style:'ball', showH:true, labels:false, spin:true};
+async function open3d(){
+  const selIds=selAtoms();
+  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  if (!comps.length){ toast('Draw or select a structure first'); return; }
+  const {mol,generic}=toOCL(doc,ix,comps[0],{skipH:true});
+  if (generic){ toast('Structures with R, X or custom labels have no 3D geometry'); return; }
+  openDialog(`<div class="dialog-inner"><h3>3D view</h3><p id="v3msg">Generating a conformer\u2026</p></div>`); dialog.classList.add('wide');
+  let model; try{ model=await VIEW3D.conformer(mol, v3.seed); }catch(e){ console.warn(e); const m=$('#v3msg'); if (m) m.textContent='A 3D structure could not be generated for this drawing. '+(e.message||''); return; }
+  if (!$('#v3msg')) return; // closed meanwhile
+  v3.model=model; v3.rot=v3.rot||VIEW3D.mul(VIEW3D.rotX(-0.35),VIEW3D.rotY(0.5)); v3.zoom=v3.zoom||1;
+  const seg=(k,opts)=>`<div class="seg" style="width:auto">${opts.map(([v,n])=>`<button data-${k}="${v}" aria-pressed="${v3[k]===v}">${n}</button>`).join('')}</div>`;
+  openDialog(`<div class="dialog-inner"><h3>3D view</h3>
+    <div class="row" style="margin-bottom:8px">${seg('style',[['ball','Ball and stick'],['space','Space-filling'],['stick','Sticks']])}
+      <label class="chk"><input type="checkbox" id="v3H"${v3.showH?' checked':''}> Hydrogens</label><label class="chk"><input type="checkbox" id="v3L"${v3.labels?' checked':''}> Labels</label><label class="chk"><input type="checkbox" id="v3S"${v3.spin?' checked':''}> Spin</label></div>
+    <canvas id="v3cv" style="width:100%;height:min(60vh,460px);background:#fff;border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:grab"></canvas>
+    <p class="note">One low-energy conformer: OpenChemLib torsion library, then MMFF94s minimisation, computed offline. Drag to rotate, scroll to zoom. ${comps.length>1?'Showing the largest structure; select another to view it.':''}</p>
+    <div class="actions" style="flex-wrap:wrap"><button class="tb" id="v3New">Another conformer</button><button class="tb" id="v3Xyz">XYZ</button><button class="tb" id="v3Pdb">PDB</button><button class="tb" id="v3Sdf">SDF (3D)</button><button class="tb" id="v3Png">PNG</button><button class="tb primary" data-close>Done</button></div></div>`);
+  dialog.classList.add('wide');
+  const cv3=$('#v3cv'); const fitC=()=>{ const r=cv3.getBoundingClientRect(), d=devicePixelRatio||1; cv3.width=Math.round(r.width*d); cv3.height=Math.round(r.height*d); };
+  const paint=()=>VIEW3D.draw(cv3, v3.model, {rot:v3.rot, zoom:v3.zoom, style:v3.style, showH:v3.showH, labels:v3.labels});
+  fitC(); paint();
+  let drag3=null, last=performance.now();
+  const tick=t=>{ if (!document.body.contains(cv3)) return; if (v3.spin && !drag3){ v3.rot=VIEW3D.mul(VIEW3D.rotY((t-last)/1000*0.5), v3.rot); paint(); } last=t; requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  cv3.onpointerdown=e=>{ drag3={x:e.clientX,y:e.clientY}; cv3.setPointerCapture(e.pointerId); cv3.style.cursor='grabbing'; };
+  cv3.onpointermove=e=>{ if (!drag3) return; const dx=e.clientX-drag3.x, dy=e.clientY-drag3.y; drag3={x:e.clientX,y:e.clientY}; v3.rot=VIEW3D.mul(VIEW3D.mul(VIEW3D.rotY(dx*0.01),VIEW3D.rotX(-dy*0.01)), v3.rot); paint(); };
+  cv3.onpointerup=cv3.onpointercancel=()=>{ drag3=null; cv3.style.cursor='grab'; };
+  cv3.onwheel=e=>{ e.preventDefault(); v3.zoom=Math.min(6,Math.max(0.3,v3.zoom*Math.exp(-e.deltaY*0.002))); paint(); };
+  dialog.querySelectorAll('[data-style]').forEach(b=>b.onclick=()=>{ v3.style=b.dataset.style; dialog.querySelectorAll('[data-style]').forEach(x=>x.setAttribute('aria-pressed',String(x===b))); paint(); });
+  $('#v3H').onchange=e=>{ v3.showH=e.target.checked; paint(); }; $('#v3L').onchange=e=>{ v3.labels=e.target.checked; paint(); }; $('#v3S').onchange=e=>{ v3.spin=e.target.checked; };
+  $('#v3New').onclick=()=>{ v3.seed++; open3d(); };
+  const base=fileBase()+' 3D';
+  $('#v3Xyz').onclick=()=>saveFile(base+'.xyz', VIEW3D.xyz(v3.model));
+  $('#v3Pdb').onclick=()=>saveFile(base+'.pdb', VIEW3D.pdb(v3.model));
+  $('#v3Sdf').onclick=()=>saveFile(base+'.sdf', v3.model.mol.toMolfile()+'$$$$\n');
+  $('#v3Png').onclick=()=>{ const c=document.createElement('canvas'); c.width=cv3.width*2; c.height=cv3.height*2; VIEW3D.draw(c, v3.model, {rot:v3.rot, zoom:v3.zoom, style:v3.style, showH:v3.showH, labels:v3.labels}, $('#transp').checked? null : '#fff'); c.toBlob(b=>saveFile(base+'.png', b),'image/png'); };
+}
+
+/* ================= mass spectrum dialog ================= */
+let msState=null;
+function openMs(tab){
+  const selIds=selAtoms();
+  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  if (!comps.length){ toast('Draw or select a structure first'); return; }
+  const comp=comps[0];
+  const {mol, owner, generic}=toOCL(doc,ix,comp,{skipH:true});
+  if (generic){ toast('Structures with R, X or custom labels have no defined mass'); return; }
+  mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
+  msState={comp, mol, owner, multi:comps.length>1, tab:tab||(msState&&msState.tab)||'mz', mode:(msState&&msState.mode)||'pos', energy:(msState&&msState.energy)||'medium', pick:null};
+  renderMs();
+}
+function msStickSVG(peaks, opts={}){ // peaks: [{mz, rel, label?, i?}]
+  const W=640, top=26, base=190, padL=36, padR=14;
+  if (!peaks.length) return '<p class="note">No peaks.</p>';
+  let lo=Math.min(...peaks.map(p=>p.mz)), hi=Math.max(...peaks.map(p=>p.mz)); const span=Math.max(hi-lo, opts.minSpan||10);
+  lo=Math.max(0, lo-span*0.08); hi=lo+span*1.16;
+  const X=m=>padL+(m-lo)/(hi-lo)*(W-padL-padR), Y=r=>base-r/100*(base-top);
+  let g=`<line x1="${padL}" y1="${base}" x2="${W-padR}" y2="${base}" stroke="#18212b"/><line x1="${padL}" y1="${top}" x2="${padL}" y2="${base}" stroke="#18212b"/>`;
+  const step=[1,2,5,10,20,50,100,200,500].find(s=>span/s<=10)||1000;
+  for (let v=Math.ceil(lo/step)*step; v<=hi; v+=step) g+=`<line x1="${f2(X(v))}" y1="${base}" x2="${f2(X(v))}" y2="${base+4}" stroke="#18212b"/><text x="${f2(X(v))}" y="${base+15}" font-size="10" text-anchor="middle" fill="#18212b">${v}</text>`;
+  for (const r of [0,50,100]) g+=`<text x="${padL-4}" y="${f2(Y(r)+3)}" font-size="9" text-anchor="end" fill="#56626f">${r}</text>`;
+  g+=`<text x="${(W+padL)/2}" y="${base+30}" font-size="10.5" text-anchor="middle" fill="#56626f">m/z</text>`;
+  const lab=[...peaks].sort((a,b)=>b.rel-a.rel).slice(0, opts.labels||8);
+  for (const p of peaks){ const x=X(p.mz), on=opts.pick!=null && p.i===opts.pick;
+    g+=`<line x1="${f2(x)}" y1="${base}" x2="${f2(x)}" y2="${f2(Y(p.rel))}" stroke="${p.color||(on?'#d6336c':'#2459a8')}" stroke-width="${on?2.4:1.6}"/>`;
+    if (p.i!=null) g+=`<rect x="${f2(x-5)}" y="${top-6}" width="10" height="${base-top+6}" fill="transparent" data-peak="${p.i}" style="cursor:pointer"/>`; }
+  for (const p of lab) g+=`<text x="${f2(X(p.mz))}" y="${f2(Y(p.rel)-4)}" font-size="9.5" text-anchor="middle" fill="#18212b">${esc(p.label||p.mz.toFixed(opts.dp??4))}</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${base+36}" font-family="Arial, Helvetica, sans-serif" class="msplot">${g}</svg>`;
+}
+function msStructSVG(st, peak){
+  const d=subDoc(new Set(st.comp.map(id=>'a'+id))), dix=buildIndex(d); const {svg}=renderDoc(d,dix);
+  let ov='';
+  if (peak && peak.atoms){ const keep=new Set(peak.atoms.map(i=>st.owner[i]).filter(x=>x!=null));
+    for (const b of d.bonds) if (keep.has(b.a)&&keep.has(b.b)){ const A=dix.atom.get(b.a),B=dix.atom.get(b.b); ov+=`<line x1="${f2(A.x)}" y1="${f2(A.y)}" x2="${f2(B.x)}" y2="${f2(B.y)}" stroke="#2459a8" stroke-opacity=".25" stroke-width="5" stroke-linecap="round"/>`; }
+    for (const id of keep){ const a=dix.atom.get(id); if (a) ov+=`<circle cx="${f2(a.x)}" cy="${f2(a.y)}" r="3.4" fill="#2459a8" fill-opacity=".28"/>`; }
+    for (const bi of peak.bonds||[]){ const i1=st.owner[st.mol.getBondAtom(0,bi)], i2=st.owner[st.mol.getBondAtom(1,bi)], A=dix.atom.get(i1), B=dix.atom.get(i2); if (!A||!B) continue;
+      const m=mul(add(A,B),0.5), u=norm(sub(B,A)), n=perp(u); ov+=`<line x1="${f2(m.x+n.x*6)}" y1="${f2(m.y+n.y*6)}" x2="${f2(m.x-n.x*6)}" y2="${f2(m.y-n.y*6)}" stroke="#d6336c" stroke-width="1.4" stroke-dasharray="2 1.4"/>`; } }
+  const b=measureBBox(svg+ov), pad=8;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f2(b.x-pad)} ${f2(b.y-pad)} ${f2(b.width+2*pad)} ${f2(b.height+2*pad)}" style="max-height:260px">${ov}${svg}</svg>`;
+}
+function renderMs(){
+  const st=msState, ad=MS.adducts(st.mol);
+  const fmtF=f=>{ const m=/^(.*?)(?: (\d+))?([+-])?$/.exec(f); return esc(m[1]).replace(/([A-Za-z\)])(\d+)/g,'$1<sub>$2</sub>')+(m[3]?`<sup>${m[2]||''}${m[3]==='-'?'\u2212':'+'}</sup>`:''); };
+  const tabs=`<div class="tabs" style="margin:0 0 10px"><button data-mt="mz" aria-pressed="${st.tab==='mz'}">m/z and adducts</button><button data-mt="iso" aria-pressed="${st.tab==='iso'}">Isotope pattern</button><button data-mt="msms" aria-pressed="${st.tab==='msms'}">MS/MS (predicted)</button></div>`;
+  let body='', actions='';
+  if (!Number.isFinite(ad.M)){ body='<p>This structure contains an element without isotope data, so exact masses can\u2019t be computed.</p>'; }
+  else if (st.tab==='mz'){
+    body=`<p style="margin:0 0 8px">Formula <b>${fmtF(MS.hill(ad.counts))}</b> \u00b7 monoisotopic mass <b>${ad.M.toFixed(4)}</b> \u00b7 MW <b>${analysisFor(st.comp).mw.toFixed(2)}</b> g/mol</p>
+      <table class="peaks"><thead><tr><th>Ion</th><th>Formula</th><th>m/z</th><th></th></tr></thead><tbody>${ad.rows.map((r,i)=>`<tr><td>${esc(r.label)}</td><td>${fmtF(r.formula)}</td><td class="code">${r.mz.toFixed(4)}</td><td><button class="mini" data-cp="${r.mz.toFixed(4)}">Copy</button> <button class="mini" data-hrms="${i}">HRMS line</button></td></tr>`).join('')}</tbody></table>
+      <p class="note">Monoisotopic masses with the electron mass taken into account. "HRMS line" copies a journal-style sentence such as \u201cHRMS (ESI) m/z: [M + H]+ calcd for C9H9O4+ 181.0495; found \u2014.\u201d</p>`;
+  } else if (st.tab==='iso'){
+    const z = ad.charge || (st.mode==='neg'?-1:1), base = ad.charge? ad.counts : {...ad.counts, H:(ad.counts.H||0)+z};
+    const peaks=MS.isotopes(base, z), nom=MS.nominal(peaks);
+    body=`<p style="margin:0 0 8px">${ad.charge? 'Ion as drawn' : (z>0?'[M+H]⁺':'[M−H]⁻')} ${fmtF(MS.hill(base))} \u00b7 <label>Mode <select class="sel" id="msMode"><option value="pos"${st.mode==='pos'?' selected':''}>Positive</option><option value="neg"${st.mode==='neg'?' selected':''}>Negative</option></select></label></p>
+      <div class="nmrbox">${msStickSVG(peaks.map(p=>({mz:p.mz, rel:p.rel})), {minSpan:6, labels:6})}</div>
+      <table class="peaks"><thead><tr><th>Peak</th><th>m/z</th><th>Relative</th></tr></thead><tbody>${nom.map(p=>`<tr><td>${p.label}</td><td class="code">${p.mz.toFixed(4)}</td><td>${p.rel.toFixed(1)}%</td></tr>`).join('')}</tbody></table>
+      <p class="note">Natural isotope abundances (IUPAC). Fine structure closer than 0.005 Da is merged; the table sums each nominal mass.</p>`;
+    actions=`<button class="tb" id="msCopyIso">Copy pattern</button>`;
+  } else {
+    const r=MS.msms(st.mol,{mode:st.mode, energy:st.energy});
+    if (!r.precursor){ body=`<p>${esc(r.note||'No fragments for this structure.')}</p>`; }
+    else {
+      const peaks=r.peaks.map((p,i)=>({...p,i}));
+      const plot=[...peaks, {mz:r.precursor.mz, rel:r.precursor.rel, label:r.precursor.mz.toFixed(4), color:'#56626f'}];
+      const pk = st.pick!=null ? peaks[st.pick] : null;
+      body=`<div class="row" style="margin-bottom:8px"><label>Mode <select class="sel" id="msMode"><option value="pos"${st.mode==='pos'?' selected':''}>ESI positive, [M+H]⁺</option><option value="neg"${st.mode==='neg'?' selected':''}>ESI negative, [M−H]⁻</option></select></label>
+        <label>Collision energy <select class="sel" id="msEn">${['low','medium','high'].map(e=>`<option value="${e}"${st.energy===e?' selected':''}>${e[0].toUpperCase()+e.slice(1)}</option>`).join('')}</select></label>
+        <span style="font-size:13px">Precursor ${esc(r.precursor.label)} <b class="code">${r.precursor.mz.toFixed(4)}</b></span></div>
+        <div class="nmrgrid"><div class="nmrbox">${msStructSVG(st, pk)}<p class="note" style="margin:4px 6px">${pk? `m/z ${pk.mz.toFixed(4)}: ${esc(pk.how)}. Blue: atoms kept in the ion; red: bonds broken.` : 'Click a peak or a row to see which part of the molecule it comes from.'}</p></div>
+        <div class="nmrbox" id="msPlot">${msStickSVG(plot,{pick:st.pick, labels:9})}</div></div>
+        <table class="peaks"><thead><tr><th>m/z</th><th>Rel.</th><th>Ion formula</th><th>Origin</th></tr></thead><tbody>${peaks.map(p=>`<tr data-peak="${p.i}" style="cursor:pointer${st.pick===p.i?';background:var(--accent-soft)':''}"><td class="code">${p.mz.toFixed(4)}</td><td>${p.rel.toFixed(0)}</td><td>${fmtF(p.formula)}</td><td>${esc(p.how)}</td></tr>`).join('') || '<tr><td colspan="4">No fragments predicted</td></tr>'}</tbody></table>
+        <p class="note">Rule-based estimate of collision-induced fragments: one-bond cleavages, ring openings and common neutral losses, scored by bond lability and ion stability. It is a guide to likely fragments, not a measured or library spectrum; relative intensities in particular are rough.</p>`;
+      actions=`<button class="tb" id="msCopyMsms">Copy peak list</button>`;
+      st._r=r;
+    }
+  }
+  const notes = st.multi ? '<p class="note">Showing the largest structure. Select a structure to analyze another one.</p>' : '';
+  openDialog(`<div class="dialog-inner"><h3>Mass spectrum</h3>${tabs}${body}${notes}<div class="actions" style="flex-wrap:wrap"><button class="tb" id="msNmr">Predict NMR</button>${actions}<button class="tb primary" data-close>Done</button></div></div>`);
+  dialog.classList.add('wide');
+  dialog.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{ st.tab=b.dataset.mt; st.pick=null; renderMs(); });
+  const mm=$('#msMode'); if (mm) mm.onchange=e=>{ st.mode=e.target.value; st.pick=null; renderMs(); };
+  const me=$('#msEn'); if (me) me.onchange=e=>{ st.energy=e.target.value; st.pick=null; renderMs(); };
+  dialog.querySelectorAll('[data-peak]').forEach(el=>el.onclick=()=>{ const i=+el.dataset.peak; st.pick = st.pick===i? null : i; renderMs(); });
+  dialog.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>copyText(b.dataset.cp,'Copied'));
+  dialog.querySelectorAll('[data-hrms]').forEach(b=>b.onclick=()=>copyText(MS.hrmsLine(ad.rows[+b.dataset.hrms]),'HRMS line copied'));
+  $('#msNmr').onclick=()=>{ closeDialog(); sel=new Set(st.comp.map(id=>'a'+id)); openNmr(); };
+  const ci=$('#msCopyIso'); if (ci) ci.onclick=()=>{ const z=ad.charge||(st.mode==='neg'?-1:1); const b={...ad.counts}; if (!ad.charge) b.H=(b.H||0)+z; copyText(MS.nominal(MS.isotopes(b,z)).map(p=>`${p.label}\t${p.mz.toFixed(4)}\t${p.rel.toFixed(1)}`).join('\n'),'Isotope pattern copied'); };
+  const cm=$('#msCopyMsms'); if (cm) cm.onclick=()=>copyText(['m/z\trel\tformula\torigin', ...st._r.peaks.map(p=>`${p.mz.toFixed(4)}\t${p.rel.toFixed(0)}\t${p.formula}\t${p.how}`)].join('\n'),'MS/MS peak list copied');
 }
 function nmrAnnotSVG(st){
   const d=subDoc(new Set(st.comp.map(id=>'a'+id)));
@@ -1288,12 +2162,13 @@ function renderNmr(){
     <div class="nmrgrid"><div class="nmrbox">${nmrAnnotSVG(st)}</div><div class="nmrbox">${nmrSpectrumSVG(st)}</div></div>
     <table class="peaks"><thead>${head}</thead><tbody>${rows || '<tr><td colspan="5">No signals</td></tr>'}</tbody></table>
     <p class="note">${notes.map(esc).join(' ')}</p>
-    <div class="actions" style="flex-wrap:wrap"><button class="tb" id="nmCopy">Copy peak list</button><button class="tb" id="nmAdd">Add peak list to drawing</button><button class="tb" id="nmDl">Download spectrum</button><button class="tb primary" data-close>Done</button></div></div>`);
+    <div class="actions" style="flex-wrap:wrap"><button class="tb" id="nmGuide">How to solve…</button><button class="tb" id="nmCopy">Copy peak list</button><button class="tb" id="nmAdd">Add peak list to drawing</button><button class="tb" id="nmDl">Download spectrum</button><button class="tb primary" data-close>Done</button></div></div>`);
   dialog.classList.add('wide');
   dialog.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{ st.tab=b.dataset.tab; renderNmr(); });
   $('#nmSolv').onchange=e=>{ st.solvent=e.target.value; renderNmr(); };
   $('#nmSolvTbl').onclick=()=>{ if (st.solvent) solvUI.solvent=st.solvent; openSolvents(); };
   $('#nmCopy').onclick=()=>copyText(NMR.journalText(st.res),'Peak list copied');
+  $('#nmGuide').onclick=()=>openNmrGuide();
   $('#nmAdd').onclick=()=>{
     let x0=1e9,x1=-1e9,y1=-1e9; for(const id of st.comp){ const a=ix.atom.get(id); x0=Math.min(x0,a.x); x1=Math.max(x1,a.x); y1=Math.max(y1,a.y); }
     const txt=NMR.journalText(st.res).replace(/\u00B9H/,'1H').replace(/\u00B9\u00B3C/,'13C').replace(/\.\n/,'.\n');

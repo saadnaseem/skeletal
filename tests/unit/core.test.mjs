@@ -92,3 +92,14 @@ test('sanitizeDoc removes markup injection from loaded files', () => {
   assert.equal(s.texts[0].color, undefined); assert.equal(s.arrows[0].type, 'reaction'); assert.equal(s.style, 'acs');
   assert.equal(get('sanitizeDoc')({ atoms: [{ id: 1, x: 1, y: 2, el: 'N', color: '#2f4fd6' }] }).atoms[0].color, '#2f4fd6');
 });
+
+test('sanitizeDoc clamps drawing settings and keeps only positive integer group ids', () => {
+  const s = get('sanitizeDoc');
+  const d = s({ styleOv: { lineWidth: 99, boldWidth: '1.5', spacing: -1, wedge: '"/><script>', evil: 3 },
+    atoms: [{ id: 1, x: 0, y: 0, el: 'C', g: 2 }, { id: 2, x: 0, y: 0, el: 'C', g: '"><b>' }, { id: 3, x: 0, y: 0, el: 'C', g: -4 }],
+    texts: [{ id: 4, x: 0, y: 0, text: '1', g: 2.4 }] });
+  assert.equal(JSON.stringify(d.styleOv), JSON.stringify({ lineWidth: 6, boldWidth: 1.5, spacing: 0.08 }));
+  assert.equal(JSON.stringify(d.atoms.map(a => a.g ?? null)), '[2,null,null]');
+  assert.equal(d.texts[0].g, 2);
+  assert.equal(s({ styleOv: { evil: 1 } }).styleOv, undefined);
+});

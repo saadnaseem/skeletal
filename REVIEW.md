@@ -63,3 +63,87 @@ npm install && npm run build
 npm test && npm run validate
 pip install -r requirements-dev.txt && python -m playwright install chromium && npm run test:e2e
 ```
+
+## Second review (October 2026)
+
+An independent pass: fresh install, unit and browser tests, and hands-on use on desktop and phone viewports.
+
+### Fixed in this pass
+
+| # | Finding | Fix |
+| --- | --- | --- |
+| 11 | `npm test` found no files on Node 20, the documented minimum. The quoted glob is only expanded by Node 21+, and CI runs Node 22, so it never showed up there. | The glob is now unquoted, so the shell expands it the same way for every Node version. (Passing the folder instead worked on Node 20 but broke Node 22.) |
+| 12 | There was no way to line structures up or space them evenly. In ChemDraw this is a routine last step before a scheme goes into a paper. | New **Align** menu: left, center, right, top, middle and bottom alignment, equal spacing across or down, and **Scheme row** (align middles, then space evenly). Compound numbers and curly arrows move with their structure. Two browser tests added. |
+| 13 | Found while adding #12: **Save project (.html)** keeps only the top-level elements it knows by id, so any new top-level element is silently dropped, and the reopened file breaks. The existing round-trip test caught this. | The Align menu is on the list. Anyone adding a new top-level element needs to add it there too. |
+
+### Done in the follow-up pass
+
+| # | Item | What changed |
+| --- | --- | --- |
+| 1 | Groups | Ctrl+G and Ctrl+Shift+G, also in the Align and right-click menus. Clicking any member selects the whole group, and Align treats it as one piece. |
+| 2 | Fixed-gap spacing | A **Gap** field in the Align menu, in bond lengths and remembered per browser. |
+| 3 | Smart guides | Dragging a selection snaps it to other pieces within 6 screen px. A center-to-center match wins over an edge match. Alt turns snapping off. |
+| 4 | Delete with no selection | It no longer erases the item under the cursor. It shows a hint instead. |
+| 5 | Arrow-key nudges | A run of nudges is one undo step. |
+| 6 | Long side panel | Each section folds, and the folded state is remembered. |
+| 13 | Fragile save whitelist | **Save project (.html)** now keeps every top-level element marked `data-sk`. |
+| — | Export bug | Copy image and every export ignored a custom atom label size, because `subDoc()` dropped `labelSize`. |
+| — | New features | Drawing settings for line, bold and wedge width, bond and hash spacing, and margin. Right-click menu. Ctrl+Shift+C copies SMILES. Name and CAS lookup through PubChem. Name and CAS input in the Insert dialog. |
+
+### Still open
+
+- **ES modules** (item 7 above). This is unchanged and still the largest structural item.
+- **Bond length** is a constant (`L` = 14.4 pt) used by all geometry. ChemDraw's "fixed length" setting would need `L` to become a per-document value. Until then, scale the copied image instead.
+- **CAS numbers come from PubChem synonyms.** These are filtered by the CAS check digit, and the first one is shown as primary. For an authoritative answer, use the CAS Common Chemistry API. It needs a free API key, so it would have to be a setting.
+
+### Original recommendations
+
+1. **Groups (Ctrl+G).** Alignment has to guess which labels belong to which structure. It attaches text and curly arrows within about 1.6 bond lengths. An explicit group would make this exact, and would also let users move a structure together with its label.
+2. **Fixed-gap spacing.** Scheme row keeps the outer pieces where they are and shares out the space between them. A "gap = N bond lengths" option would give the same spacing across every scheme in a paper.
+3. **Smart guides while dragging**, as in PowerPoint: snap to the centerlines and edges of other structures. Most alignment would then happen without opening a menu.
+4. **Make Delete with no selection safer.** Pressing Delete deletes whatever the cursor is over, and that is easy to trigger by accident. Require a selection, or at least flash the item first.
+5. **Combine arrow-key nudges into one undo step.** Each key press adds its own undo step, so nudging 20 times takes 20 undos. It can also push older history out of the 200-step limit.
+6. **Collapsible side panel.** The panel is long: Analysis, Text, Project, Export, Style, Templates and Shortcuts.
+7. **ES modules.** This is still the largest structural item (see Open items above). The id whitelist in #13 is one example of a coupling that is easy to break without noticing.
+
+## Third pass (October 2026): competitor features and file formats
+
+### How Skeletal compares now
+
+| Feature | Skeletal | MolDraw | MolView | ChemDraw |
+| --- | --- | --- | --- | --- |
+| ACS 1996 style by default | yes | no (serif labels) | no | yes |
+| Works offline, no account | yes | partly (Pro features need an account) | no | desktop app |
+| Write and open ChemDraw CDXML and CDX | yes | writes only | no | yes |
+| Molfile, SDF, RXN, SMILES, SMARTS, CML | yes | yes | SDF only | yes |
+| InChI and InChIKey | yes, offline | yes | search only | yes |
+| Marvin MRV, JME, chemfig | yes | chemfig only | no | MRV and JME |
+| JPEG, GIF, EPS | yes | JPEG only | no | yes |
+| Align, distribute, smart guides, groups | yes | groups and arrange presets | no | yes |
+| Lasso selection | yes | yes | no | yes |
+| NMR prediction | yes (¹H, ¹³C) | yes | no | yes (ChemNMR) |
+| m/z adducts and isotope pattern | yes | no | no | partly (Analysis window) |
+| MS/MS fragment estimate | yes | no | no | no (needs a separate tool) |
+| pKa, BDE, solvent impurity tables | yes | pKa only | no | no |
+| 3D view and 3D export | yes | yes | yes, more styles | via Chem3D |
+| Database search (PubChem, PDB, ChEMBL) | yes | ChEMBL and PubChem | PubChem | SciFinder |
+| AI chat and image-to-structure | no | Pro only | no | no |
+
+### Fixed in this pass
+
+| # | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 14 | **High (correctness)** | `toOCL` and `fromOCL` negated y, but OpenChemLib's y axis already points down. Every drawing reached OpenChemLib mirrored top to bottom, so drawn stereocenters were reported inverted (SMILES, molfile, InChI, lookups), and structures inserted from SMILES were drawn as the other enantiomer. Round trips hid this because the two flips cancelled. The RDKit and Open Babel format cross-check caught it. | The sign is removed in both functions and in Clean up. A browser test reads the screen geometry back through an independent molfile, and it fails on the old code. |
+| 15 | Low | Exporting InChI recomputed the 2D layout and lost the wedges. | Drawn coordinates are now used. |
+
+### Still open
+- **MS/MS** is a rule-based estimate, and its relative intensities are rough. A learned model such as CFM-ID would be better, but it can't run offline in a single file.
+- **Still missing from the competitor survey:**
+  - an option to show all C and H
+  - arrange presets (grid and circle)
+  - a stoichiometry table
+  - polymer brackets
+  - orbitals
+  - image-to-structure
+
+- **EPS verified (October 2026):** Ghostscript, as a WebAssembly build, renders our EPS and PDF identically, pixel for pixel, at 300 dpi.

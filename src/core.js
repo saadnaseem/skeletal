@@ -1,12 +1,19 @@
 'use strict';
 const SK_SRC = (()=>{ try{ return document.documentElement.outerHTML; }catch(e){ return null; } })();
 /* ================= constants ================= */
-const L = 14.4; // bond length in pt (ACS 1996)
+// bond length in pt for the drawing being edited or rendered: set from its style by useStyle()/renderDoc()
+let L = 14.4;
 const FONT = "Arial, Helvetica, 'Liberation Sans', sans-serif";
+// journal styles. acs: ChemDraw "ACS Document 1996"; rsc: ChemDraw 22 "RSC (1 Column) Document";
+// nature: Nature Reviews chemical structure style guide (0.381 cm bonds, 0.021 cm lines, 0.055 cm bold, 0.042 cm margin, 0.06 cm hash, 6 pt Arial)
 const PRESETS = {
-  acs:    { lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
-  slides: { lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
+  acs:    { name:'ACS 1996', bondLength:14.4, lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
+  rsc:    { name:'RSC', bondLength:12.2, lineWidth:0.45, boldWidth:1.6, spacing:0.20, hashSpacing:1.75, margin:1.25, fontSize:7, fontWeight:400, wedge:2.6, head:0.85 },
+  nature: { name:'Nature Reviews', bondLength:10.8, lineWidth:0.6, boldWidth:1.56, spacing:0.18, hashSpacing:1.7, margin:1.19, fontSize:6, fontWeight:400, wedge:2.5, head:0.8 },
+  slides: { name:'Slides', bondLength:14.4, lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
 };
+// per-document overrides of the preset (ChemDraw "Drawing Settings"): [min, max] in pt, spacing as a fraction of bond length
+const STYLE_LIMITS = { bondLength:[5,40], lineWidth:[0.1,6], boldWidth:[0.3,12], spacing:[0.08,0.4], hashSpacing:[0.8,8], wedge:[1,14], margin:[0,6] };
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr').split(' ');
 const ELSET = new Set(ELEMENTS);
 // nicknames: s = SMILES with attachment atom first, l = form used when the bond comes from the right
@@ -81,32 +88,55 @@ function sanitizeDoc(d){
   const int=(v,def=0)=>Math.round(num(v,def));
   const col=v=> (typeof v==='string' && COLOR_RE.test(v)) ? v : undefined;
   const str=(v,max)=> typeof v==='string' ? v.slice(0,max) : '';
+  const grp=v=>{ const n=Math.round(+v); return Number.isFinite(n) && n>0 ? n : undefined; };
   const pick=(o,keys)=>{ const r={}; for (const k of keys) if (o[k]!==undefined) r[k]=o[k]; return r; };
   const out={ v:1, style: Object.hasOwn(PRESETS, d.style) ? d.style : 'acs', colorAtoms:!!d.colorAtoms, nid:int(d.nid,1) };
   if (d.labelSize!=null && Number.isFinite(+d.labelSize)) out.labelSize=Math.min(72,Math.max(4,+d.labelSize));
+  if (d.styleOv && typeof d.styleOv==='object'){ const o={};
+    for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
+    if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color)},['id','x','y','el','charge','lp','rad','color']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined},['id','x','y','el','charge','lp','rad','color','g','stg']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color)},['id','a','b','order','stereo','dbPos','color']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
-  out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
+  out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
-    font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color)},['id','x','y','text','size','font','bold','italic','align','color']));
-  out.pluses=arr(d.pluses).map(p=>pick({id:int(p.id), x:num(p.x), y:num(p.y), color:col(p.color)},['id','x','y','color']));
+    font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color), g:grp(t.g)},['id','x','y','text','size','font','bold','italic','align','color','g']));
+  out.pluses=arr(d.pluses).map(p=>pick({id:int(p.id), x:num(p.x), y:num(p.y), color:col(p.color), g:grp(p.g)},['id','x','y','color','g']));
+  const clamp=(v,lo,hi,def)=>Math.min(hi,Math.max(lo,num(v,def)));
+  out.plates=arr(d.plates).slice(0,50).map(q=>pick({id:int(q.id), x:num(q.x), y:num(q.y), w:clamp(q.w,10,2000,60), h:clamp(q.h,10,2000,72), g:grp(q.g),
+    origin:clamp(q.origin,0,0.5,0.12), front:clamp(q.front,0.5,1,0.9), solvent:str(q.solvent,200), showRf:!!q.showRf, color:col(q.color),
+    lanes:arr(q.lanes).slice(0,20).map(l=>({label:str(l.label,40), spots:arr(l.spots).slice(0,20).map(sp=>pick({rf:clamp(sp.rf,0,1,0.5), to:sp.to!=null?clamp(sp.to,0,1,0.5):undefined,
+      style:['fill','outline','faint'].includes(sp.style)?sp.style:'fill', color:col(sp.color)},['rf','to','style','color']))}))},
+    ['id','x','y','w','h','g','origin','front','solvent','showRf','color','lanes']));
   if (d.page && typeof d.page==='object'){ const p=d.page; const w=num(p.w), h=num(p.h);
     if (w>=36 && h>=36 && w<=20000 && h<=20000) out.page={preset:str(p.preset,20)||'custom', w, h, across:Math.max(1,Math.min(8,int(p.across,1))), down:Math.max(1,Math.min(8,int(p.down,1))), x:num(p.x), y:num(p.y)}; }
   return out;
 }
-function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], nid:1, style:'acs', colorAtoms:false}; }
+function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], plates:[], nid:1, style:'acs', colorAtoms:false}; }
 const _sCache=new Map();
-function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||''); let s=_sCache.get(k); if(!s){ s={...(PRESETS[d.style]||PRESETS.acs)}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
+function useStyle(d){ L = S(d).bondLength || 14.4; return L; }
+// scale a drawing's geometry about its centre (used when the bond length changes; text sizes stay in pt)
+function rescaleDoc(d, f){
+  if (!(f>0) || Math.abs(f-1)<1e-9) return;
+  const pts=[...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[])]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
+  if (!pts.length) return; let cx=0, cy=0; for (const p of pts){ cx+=p.x; cy+=p.y; } cx/=pts.length; cy/=pts.length;
+  const sx=v=>cx+(v-cx)*f, sy=v=>cy+(v-cy)*f;
+  for (const o of [...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[])]){ o.x=sx(o.x); o.y=sy(o.y); }
+  for (const r of d.arrows){ r.x1=sx(r.x1); r.y1=sy(r.y1); r.x2=sx(r.x2); r.y2=sy(r.y2); if (r.cx!=null){ r.cx=sx(r.cx); r.cy=sy(r.cy); } }
+}
+function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
+  if(!s){ s={...(PRESETS[d.style]||PRESETS.acs), ...(d.styleOv||{})}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
 function buildIndex(d){
-  const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),adj:new Map()};
+  const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),plate:new Map(),adj:new Map()};
+  if (!d.plates) d.plates=[];
   for (const a of d.atoms){ ix.atom.set(a.id,a); ix.adj.set(a.id,[]); }
   d.bonds = d.bonds.filter(b=>ix.atom.has(b.a)&&ix.atom.has(b.b)&&b.a!==b.b);
   for (const b of d.bonds){ ix.bond.set(b.id,b); ix.adj.get(b.a).push({b,o:b.b}); ix.adj.get(b.b).push({b,o:b.a}); }
   for (const r of d.arrows) ix.arrow.set(r.id,r);
   for (const t of d.texts) ix.text.set(t.id,t);
   for (const p of d.pluses) ix.plus.set(p.id,p);
+  for (const q of d.plates) ix.plate.set(q.id,q);
   return ix;
 }
 function bondSum(ix,id){ let s=0; for(const {b} of ix.adj.get(id)||[]) s+=b.order; return s; }
@@ -120,6 +150,19 @@ function implicitH(atom, bsum){
     if (v>=bsum) return Math.max(0, v-bsum-(atom.rad?1:0));
   }
   return 0;
+}
+// atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
+function valenceError(atom, ix){
+  const n=(ix.adj.get(atom.id)||[]).length, k=kindOf(atom.el);
+  if (k==='abbr') return n>1 ? {have:n, max:1, why:`${atom.el} has ${n} bonds (a group label takes one)`} : null;
+  if (k!=='element') return null;
+  const vals=VAL[atom.el]; if (!vals) return null; // metals: no fixed valence
+  const g=GROUP[atom.el], ch=atom.charge||0;
+  let max=-1; for (const v0 of vals){ let v=v0; if (g==='c') v=v0-Math.abs(ch); else if (g==='n'||g==='o'||g==='x') v=v0+ch; else if (g==='b') v=v0-ch; else if (g==='h') v=v0-Math.abs(ch); max=Math.max(max,v, v0>vals[0]? v0+Math.abs(ch) : -1); } // hypervalent states take a charge as an extra bond (PF6-, IF6-)
+  const have=bondSum(ix,atom.id)+(atom.rad?1:0);
+  if (have<=max) return null;
+  const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
+  return {have, max, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; at most ${max}`};
 }
 function components(d, ix, atomIds){
   const allowed = atomIds ? new Set(atomIds) : null;
@@ -318,6 +361,10 @@ function renderAtomDecor(d, ix, a, info, out){
   if (info.visible){
     for (const it of info.items) out.push(`<text x="${f2(it.x)}" y="${f2(it.y)}" font-size="${f2(it.size)}" font-weight="${fw}" fill="${col}">${esc(it.t)}</text>`);
   }
+  if (a.stg){ // enhanced stereo label, ChemDraw style: abs, &1, or1
+    const dv=freeDirs(info, 1+(a.rad?1:0)+(a.lp||0)+(!info.visible&&a.charge?1:0)).slice(-1)[0]||V(0,-1), r=info.visible? Math.max(fs*0.9,(info.box.x1-info.box.x0)/2+fs*0.45) : fs*0.85;
+    const c=add(a,mul(dv,r)), m=/^(abs|and|or)(\d*)$/.exec(a.stg), t = m[1]==='abs'? 'abs' : (m[1]==='and'?'&':'or')+(m[2]||'1');
+    out.push(`<text x="${f2(c.x)}" y="${f2(c.y+fs*0.25)}" font-size="${f2(fs*0.72)}" font-weight="${fw}" fill="${col}" text-anchor="middle">${t}</text>`); }
   const need = (!info.visible && a.charge ? 1:0) + (a.rad?1:0) + (a.lp||0);
   if (!need) return;
   const dirsFree=freeDirs(info, need); let k=0;
@@ -448,7 +495,34 @@ function renderText(d,t,out){
 function renderPlus(d,p,out){ const st=S(d), s=3.8*st.head, col=p.color||'#000';
   out.push(strokeLine(V(p.x-s,p.y),V(p.x+s,p.y),st.lineWidth*1.1,col,'butt')); out.push(strokeLine(V(p.x,p.y-s),V(p.x,p.y+s),st.lineWidth*1.1,col,'butt')); }
 
+/* ================= TLC plates ================= */
+// geometry of a plate: lane x positions, origin and front y, spot y for an Rf
+function plateGeom(d,q){
+  const x0=q.x-q.w/2, y0=q.y-q.h/2, n=Math.max(1,q.lanes.length);
+  const yO=y0+q.h*(1-q.origin), yF=y0+q.h*(1-q.front), lane=i=>x0+q.w*(i+1)/(n+1);
+  const rx=Math.min(q.w/(n+1)*0.3, S(d).fontSize*0.55), ry=rx*0.62;
+  return {x0, y0, x1:x0+q.w, y1:y0+q.h, yO, yF, lane, rx, ry, rfY:rf=>yO-rf*(yO-yF)};
+}
+function plateBBox(d,q){ const g=plateGeom(d,q), fs=S(d).fontSize; return {x0:g.x0-(q.showRf?0:0), y0:g.y0-(q.solvent?fs*1.5:0), x1:g.x1+(q.showRf?fs*2.2:0), y1:g.y1+(q.lanes.some(l=>l.label)?fs*1.5:0)}; }
+const ellPath=(cx,cy,rx,ry)=>{ const k=0.5523; return `M${f2(cx+rx)} ${f2(cy)}C${f2(cx+rx)} ${f2(cy+k*ry)} ${f2(cx+k*rx)} ${f2(cy+ry)} ${f2(cx)} ${f2(cy+ry)}C${f2(cx-k*rx)} ${f2(cy+ry)} ${f2(cx-rx)} ${f2(cy+k*ry)} ${f2(cx-rx)} ${f2(cy)}C${f2(cx-rx)} ${f2(cy-k*ry)} ${f2(cx-k*rx)} ${f2(cy-ry)} ${f2(cx)} ${f2(cy-ry)}C${f2(cx+k*rx)} ${f2(cy-ry)} ${f2(cx+rx)} ${f2(cy-k*ry)} ${f2(cx+rx)} ${f2(cy)}Z`; };
+function renderPlate(d,q,out){
+  const st=S(d), fs=st.fontSize, lw=st.lineWidth, g=plateGeom(d,q), col=q.color||'#000';
+  out.push(`<path d="M${f2(g.x0)} ${f2(g.y0)}L${f2(g.x1)} ${f2(g.y0)}L${f2(g.x1)} ${f2(g.y1)}L${f2(g.x0)} ${f2(g.y1)}Z" fill="none" stroke="${col}" stroke-width="${f2(lw)}" stroke-linejoin="round"/>`);
+  out.push(`<line x1="${f2(g.x0)}" y1="${f2(g.yF)}" x2="${f2(g.x1)}" y2="${f2(g.yF)}" stroke="${col}" stroke-width="${f2(lw*0.8)}"/>`);
+  out.push(`<line x1="${f2(g.x0)}" y1="${f2(g.yO)}" x2="${f2(g.x1)}" y2="${f2(g.yO)}" stroke="${col}" stroke-width="${f2(lw*0.8)}" stroke-dasharray="${f2(fs*0.3)} ${f2(fs*0.2)}"/>`);
+  if (q.solvent) out.push(`<text x="${f2(q.x)}" y="${f2(g.y0-fs*0.45)}" font-size="${f2(fs)}" text-anchor="middle" fill="${col}">${esc(q.solvent)}</text>`);
+  q.lanes.forEach((ln,i)=>{ const lx=g.lane(i);
+    if (ln.label) out.push(`<text x="${f2(lx)}" y="${f2(g.y1+fs*1.05)}" font-size="${f2(fs)}" text-anchor="middle" fill="${col}">${esc(ln.label)}</text>`);
+    for (const sp of ln.spots){ const c=sp.color||(sp.style==='faint'?'#9aa0a6':'#3a3f44'), y=g.rfY(sp.rf);
+      const fill = sp.style==='outline' ? 'none' : c, stroke = sp.style==='outline' ? c : 'none';
+      if (sp.to!=null && Math.abs(sp.to-sp.rf)>0.01){ const ya=g.rfY(Math.max(sp.rf,sp.to)), yb=g.rfY(Math.min(sp.rf,sp.to)), r=g.rx; // streak
+        out.push(`<path d="M${f2(lx-r)} ${f2(ya)}C${f2(lx-r)} ${f2(ya-r*0.7)} ${f2(lx+r)} ${f2(ya-r*0.7)} ${f2(lx+r)} ${f2(ya)}L${f2(lx+r*0.8)} ${f2(yb)}C${f2(lx+r*0.8)} ${f2(yb+r*0.6)} ${f2(lx-r*0.8)} ${f2(yb+r*0.6)} ${f2(lx-r*0.8)} ${f2(yb)}Z" fill="${fill}" stroke="${stroke}" stroke-width="${f2(lw)}"/>`); }
+      else out.push(`<path d="${ellPath(lx,y,g.rx,g.ry)}" fill="${fill}" stroke="${stroke}" stroke-width="${f2(lw)}"/>`);
+      if (q.showRf) out.push(`<text x="${f2(lx+g.rx+fs*0.2)}" y="${f2(y+fs*0.25)}" font-size="${f2(fs*0.7)}" fill="${col}">${sp.rf.toFixed(2)}</text>`); }
+  });
+}
 function renderDoc(d, ix){
+  useStyle(d);
   ix = ix || buildIndex(d);
   const labels=new Map(); for (const a of d.atoms) labels.set(a.id, layoutLabel(d,ix,a));
   const out=[];
@@ -458,6 +532,7 @@ function renderDoc(d, ix){
   for (const r of d.arrows) renderArrow(d,r,out);
   for (const t of d.texts) renderText(d,t,out);
   for (const p of d.pluses) renderPlus(d,p,out);
+  for (const q of d.plates||[]) renderPlate(d,q,out);
   out.push('</g>');
   return {svg:out.join(''), labels};
 }
@@ -473,14 +548,14 @@ function toOCL(d, ix, atomIds, opts={}){
     if (opts.skipH && a.el==='H' && !a.charge && (ix.adj.get(id)||[]).length===1) continue;
     if (k==='element' || opts.placeholders){
       const z = k==='element' ? M.getAtomicNoFromLabel(a.el) : 6;
-      const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,-a.y/L);
+      const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,a.y/L); // OCL's y axis points down, like ours
       if (a.charge && k==='element') mol.setAtomCharge(i,a.charge);
       if (a.rad && k==='element') mol.setAtomRadical(i, M.cAtomRadicalStateD);
       map.set(id,i); owner[i]=id;
       if (k!=='element') generic = generic || k==='generic';
     } else if (k==='abbr'){
       const f=abbrMol(a.el); const base=mol.getAllAtoms();
-      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,-a.y/L+0.2*(j%2)); }
+      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,a.y/L+0.2*(j%2)); }
       for (let j=0;j<f.getAllBonds();j++){ const bb=mol.addBond(base+f.getBondAtom(0,j), base+f.getBondAtom(1,j)); mol.setBondType(bb, f.isDelocalizedBond(j)? M.cBondTypeDelocalized : f.getBondOrder(j)===2? M.cBondTypeDouble : f.getBondOrder(j)===3? M.cBondTypeTriple : M.cBondTypeSingle); }
       map.set(id,base);
     } else { generic=true; }
@@ -494,6 +569,11 @@ function toOCL(d, ix, atomIds, opts={}){
     if (b.order===1 && b.stereo==='hash') t=M.cBondTypeDown;
     const bi=mol.addBond(i1,i2); mol.setBondType(bi,t);
   }
+  // enhanced stereo (abs / and n / or n) on stereocentres, written by OCL as V3000 STEABS/STERAC/STEREL collections
+  const grouped=ids.filter(id=>{ const a=ix.atom.get(id); return a && a.stg && map.has(id); });
+  if (grouped.length){ mol.ensureHelperArrays(M.cHelperParities);
+    for (const id of grouped){ const i=map.get(id), m=/^(abs|and|or)(\d*)$/.exec(ix.atom.get(id).stg); if (!mol.isAtomStereoCenter(i)) continue;
+      mol.setAtomESR(i, m[1]==='abs'? M.cESRTypeAbs : m[1]==='and'? M.cESRTypeAnd : M.cESRTypeOr, Math.max(0,(+m[2]||1)-1)); } }
   return {mol, map, generic, owner};
 }
 // convert an OCL molecule (with coordinates) to doc atoms/bonds
@@ -502,9 +582,13 @@ function fromOCL(mol, offset){
   const ids=[];
   for (let i=0;i<n;i++){
     const el=mol.getAtomLabel(i);
-    const a={id:0,x:mol.getAtomX(i)*L,y:-mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
+    const a={id:0,x:mol.getAtomX(i)*L,y:mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
     atoms.push(a); ids.push(a);
   }
+  // keep AND/OR stereo groups from V3000 molfiles (ABS is the default and stays unlabelled)
+  try{ mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
+    for (let i=0;i<n;i++){ if (!mol.isAtomStereoCenter(i)) continue; const t=mol.getAtomESRType(i);
+      if (t===OCL.Molecule.cESRTypeAnd) atoms[i].stg='and'+(mol.getAtomESRGroup(i)+1); else if (t===OCL.Molecule.cESRTypeOr) atoms[i].stg='or'+(mol.getAtomESRGroup(i)+1); } }catch(e){}
   for (let b=0;b<mol.getAllBonds();b++){
     const t=mol.getBondType(b), ord=mol.getBondOrder(b);
     let stereo='none';

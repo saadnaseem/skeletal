@@ -1,19 +1,29 @@
 """Browser tests for dist/skeletal.html (run `npm run build` first)."""
-import pathlib, pytest
+import os, pathlib, pytest
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DIST = ROOT / "dist" / "skeletal.html"
+# SKELETAL_URL runs the suite against a served copy instead (e.g. scripts/serve_site.py, which applies the Pages headers)
+URL = os.environ.get("SKELETAL_URL")
 
 
 @pytest.fixture(scope="session")
 def browser():
-    if not DIST.exists():
+    if not URL and not DIST.exists():
         pytest.exit("dist/skeletal.html not found; run `npm run build` first", returncode=2)
     with sync_playwright() as p:
         b = p.chromium.launch()
         yield b
         b.close()
+
+
+def _wait(page, expr, timeout=20000):
+    # page.evaluate, not wait_for_function: its polling uses eval(), which the hosted site's CSP blocks
+    for _ in range(timeout // 100):
+        if page.evaluate(expr): return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"timed out waiting for {expr}")
 
 
 def _open(browser, viewport, **kw):
@@ -23,8 +33,8 @@ def _open(browser, viewport, **kw):
     page.on("pageerror", lambda e: page.errors.append(str(e)))
     page.on("console", lambda m: page.errors.append(m.text) if m.type == "error" and "ERR_FAILED" not in m.text else None)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())  # keep tests offline
-    page.goto(DIST.as_uri())
-    page.wait_for_function("typeof OCL !== 'undefined' && document.querySelectorAll('#tools .tool').length > 0")
+    page.goto(URL or DIST.as_uri())
+    _wait(page, "typeof OCL !== 'undefined' && document.querySelectorAll('#tools .tool').length > 0")
     return page
 
 
@@ -52,7 +62,7 @@ def open_page(browser):
         pg = ctx.new_page(); pg.errors = []
         pg.on("pageerror", lambda e: pg.errors.append(str(e)))
         pg.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-        pg.goto(url); pg.wait_for_function("typeof OCL !== 'undefined'")
+        pg.goto(url); _wait(pg, "typeof OCL !== 'undefined'")
         made.append(ctx); return pg
     yield make
     for c in made: c.close()

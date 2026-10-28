@@ -45,6 +45,33 @@ header.top{grid-column:1/-1; display:flex; align-items:center; gap:6px; padding:
 .tb:hover{background:var(--btn-hover)}
 .tb:disabled{opacity:.4; cursor:default}
 .tb svg{width:18px; height:18px; flex:none}
+.menu{position:fixed; z-index:30; display:grid; grid-template-columns:repeat(3,auto); gap:2px; padding:6px; background:var(--btn); border:1px solid var(--line); border-radius:9px; box-shadow:0 8px 24px rgba(0,0,0,.16); width:max-content; max-width:calc(100vw - 16px)}
+.menu[hidden]{display:none}
+.menu [hidden]{display:none !important}
+.menu button{display:flex; align-items:center; gap:6px; padding:6px 9px; border:0; background:none; border-radius:6px; text-align:left; white-space:nowrap}
+.menu button:hover,.menu button:focus-visible{background:var(--btn-hover)}
+.menu svg{width:18px; height:18px; flex:none}
+.menugap{grid-column:1/-1; display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:4px 9px; font-size:13px}
+.menugap input{width:64px; height:26px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+.menugap span{flex-basis:100%; font-size:12px; color:var(--ink-2)}
+.menu.ctx{grid-template-columns:1fr; min-width:230px}
+.menu.ctx button{justify-content:space-between}
+.menu.ctx button:disabled{opacity:.4; cursor:default; background:none}
+.menu kbd{font:11px var(--ui); color:var(--ink-2)}
+dl.lk{display:grid; grid-template-columns:auto 1fr; gap:8px 12px; margin:10px 0; font-size:13.5px}
+dl.lk dt{color:var(--ink-2)} dl.lk dd{margin:0; word-break:break-word}
+.caslist{list-style:none; margin:0; padding:0} .caslist li + li{margin-top:4px}
+table.fmt td{padding:6px 8px; vertical-align:top}
+.valwarn{position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:5; background:#fff5f5; color:#c92a2a; border:1px solid #ffa8a8; border-radius:999px; padding:5px 12px; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.08); max-width:calc(100% - 24px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.valwarn[hidden]{display:none}
+.guide-steps{margin:6px 0 10px; padding-left:20px; font-size:13.5px; line-height:1.45}
+.guide-steps li{margin:3px 0}
+.guide-calc{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; font-size:13px; margin:6px 0}
+.guide-calc input{height:28px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+.guide-ex{border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0}
+.dialog h4{margin:14px 0 6px; font-size:13.5px}
+.menusep{grid-column:1/-1; height:1px; background:var(--line); margin:3px 2px}
+.menunote{grid-column:1/-1; margin:4px 6px 2px; font-size:12px; color:var(--ink-2); max-width:30em; white-space:normal}
 .tb.icon{padding:0; width:34px; justify-content:center}
 .tb.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent; font-weight:600}
 .tb.primary:hover{filter:brightness(1.07)}
@@ -88,14 +115,24 @@ main.stage{position:relative; overflow:hidden; background:var(--paper); touch-ac
 aside.panel{background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; padding:4px 0 24px}
 .panel section{padding:14px 16px; border-bottom:1px solid var(--line)}
 .panel h2{font-size:13px; font-weight:700; margin:0 0 10px; letter-spacing:.005em}
+.panel h2 .sechead{all:unset; cursor:pointer; display:flex; align-items:center; gap:6px; width:100%}
+.panel h2 .sechead:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px}
+.panel h2 .sechead::before{content:""; width:6px; height:6px; border:solid currentColor; border-width:0 1.6px 1.6px 0; transform:rotate(45deg); margin:0 3px 3px 1px; transition:transform .15s}
+.panel section.collapsed h2{margin:0}
+.panel section.collapsed h2 .sechead::before{transform:rotate(-45deg); margin:0 3px 0 0}
+.panel section.collapsed > :not(h2){display:none !important}
 .scope{font-size:12px; color:var(--ink-2); margin:-6px 0 10px}
 dl.props{margin:0; display:grid; grid-template-columns:1fr auto; gap:2px 8px; align-items:center}
 dl.props dt{grid-column:1/-1; color:var(--ink-2); font-size:12px; margin-top:6px}
 dl.props dt:first-of-type{margin-top:0}
 dl.props dd{margin:0; font-variant-numeric:tabular-nums; word-break:break-all; min-width:0}
+dl.props.stale{opacity:.45}
 dl.props dd.code{font-size:12.5px}
 .mini{border:1px solid var(--line); background:var(--btn); border-radius:5px; font-size:11.5px; padding:1px 7px; height:22px}
 .mini:hover{background:var(--btn-hover)}
+.dset{display:grid; grid-template-columns:auto 1fr; gap:6px 10px; align-items:center; font-size:13px}
+.dset input{width:70px; height:28px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
+.dset span{color:var(--ink-2); font-size:12px}
 .note{font-size:12px; color:var(--ink-2); margin:8px 0 0}
 .row{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
 .row + .row{margin-top:8px}
@@ -103,6 +140,10 @@ dl.props dd.code{font-size:12.5px}
 .seg{display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; width:100%}
 .seg button{flex:1; border:0; background:var(--btn); padding:6px 8px; font-size:13px}
 .seg button + button{border-left:1px solid var(--line)}
+.seg4{display:grid; grid-template-columns:1fr 1fr}
+.seg4 button + button{border-left:0}
+.seg4 button:nth-child(even){border-left:1px solid var(--line)}
+.seg4 button:nth-child(n+3){border-top:1px solid var(--line)}
 .seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
 label.chk{display:flex; gap:8px; align-items:center; font-size:13px; cursor:pointer}
 .swatches{display:flex; gap:6px; flex-wrap:wrap}
@@ -124,6 +165,7 @@ kbd{font:600 11.5px/1 var(--ui); border:1px solid var(--line); border-bottom-wid
 .dialog textarea,.dialog input[type=text]{width:100%; border:1px solid var(--line); border-radius:8px; background:var(--btn); padding:8px 10px; font-size:14px}
 .dialog textarea{min-height:90px; font-family:ui-monospace, Menlo, Consolas, monospace; font-size:13px}
 .dialog .actions{display:flex; justify-content:flex-end; gap:8px; margin-top:14px}
+.dialog .code{font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; color:var(--ink)}
 .err{color:var(--danger); font-size:13px; margin-top:8px; min-height:1em}
 .copyimg{display:block; max-width:100%; max-height:50vh; margin:0 auto; background:#fff; border:1px solid var(--line); border-radius:6px}
 .examples{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
@@ -142,12 +184,14 @@ kbd{font:600 11.5px/1 var(--ui); border:1px solid var(--line); border-bottom-wid
 .tabs{display:flex; gap:4px; margin:4px 0 12px}
 .tabs button{border:1px solid var(--line); background:var(--btn); border-radius:7px; padding:5px 14px; font-weight:600}
 .tabs button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:transparent}
+.msplot{width:100%; height:auto; display:block}
 .nmrgrid{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr); gap:14px; align-items:start}
 .nmrbox{background:#fff; border:1px solid var(--line); border-radius:8px; padding:6px; overflow:auto}
 .nmrbox svg{display:block; width:100%; height:auto}
 table.peaks{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:12px; font-variant-numeric:tabular-nums}
 table.peaks th{text-align:left; color:var(--ink-2); font-weight:600; border-bottom:1px solid var(--line); padding:4px 6px}
 table.peaks td{border-bottom:1px solid var(--line); padding:4px 6px}
+.guide table.peaks{font-variant-numeric:normal; font-size:13px; line-height:1.4} /* prose, not number columns */
 .vlist{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:6px}
 .vlist li{display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:7px; padding:6px 8px; background:var(--btn)}
 .vlist .vn{flex:1; min-width:0}
@@ -191,9 +235,11 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <button class="tb" id="bClean" title="Clean up structure geometry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l6.9 4v8L12 20l-6.9-4V8z"/><path d="M19 2.5v3M17.5 4h3M4 19v2.4M2.8 20.2h2.4"/></svg><span class="hide-mobile">Clean up</span></button>
     <button class="tb icon" id="bFlipH" title="Flip horizontal" aria-label="Flip horizontal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L3 17h6zM15 7l6 10h-6z"/></svg></button>
     <button class="tb icon" id="bFlipV" title="Flip vertical" aria-label="Flip vertical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9L17 3v6zM7 15l10 6v-6z"/></svg></button>
+    <button class="tb" id="bAlign" title="Align and space structures" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><rect x="4" y="7" width="5" height="10" rx="1"/><rect x="15" y="9" width="5" height="6" rx="1"/></svg><span class="hide-mobile">Align</span></button>
     <div class="sep"></div>
     <button class="tb" id="bPage" title="Document size and pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="hide-mobile">Document</span></button>
     <button class="tb" id="bSolv" title="NMR solvent and impurity peaks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span class="hide-mobile">Solvent peaks</span></button>
+    <button class="tb" id="bTlc" title="Insert a TLC plate: lanes, spots, Rf, eluent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M6 6.5h12M6 17.5h12" stroke-width="1.1"/><ellipse cx="9.5" cy="10" rx="1.3" ry=".9" fill="currentColor"/><ellipse cx="14.5" cy="14" rx="1.3" ry=".9" fill="currentColor"/></svg><span class="hide-mobile">TLC</span></button>
     <button class="tb" id="bSmiles" title="Insert from SMILES"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>SMILES</span></button>
     <div class="spacer"></div>
     <button class="tb only-mobile" id="bPanel" aria-expanded="false">Analysis</button>
@@ -205,6 +251,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <textarea id="texted" spellcheck="false" hidden></textarea>
     <div class="empty" id="empty"><b>Start drawing</b>Pick the bond tool and click anywhere, or insert a structure from SMILES.</div>
     <div class="pages" id="pages"></div>
+    <button class="valwarn" id="valWarn" hidden title="Click to select these atoms"></button>
     <div class="zoom">
       <button class="tb icon" id="bZoomOut" aria-label="Zoom out">−</button>
       <button class="tb" id="zoomval" title="Fit drawing">100%</button>
@@ -214,11 +261,16 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <aside class="panel" id="panel">
     <section>
       <h2>Analysis</h2>
-      <p class="scope" id="scope">Nothing drawn yet</p>
+      <div class="row" style="justify-content:space-between;margin:-4px 0 6px"><p class="scope" id="scope" style="margin:0;flex:1">Nothing drawn yet</p><button class="tb primary" id="bAnalyze" disabled title="Compute SMILES, formula, mass, InChI and properties for the selection or the whole drawing">Analyze</button></div>
       <dl class="props" id="props"></dl>
       <div class="row" style="margin-top:12px"><button class="tb full" id="bNmr">Predict ¹H and ¹³C NMR</button></div>
+      <div class="row"><button class="tb full" id="bGuide" title="Tutorial: formula, DBE, shift tables, splitting, benzene patterns, worked examples">NMR solving guide</button></div>
+      <div class="row"><button class="tb full" id="bMs">Mass spectrum: m/z, isotopes, MS/MS</button></div>
+      <div class="row"><button class="tb full" id="b3d">3D view</button></div>
       <div class="row"><button class="tb full" id="bSolv2">NMR solvent and impurity peaks</button></div>
-      <div class="row"><button class="tb full" id="bAddInfo">Add formula and mass to drawing</button></div>
+      <div class="row"><button class="tb full" id="bAddInfo" title="Formula, exact mass, MW, m/z, elemental analysis, LogP, LogS, tPSA">Analysis (elemental, m/z, LogS)…</button></div>
+      <div class="row"><button class="tb full" id="bLookup" title="Find the name and CAS number on PubChem (needs internet)">Look up name and CAS number</button></div>
+      <div class="row"><button class="tb full" id="bFindDb" title="Search PubChem, RCSB PDB ligands, ChEMBL or Google for this structure">Find in databases</button></div>
     </section>
     <section>
       <h2>Text</h2>
@@ -249,7 +301,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
         <button class="tb" id="bSave">Save as .json</button>
       </div>
       <div class="row"><button class="tb" id="bOpen">Open project or file</button><button class="tb" id="bNew">New project</button>
-        <input type="file" id="fileIn" accept=".html,.htm,.json,.svg,.png,.mol,.sdf,.txt,.smi" hidden></div>
+        <input type="file" id="fileIn" accept=".html,.htm,.json,.svg,.png,.mol,.sdf,.txt,.smi,.cdxml,.cdx,.cml,.mrv,.inchi" hidden></div>
       <p class="note">The .html file is a complete copy of this editor with all your pages and versions inside. Open it in any browser to keep working, even offline, or open it here.</p>
       <div class="row" style="margin-top:12px; justify-content:space-between"><b style="font-size:13px">Versions</b><button class="tb" id="bVersion">Save version</button></div>
       <ul class="vlist" id="vlist"></ul>
@@ -271,17 +323,31 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
         <button class="tb" id="bPng">PNG</button>
         <button class="tb" id="bSvg">SVG</button>
         <button class="tb" id="bPdf">PDF</button>
+        <button class="tb primary" id="bSaveAs" title="All formats: ChemDraw, Molfile, SDF, RXN, InChI, CML, JPEG, GIF, EPS… (Ctrl+Shift+S)">Save as…</button>
       </div>
       <p class="note">Exports use the selection, or the whole page if nothing is selected. PNGs are 600 dpi at true size; SVG and PDF are vector, and PDF can include every page. Exported PNGs and SVGs reopen here for editing.</p>
     </section>
     <section>
       <h2>Style</h2>
-      <div class="seg" id="presetSeg">
-        <button data-p="acs" aria-pressed="true">ACS Document 1996</button>
+      <div class="seg seg4" id="presetSeg">
+        <button data-p="acs" aria-pressed="true">ACS 1996</button>
+        <button data-p="rsc" aria-pressed="false">RSC</button>
+        <button data-p="nature" aria-pressed="false">Nature Reviews</button>
         <button data-p="slides" aria-pressed="false">Slides</button>
       </div>
-      <p class="note" style="margin-top:8px">ACS Document 1996: bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18% of length, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Slides keeps the geometry with heavier lines and bold labels.</p>
-      <div class="row"><button class="tb" id="bAcsAll">Apply ACS 1996 to all pages</button></div>
+      <p class="note" id="presetNote" style="margin-top:8px"></p>
+      <div class="row"><button class="tb" id="bAcsAll">Apply this style to all pages</button></div>
+      <p class="note" style="margin:12px 0 6px">Drawing settings <span style="color:var(--ink-2)">(blank = style default)</span></p>
+      <div class="dset" id="drawSet">
+        <label for="ov_bondLength">Bond length</label><span><input type="number" id="ov_bondLength" data-ov="bondLength" min="5" max="40" step="0.1"> pt</span>
+        <label for="ov_lineWidth">Line width</label><span><input type="number" id="ov_lineWidth" data-ov="lineWidth" min="0.1" max="6" step="0.05"> pt</span>
+        <label for="ov_boldWidth">Bold width</label><span><input type="number" id="ov_boldWidth" data-ov="boldWidth" min="0.3" max="12" step="0.1"> pt</span>
+        <label for="ov_wedge">Wedge width</label><span><input type="number" id="ov_wedge" data-ov="wedge" min="1" max="14" step="0.1"> pt</span>
+        <label for="ov_spacing">Bond spacing</label><span><input type="number" id="ov_spacing" data-ov="spacing" data-pct min="8" max="40" step="1"> % of length</span>
+        <label for="ov_hashSpacing">Hash spacing</label><span><input type="number" id="ov_hashSpacing" data-ov="hashSpacing" min="0.8" max="8" step="0.1"> pt</span>
+        <label for="ov_margin">Margin width</label><span><input type="number" id="ov_margin" data-ov="margin" min="0" max="6" step="0.1"> pt</span>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="tb" id="bOvReset">Reset to style</button><button class="tb" id="bOvAll">Apply to all pages</button></div>
       <p class="note" style="margin:12px 0 6px">Document</p>
       <div class="row" style="justify-content:space-between"><span id="pageInfo" style="font-size:13px">Free canvas</span><button class="tb" onclick="openPageSetup()">Change</button></div>
       <div class="row" style="margin-top:10px"><label for="labelSize" style="font-size:13px">Atom label size</label><select class="sel" id="labelSize"></select></div>
@@ -302,13 +368,20 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
           <kbd>hover bond + 1 2 3</kbd><span>Set bond order</span>
           <kbd>Click bond</kbd><span>Single tool cycles single, double, triple</span>
           <kbd>Drag empty</kbd><span>Select tool draws a selection box</span>
+          <kbd>L</kbd><span>Lasso: drag a freehand loop to select (V returns to the box)</span>
           <kbd>Shift</kbd><span>Add to selection</span>
           <kbd>Alt + drag</kbd><span>Draw without angle snapping</span>
           <kbd>Space + drag</kbd><span>Pan (or two fingers)</span>
           <kbd>Ctrl + wheel</kbd><span>Zoom</span>
           <kbd>Ctrl C / V / D</kbd><span>Copy image, paste, duplicate</span>
+          <kbd>Ctrl Shift S</kbd><span>Save as: every export format</span>
+          <kbd>Ctrl Shift C</kbd><span>Copy SMILES of the selection (or the whole drawing)</span>
+          <kbd>Right-click</kbd><span>Copy SMILES or molfile, look up name and CAS number</span>
           <kbd>Delete</kbd><span>Remove selection</span>
+          <kbd>Ctrl G / Ctrl Shift G</kbd><span>Group, ungroup (a group selects, moves and aligns as one)</span>
+          <kbd>Arrow keys</kbd><span>Nudge selection 1 pt (Shift: 5 pt); one undo step per run</span>
           <kbd>[ ]</kbd><span>Rotate selection 15°</span>
+          <kbd>Align</kbd><span>Line up structures by edge or center, or space them evenly</span>
           <kbd>In text</kbd><span>H2SO4 subscripts automatically; ^ makes superscript (Fe^3+)</span>
           <kbd>Double-click atom</kbd><span>Edit its label (press and hold on touch screens)</span>
           <kbd>Shift + Enter</kbd><span>New line while editing text</span>
@@ -321,6 +394,42 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   </aside>
 </div>
 
+<div class="menu" id="alignMenu" role="menu" hidden data-sk>
+  <button role="menuitem" data-align="left" title="Align left edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v18"/><rect x="7" y="6" width="12" height="4" rx="1"/><rect x="7" y="14" width="7" height="4" rx="1"/></svg><span>Left</span></button>
+  <button role="menuitem" data-align="center" title="Align centers (vertical line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18" stroke-dasharray="2 2"/><rect x="5" y="6" width="14" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/></svg><span>Center</span></button>
+  <button role="menuitem" data-align="right" title="Align right edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 3v18"/><rect x="5" y="6" width="12" height="4" rx="1"/><rect x="10" y="14" width="7" height="4" rx="1"/></svg><span>Right</span></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-align="top" title="Align top edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18"/><rect x="6" y="7" width="4" height="12" rx="1"/><rect x="14" y="7" width="4" height="7" rx="1"/></svg><span>Top</span></button>
+  <button role="menuitem" data-align="middle" title="Align middles (horizontal line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/></svg><span>Middle</span></button>
+  <button role="menuitem" data-align="bottom" title="Align bottom edges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><rect x="6" y="5" width="4" height="12" rx="1"/><rect x="14" y="10" width="4" height="7" rx="1"/></svg><span>Bottom</span></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-align="hspace" title="Equal horizontal spacing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v16M21 4v16"/><rect x="6" y="8" width="4" height="8" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/></svg><span>Space across</span></button>
+  <button role="menuitem" data-align="vspace" title="Equal vertical spacing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16M4 21h16"/><rect x="8" y="6" width="8" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/></svg><span>Space down</span></button>
+  <button role="menuitem" data-align="row" title="Line up as a scheme: align middles and space evenly"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3M10 12h4M19 12h3"/><circle cx="7.5" cy="12" r="2.5"/><circle cx="16.5" cy="12" r="2.5"/></svg><span>Scheme row</span></button>
+  <label class="menugap">Gap <input type="number" id="alignGap" min="0.2" max="20" step="0.1" placeholder="auto"> bond lengths <span>for spacing and Scheme row; blank keeps the end pieces in place</span></label>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-align="group" title="Group the selection (Ctrl+G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2"/><rect x="6" y="6" width="6" height="6" rx="1"/><path d="M14 15h4M14 18h3"/></svg><span>Group</span></button>
+  <button role="menuitem" data-align="ungroup" title="Ungroup (Ctrl+Shift+G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="6" height="6" rx="1"/><path d="M14 15h4M14 18h3"/></svg><span>Ungroup</span></button>
+  <p class="menunote">Works on the selection, or the whole page when nothing is selected. Compound numbers and curly arrows move with the nearest structure; group them (Ctrl+G) to be exact.</p>
+</div>
+<div class="menu ctx" id="ctxMenu" role="menu" hidden data-sk>
+  <button role="menuitem" data-cmd="tlc"><span>Edit TLC plate…</span></button>
+  <button role="menuitem" data-cmd="smiles" data-need="atoms"><span>Copy SMILES</span><kbd>Ctrl Shift C</kbd></button>
+  <button role="menuitem" data-cmd="molfile" data-need="atoms"><span>Copy molfile</span></button>
+  <button role="menuitem" data-cmd="image"><span>Copy image</span><kbd>Ctrl C</kbd></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-cmd="stereo" data-need="atoms"><span>Stereo group (abs, &amp;, or)…</span></button>
+  <button role="menuitem" data-cmd="analysis" data-need="atoms"><span>Analysis (elemental, m/z)</span></button>
+  <button role="menuitem" data-cmd="nmr" data-need="atoms"><span>Predict NMR</span></button>
+  <button role="menuitem" data-cmd="ms" data-need="atoms"><span>Mass spectrum and MS/MS</span></button>
+  <button role="menuitem" data-cmd="3d" data-need="atoms"><span>3D view</span></button>
+  <button role="menuitem" data-cmd="lookup" data-need="atoms"><span>Look up name and CAS number</span></button>
+  <button role="menuitem" data-cmd="finddb" data-need="atoms"><span>Find in PubChem, PDB, ChEMBL…</span></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-cmd="group" data-need="sel"><span>Group</span><kbd>Ctrl G</kbd></button>
+  <button role="menuitem" data-cmd="ungroup" data-need="sel"><span>Ungroup</span><kbd>Ctrl Shift G</kbd></button>
+  <button role="menuitem" data-cmd="delete" data-need="sel"><span>Delete</span><kbd>Del</kbd></button>
+</div>
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script data-sk>/*OCL*/</script>

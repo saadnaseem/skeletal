@@ -14,3 +14,9 @@ jobs:
       - run: npm test
       - run: pip install -r requirements-dev.txt && python -m playwright install --with-deps chromium
       - run: npm run test:e2e
+      - run: npm run build:pages
+      - name: Browser tests against site/ served with the Cloudflare Pages headers (CSP etc.)
+        run: |
+          python scripts/serve_site.py 8799 &
+          sleep 1
+          SKELETAL_URL=http://localhost:8799/ npm run test:e2e
