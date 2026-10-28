@@ -985,7 +985,7 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   if (c==='smiles') copySmiles();
   else if (c==='molfile'){ const {ids}=lookupIds(); try{ copyText(analysisFor(ids).molfile,'Molfile copied'); }catch(err){ toast('Could not interpret this structure'); } }
   else if (c==='lookup') lookupOnline();
-  else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb();
+  else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb(); else if (c==='3d') open3d();
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
   else if (c==='delete') deleteSel();
@@ -1062,6 +1062,7 @@ function reactionSmiles(){
 }
 $('#bLookup').onclick=()=>lookupOnline();
 $('#bMs').onclick=()=>openMs();
+$('#b3d').onclick=()=>open3d();
 $('#bFindDb').onclick=()=>openFindDb();
 $('#props').addEventListener('click', e=>{ const b=e.target.closest('[data-copy]'); if (b) copyText(b.dataset.copy, 'Copied'); });
 $('#bAddInfo').addEventListener('click', ()=>{
@@ -1223,6 +1224,10 @@ const EXPORTS = [
     {id:'mrv', n:'Marvin', ext:'mrv', f:1},
     {id:'jme', n:'JME / JSME', ext:'jme', f:1, text:1},
     {id:'chemfig', n:'chemfig (LaTeX)', ext:'tex', f:1, text:1} ]},
+  {g:'3D coordinates (generated conformer of the largest structure)', items:[
+    {id:'xyz', n:'XYZ', ext:'xyz', note:'For quantum chemistry and molecular viewers'},
+    {id:'pdb', n:'PDB', ext:'pdb', note:'With CONECT records, for docking and PyMOL'},
+    {id:'sdf3d', n:'SD file (3D)', ext:'sdf'} ]},
   {g:'Project', items:[
     {id:'html', n:'Skeletal project', ext:'html', note:'The editor with all pages and versions inside'},
     {id:'json', n:'Skeletal JSON', ext:'json'} ]},
@@ -1238,6 +1243,8 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
     case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
     case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
     case 'json': return {data:JSON.stringify(project)};
+    case 'xyz': case 'pdb': case 'sdf3d': { const comps=components(d,dix).sort((a,b)=>b.length-a.length); const r=toOCL(d,dix,comps[0],{skipH:true}); if (r.generic) throw new Error('Generic labels have no 3D geometry');
+      const m3=await VIEW3D.conformer(r.mol); return {data: id==='xyz'? VIEW3D.xyz(m3) : id==='pdb'? VIEW3D.pdb(m3) : m3.mol.toMolfile()+'$$$$\n'}; }
   }
   const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
   if (it && it.f){ if (typeof FORMATS==='undefined' || !FORMATS.write) throw new Error('This format is not available in this build');
@@ -1691,6 +1698,46 @@ function openNmr(){
   nmrState={res, comp, owner, mol, tab:'H', generic, multi:comps.length>1, solvent:(nmrState&&nmrState.solvent)||''};
   renderNmr();
 }
+/* ================= 3D view dialog ================= */
+let v3={seed:17, style:'ball', showH:true, labels:false, spin:true};
+async function open3d(){
+  const selIds=selAtoms();
+  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  if (!comps.length){ toast('Draw or select a structure first'); return; }
+  const {mol,generic}=toOCL(doc,ix,comps[0],{skipH:true});
+  if (generic){ toast('Structures with R, X or custom labels have no 3D geometry'); return; }
+  openDialog(`<div class="dialog-inner"><h3>3D view</h3><p id="v3msg">Generating a conformer\u2026</p></div>`); dialog.classList.add('wide');
+  let model; try{ model=await VIEW3D.conformer(mol, v3.seed); }catch(e){ console.warn(e); const m=$('#v3msg'); if (m) m.textContent='A 3D structure could not be generated for this drawing. '+(e.message||''); return; }
+  if (!$('#v3msg')) return; // closed meanwhile
+  v3.model=model; v3.rot=v3.rot||VIEW3D.mul(VIEW3D.rotX(-0.35),VIEW3D.rotY(0.5)); v3.zoom=v3.zoom||1;
+  const seg=(k,opts)=>`<div class="seg" style="width:auto">${opts.map(([v,n])=>`<button data-${k}="${v}" aria-pressed="${v3[k]===v}">${n}</button>`).join('')}</div>`;
+  openDialog(`<div class="dialog-inner"><h3>3D view</h3>
+    <div class="row" style="margin-bottom:8px">${seg('style',[['ball','Ball and stick'],['space','Space-filling'],['stick','Sticks']])}
+      <label class="chk"><input type="checkbox" id="v3H"${v3.showH?' checked':''}> Hydrogens</label><label class="chk"><input type="checkbox" id="v3L"${v3.labels?' checked':''}> Labels</label><label class="chk"><input type="checkbox" id="v3S"${v3.spin?' checked':''}> Spin</label></div>
+    <canvas id="v3cv" style="width:100%;height:min(60vh,460px);background:#fff;border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:grab"></canvas>
+    <p class="note">One low-energy conformer: OpenChemLib torsion library, then MMFF94s minimisation, computed offline. Drag to rotate, scroll to zoom. ${comps.length>1?'Showing the largest structure; select another to view it.':''}</p>
+    <div class="actions" style="flex-wrap:wrap"><button class="tb" id="v3New">Another conformer</button><button class="tb" id="v3Xyz">XYZ</button><button class="tb" id="v3Pdb">PDB</button><button class="tb" id="v3Sdf">SDF (3D)</button><button class="tb" id="v3Png">PNG</button><button class="tb primary" data-close>Done</button></div></div>`);
+  dialog.classList.add('wide');
+  const cv3=$('#v3cv'); const fitC=()=>{ const r=cv3.getBoundingClientRect(), d=devicePixelRatio||1; cv3.width=Math.round(r.width*d); cv3.height=Math.round(r.height*d); };
+  const paint=()=>VIEW3D.draw(cv3, v3.model, {rot:v3.rot, zoom:v3.zoom, style:v3.style, showH:v3.showH, labels:v3.labels});
+  fitC(); paint();
+  let drag3=null, last=performance.now();
+  const tick=t=>{ if (!document.body.contains(cv3)) return; if (v3.spin && !drag3){ v3.rot=VIEW3D.mul(VIEW3D.rotY((t-last)/1000*0.5), v3.rot); paint(); } last=t; requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  cv3.onpointerdown=e=>{ drag3={x:e.clientX,y:e.clientY}; cv3.setPointerCapture(e.pointerId); cv3.style.cursor='grabbing'; };
+  cv3.onpointermove=e=>{ if (!drag3) return; const dx=e.clientX-drag3.x, dy=e.clientY-drag3.y; drag3={x:e.clientX,y:e.clientY}; v3.rot=VIEW3D.mul(VIEW3D.mul(VIEW3D.rotY(dx*0.01),VIEW3D.rotX(-dy*0.01)), v3.rot); paint(); };
+  cv3.onpointerup=cv3.onpointercancel=()=>{ drag3=null; cv3.style.cursor='grab'; };
+  cv3.onwheel=e=>{ e.preventDefault(); v3.zoom=Math.min(6,Math.max(0.3,v3.zoom*Math.exp(-e.deltaY*0.002))); paint(); };
+  dialog.querySelectorAll('[data-style]').forEach(b=>b.onclick=()=>{ v3.style=b.dataset.style; dialog.querySelectorAll('[data-style]').forEach(x=>x.setAttribute('aria-pressed',String(x===b))); paint(); });
+  $('#v3H').onchange=e=>{ v3.showH=e.target.checked; paint(); }; $('#v3L').onchange=e=>{ v3.labels=e.target.checked; paint(); }; $('#v3S').onchange=e=>{ v3.spin=e.target.checked; };
+  $('#v3New').onclick=()=>{ v3.seed++; open3d(); };
+  const base=fileBase()+' 3D';
+  $('#v3Xyz').onclick=()=>saveFile(base+'.xyz', VIEW3D.xyz(v3.model));
+  $('#v3Pdb').onclick=()=>saveFile(base+'.pdb', VIEW3D.pdb(v3.model));
+  $('#v3Sdf').onclick=()=>saveFile(base+'.sdf', v3.model.mol.toMolfile()+'$$$$\n');
+  $('#v3Png').onclick=()=>{ const c=document.createElement('canvas'); c.width=cv3.width*2; c.height=cv3.height*2; VIEW3D.draw(c, v3.model, {rot:v3.rot, zoom:v3.zoom, style:v3.style, showH:v3.showH, labels:v3.labels}, $('#transp').checked? null : '#fff'); c.toBlob(b=>saveFile(base+'.png', b),'image/png'); };
+}
+
 /* ================= mass spectrum dialog ================= */
 let msState=null;
 function openMs(tab){

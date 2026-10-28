@@ -413,3 +413,17 @@ def test_find_in_databases_builds_links(page):
     assert any("pubchem.ncbi.nlm.nih.gov/#query=" in u and "tab=similarity" in u for u in urls)
     assert any(u.startswith("https://www.rcsb.org/search?request=") for u in urls)
     assert any("BSYNRYMUTXBXSQ-UHFFFAOYSA-N" in u for u in urls)
+
+
+def test_3d_view_generates_conformer_offline(page):
+    page.evaluate("tryLoadText('C[C@H](N)C(=O)O'); sel.clear()")
+    page.click("#b3d")
+    page.wait_for_selector("#v3cv", timeout=20000)
+    r = page.evaluate("""(()=>{ const m=v3.model, d=(i,j)=>Math.hypot(m.atoms[i].x-m.atoms[j].x,m.atoms[i].y-m.atoms[j].y,m.atoms[i].z-m.atoms[j].z);
+      const zs=m.atoms.map(a=>a.z); return {n:m.atoms.length, cc:m.bonds.filter(b=>m.atoms[b.a].el==='C'&&m.atoms[b.b].el==='C').map(b=>d(b.a,b.b)),
+        flat:Math.max(...zs)-Math.min(...zs) < 0.1, smi:OCL.Molecule.fromMolfile(m.mol.toMolfile()).toIsomericSmiles()}; })()""")
+    assert r["n"] == 13 and not r["flat"]  # 6 heavy atoms + 7 H, genuinely 3D
+    assert all(1.45 < x < 1.6 for x in r["cc"])
+    assert r["smi"] == page.evaluate("OCL.Molecule.fromSmiles('C[C@H](N)C(=O)O').toIsomericSmiles()")
+    pdb = page.evaluate("(async()=> (await exportData('pdb')).data)()")
+    assert pdb.startswith("HEADER") and "CONECT" in pdb
