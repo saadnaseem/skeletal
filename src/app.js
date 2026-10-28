@@ -702,8 +702,8 @@ function cleanUp(){
     let cx=0,cy=0; for (const id of comp){ const a=ix.atom.get(id); cx+=a.x; cy+=a.y; } cx/=comp.length; cy/=comp.length;
     mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
     mol.inventCoordinates(); scaleLayout(mol);
-    let nx=0,ny=0; for (const id of comp){ const i=map.get(id); nx+=mol.getAtomX(i)*L; ny+=-mol.getAtomY(i)*L; } nx/=comp.length; ny/=comp.length;
-    for (const id of comp){ const a=ix.atom.get(id), i=map.get(id); a.x=mol.getAtomX(i)*L-nx+cx; a.y=-mol.getAtomY(i)*L-ny+cy; }
+    let nx=0,ny=0; for (const id of comp){ const i=map.get(id); nx+=mol.getAtomX(i)*L; ny+=mol.getAtomY(i)*L; } nx/=comp.length; ny/=comp.length;
+    for (const id of comp){ const a=ix.atom.get(id), i=map.get(id); a.x=mol.getAtomX(i)*L-nx+cx; a.y=mol.getAtomY(i)*L-ny+cy; }
     // stereo bonds as re-derived by OCL
     const inv=new Map([...map].map(([k,v])=>[v,k]));
     const stereoOf=new Map();

@@ -480,14 +480,14 @@ function toOCL(d, ix, atomIds, opts={}){
     if (opts.skipH && a.el==='H' && !a.charge && (ix.adj.get(id)||[]).length===1) continue;
     if (k==='element' || opts.placeholders){
       const z = k==='element' ? M.getAtomicNoFromLabel(a.el) : 6;
-      const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,-a.y/L);
+      const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,a.y/L); // OCL's y axis points down, like ours
       if (a.charge && k==='element') mol.setAtomCharge(i,a.charge);
       if (a.rad && k==='element') mol.setAtomRadical(i, M.cAtomRadicalStateD);
       map.set(id,i); owner[i]=id;
       if (k!=='element') generic = generic || k==='generic';
     } else if (k==='abbr'){
       const f=abbrMol(a.el); const base=mol.getAllAtoms();
-      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,-a.y/L+0.2*(j%2)); }
+      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,a.y/L+0.2*(j%2)); }
       for (let j=0;j<f.getAllBonds();j++){ const bb=mol.addBond(base+f.getBondAtom(0,j), base+f.getBondAtom(1,j)); mol.setBondType(bb, f.isDelocalizedBond(j)? M.cBondTypeDelocalized : f.getBondOrder(j)===2? M.cBondTypeDouble : f.getBondOrder(j)===3? M.cBondTypeTriple : M.cBondTypeSingle); }
       map.set(id,base);
     } else { generic=true; }
@@ -509,7 +509,7 @@ function fromOCL(mol, offset){
   const ids=[];
   for (let i=0;i<n;i++){
     const el=mol.getAtomLabel(i);
-    const a={id:0,x:mol.getAtomX(i)*L,y:-mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
+    const a={id:0,x:mol.getAtomX(i)*L,y:mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
     atoms.push(a); ids.push(a);
   }
   for (let b=0;b<mol.getAllBonds();b++){
