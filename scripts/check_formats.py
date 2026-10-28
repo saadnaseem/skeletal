@@ -1,4 +1,4 @@
-"""Cross-check Skeletal's exported chemical files with RDKit and Open Babel.
+"""Cross-check Lone Pair's exported chemical files with RDKit and Open Babel.
 
 Usage: node scripts/gen_format_samples.mjs DIR && python scripts/check_formats.py DIR
 DIR holds <name>.<format>.<ext> files and expected.json ({name: SMILES}), as written by

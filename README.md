@@ -1,4 +1,4 @@
-# Skeletal
+# Lone Pair
 
 A chemical structure editor that runs entirely in the browser. Draw molecules, reactions and arrow-pushing mechanisms in ACS journal style, then copy them into PowerPoint or Word or export them as PNG, SVG or PDF. Built-in tools estimate ¹H/¹³C NMR spectra, pKa values and bond dissociation energies, and look up NMR solvent and impurity peaks.
 
@@ -8,12 +8,12 @@ The whole app is one HTML file (about 2.4 MB). It needs no server, no install an
 
 ## Quick start
 
-1. Download [`dist/skeletal.html`](dist/skeletal.html).
+1. Use it at [lonepair.app](https://lonepair.app/), or download [`dist/lonepair.html`](dist/lonepair.html) and open it.
 2. Open it in Chrome, Edge, Firefox or Safari.
 
 That's it. Your work autosaves in the browser. Use **Save project (.html)** to keep a copy you can reopen anywhere.
 
-To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or publish `dist/skeletal.html` on any static file server.
+To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or publish `dist/lonepair.html` on any static file server.
 
 ## Features
 
@@ -67,7 +67,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - Multiple pages per project, shown as tabs.
 - Named versions stored inside the project, with one-click restore. Restoring first saves your current state as another version.
 - **Save project (.html)** writes a complete copy of the editor with your pages and versions inside it. Double-click the file to keep working.
-- Exported PNGs and SVGs carry the drawing data, so you can open them in Skeletal and edit them again.
+- Exported PNGs and SVGs carry the drawing data, so you can open them in Lone Pair and edit them again.
 
 ### Chemistry tools
 - **Analysis block:** pick any of chemical formula, exact mass, molecular weight, m/z (isotope peaks), elemental analysis, cLogP, LogS and tPSA, as in ChemDraw's Analysis window. Copy the block, or add it under the structure. It also writes the journal line "Anal. Calcd for C9H8O4: C, 60.00; H, 4.48."
@@ -148,7 +148,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 
 ```bash
 npm install          # OpenChemLib + esbuild
-npm run build        # writes dist/skeletal.html
+npm run build        # writes dist/lonepair.html
 npm test             # 104 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
@@ -179,7 +179,7 @@ scripts/
   validate.mjs   held-out accuracy check
   gen_format_samples.mjs, check_formats.py   format cross-check against RDKit and Open Babel
 tests/unit/      chemistry, data and sanitizer tests (Node VM with DOM stubs)
-tests/e2e/       Playwright tests against dist/skeletal.html
+tests/e2e/       Playwright tests against dist/lonepair.html
 dist/            the built app (committed, so it can be downloaded directly)
 ```
 
@@ -201,6 +201,8 @@ A project wraps a list of `pages` (each holding one drawing) and a list of `vers
 
 ## Hosting on Cloudflare Pages
 
+Step-by-step for lonepair.app, including buying the domains and forwarding lone-pair.com: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 `npm run build:pages` builds the app and writes a deploy-ready `site/` folder (not committed) containing:
 
 - `index.html`: the app.
@@ -208,7 +210,7 @@ A project wraps a list of `pages` (each holding one drawing) and a list of `vers
   - HTML is always revalidated, so a new deploy shows up on the next visit; Cloudflare still compresses the 2.4 MB file to about 1.1 MB.
   - A Content-Security-Policy that only lets the page fetch from PubChem and EBI (ChEMBL) and forbids `eval` and plugins. `wasm-unsafe-eval` is there for the InChI module.
   - `nosniff`, a strict referrer policy and a Permissions-Policy.
-- `_redirects`: old `/skeletal.html` links go to `/`.
+- `_redirects`: old `/skeletal.html` and `/lonepair.html` links go to `/`.
 
 To change the policy, edit `scripts/build_pages.mjs`.
 
@@ -231,10 +233,10 @@ npm run build:pages
 ```
 
 ```bash
-npx wrangler pages deploy site --project-name skeletal
+npx wrangler pages deploy site --project-name lonepair
 ```
 
-**Custom domain.** In the Pages project, open **Custom domains → Set up a custom domain**. If the domain's DNS is already on Cloudflare (as with forkways.com), a subdomain such as `skeletal.forkways.com` is added and certified automatically.
+**Custom domain.** In the Pages project, open **Custom domains → Set up a custom domain**. If the domain's DNS is already on Cloudflare (as with forkways.com), a domain or subdomain such as `lonepair.app` is added and certified automatically.
 
 **What visitors can save.** There is no server, so nothing is stored on your side:
 
@@ -251,7 +253,7 @@ python scripts/serve_site.py 8799
 Open `http://localhost:8799/`, or run the browser tests against it:
 
 ```bash
-SKELETAL_URL=http://localhost:8799/ npm run test:e2e
+LONEPAIR_URL=http://localhost:8799/ npm run test:e2e
 ```
 
 CI runs both the file and the served-site test passes on every push.
@@ -259,7 +261,7 @@ CI runs both the file and the served-site test passes on every push.
 ## Browser notes
 
 - Name and CAS lookup needs an internet connection, and PubChem must be reachable from your network. Everything else works offline.
-- Copying to the clipboard needs a secure context (HTTPS or a local file). When a browser blocks it, Skeletal shows the image so you can right-click it and choose Copy image.
+- Copying to the clipboard needs a secure context (HTTPS or a local file). When a browser blocks it, Lone Pair shows the image so you can right-click it and choose Copy image.
 - Autosave uses `localStorage`, which is separate for each browser and can be cleared. Save the project as HTML to keep it permanently.
 - Labels render in Arial/Helvetica so they match Office and journal fonts.
 
@@ -270,4 +272,3 @@ Issues and pull requests are welcome. Please add a unit test for chemistry chang
 ## License and credits
 
 MIT (see [LICENSE](LICENSE)). The bundled [OpenChemLib JS](https://github.com/cheminfo/openchemlib-js) is BSD-3-Clause, and [inchi-js](https://www.npmjs.com/package/inchi-js) with the IUPAC InChI library is MIT. Reference data are credited in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-# skeletal

@@ -1,5 +1,7 @@
 # Competitor survey and build plan (October 2026)
 
+> The app was renamed **Lone Pair** (lonepair.app) in October 2026. This document uses its earlier working name, Skeletal.
+
 ## 1. What the others do
 
 I used each tool hands-on in a browser and read its feature pages. I also checked ChemDraw's own "Save as" format list, which the user supplied as a screenshot.

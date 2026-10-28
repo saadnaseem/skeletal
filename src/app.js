@@ -1389,8 +1389,8 @@ const EXPORTS = [
     {id:'pdb', n:'PDB', ext:'pdb', note:'With CONECT records, for docking and PyMOL'},
     {id:'sdf3d', n:'SD file (3D)', ext:'sdf'} ]},
   {g:'Project', items:[
-    {id:'html', n:'Skeletal project', ext:'html', note:'The editor with all pages and versions inside'},
-    {id:'json', n:'Skeletal JSON', ext:'json'} ]},
+    {id:'html', n:'Lone Pair project', ext:'html', note:'The editor with all pages and versions inside'},
+    {id:'json', n:'Lone Pair JSON', ext:'json'} ]},
 ];
 function exportDoc(){ return subDoc(sel.size?sel:null); }
 async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
@@ -1440,7 +1440,7 @@ $('#fileIn').addEventListener('change', async e=>{
     if (fm){ const k=fm[1].toLowerCase(); const data = k==='cdx' ? new Uint8Array(await f.arrayBuffer()) : await f.text(); insertForeign(FORMATS.read(k,data), f.name); return; }
     const t=await f.text();
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
-    if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Skeletal project inside'); return; } confirmOpenProject(pj); return; }
+    if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
     if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
     if (!tryLoadText(t.trim())) toast('Could not read this file');
@@ -1684,7 +1684,7 @@ function loadProject(p, quiet){
   $('#projName').value=project.name;
   if (!quiet){ changed(); fit(); renderPages(); renderVersions(); }
 }
-function fileBase(){ return (project.name||'Untitled project').replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80) || 'skeletal'; }
+function fileBase(){ return (project.name||'Untitled project').replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80) || 'lonepair'; }
 $('#projName').addEventListener('change', e=>{ project.name=e.target.value.trim()||'Untitled project'; e.target.value=project.name; autosave(); });
 function switchPage(i){
   if (i===project.cur || !project.pages[i]) return;
@@ -1767,7 +1767,7 @@ function buildProjectHtml(){
   const slot=dp.getElementById('sk-project');
   const data={...project, modified:Date.now()};
   slot.textContent=JSON.stringify(data).replace(/</g,'\\u003c');
-  const t=dp.querySelector('title'); if (t) t.textContent=project.name+' – Skeletal';
+  const t=dp.querySelector('title'); if (t) t.textContent=project.name+' – Lone Pair';
   project.modified=data.modified;
   return '<!doctype html>\n'+dp.documentElement.outerHTML;
 }
@@ -1950,7 +1950,8 @@ function openNmrGuide(tab){
         $('#gc13out').innerHTML = out.length? 'Candidates: '+out.slice(0,8).join(', ') : 'No C/H/N/O candidates'; }catch(e){ $('#gc13out').textContent=e.message; } };
     const upI=()=>{ const v=$('#gcI').value.split(/[,\s]+/).filter(Boolean), r=G.scaleIntegrals(v, +$('#gcIH').value);
       $('#gcIout').innerHTML = r.length ? r.map(x=>`<b>${Number.isInteger(x.h)?x.h:x.h.toFixed(2)}H</b>`).join(' : ') + (+$('#gcIH').value? '' : ' (ratio; add the total H to get counts)') : ''; };
-    ['gcF'].forEach(id=>$('#'+id).addEventListener('input',upF)); $('#gc13').addEventListener('input',up13); ['gcI','gcIH'].forEach(id=>$('#'+id).addEventListener('input',upI));
+    const on=(id,f)=>{ const el=$('#'+id); el.addEventListener('input',f); el.addEventListener('change',f); }; // number fields: some browsers only fire change
+    on('gcF',upF); on('gc13',up13); on('gcI',upI); on('gcIH',upI);
     upF(); up13(); upI();
   }
   if (guideTab==='aro'){

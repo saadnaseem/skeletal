@@ -135,7 +135,7 @@ const PDF = (()=>{
     objs.forEach((o,i)=>{ offs.push(out.length); out+=`${i+1} 0 obj\n${o}\nendobj\n`; });
     const xref=out.length;
     out+=`xref\n0 ${objs.length+1}\n0000000000 65535 f \n`+offs.map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('');
-    out+=`trailer\n<< /Size ${objs.length+1} /Root ${catalog} 0 R /Producer (Skeletal) >>\nstartxref\n${xref}\n%%EOF`;
+    out+=`trailer\n<< /Size ${objs.length+1} /Root ${catalog} 0 R /Producer (Lone Pair) >>\nstartxref\n${xref}\n%%EOF`;
     const bytes=new Uint8Array(out.length); for (let i=0;i<out.length;i++) bytes[i]=out.charCodeAt(i)&255;
     return bytes;
   }
@@ -159,7 +159,7 @@ const PDF = (()=>{
       '/BT { } def /ET { } def /Tf { /CS exch def /CF exch def } def /Tm { 6 array astore /TM exch def } def',
       '/Tj { gsave TM concat FC aload pop setrgbcolor CF load CS scalefont setfont 0 0 moveto show grestore } def',
       'end'].join('\n');
-    const out=`%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 ${Math.ceil(w)} ${Math.ceil(h)}\n%%HiResBoundingBox: 0 0 ${num(w)} ${num(h)}\n%%Creator: Skeletal\n%%LanguageLevel: 2\n%%Pages: 1\n%%EndComments\n%%BeginProlog\n${prolog}\n%%EndProlog\n%%Page: 1 1\nsave SkeletalDict begin\n${content}\nend restore\nshowpage\n%%EOF\n`;
+    const out=`%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 ${Math.ceil(w)} ${Math.ceil(h)}\n%%HiResBoundingBox: 0 0 ${num(w)} ${num(h)}\n%%Creator: Lone Pair\n%%LanguageLevel: 2\n%%Pages: 1\n%%EndComments\n%%BeginProlog\n${prolog}\n%%EndProlog\n%%Page: 1 1\nsave SkeletalDict begin\n${content}\nend restore\nshowpage\n%%EOF\n`;
     const bytes=new Uint8Array(out.length); for (let i=0;i<out.length;i++) bytes[i]=out.charCodeAt(i)&255;
     return bytes;
   }

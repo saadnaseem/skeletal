@@ -1,5 +1,5 @@
 // Builds site/ for Cloudflare Pages (or any static host that reads _headers/_redirects):
-// site/index.html is dist/skeletal.html; _headers sets caching and security headers; _redirects keeps old links working.
+// site/index.html is dist/lonepair.html; _headers sets caching and security headers; _redirects keeps old links working.
 // Run `npm run build` first (npm run build:pages does both).
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const site = path.join(root, 'site');
-const html = await readFile(path.join(root, 'dist', 'skeletal.html'), 'utf8');
+const html = await readFile(path.join(root, 'dist', 'lonepair.html'), 'utf8');
 
 // Everything is inline (one file), so scripts and styles need 'unsafe-inline'; WebAssembly (InChI) needs 'wasm-unsafe-eval'.
 // The app only fetches from PubChem (name/CAS lookup) and EBI (ChEMBL); other services are links opened in a new tab.
@@ -38,7 +38,9 @@ const headers = `/*
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
 `;
-const redirects = `/skeletal.html / 301
+const redirects = `/lonepair.html / 301
+/skeletal.html / 301
+/dist/lonepair.html / 301
 /dist/skeletal.html / 301
 `;
 

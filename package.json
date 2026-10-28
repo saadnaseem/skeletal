@@ -1,5 +1,5 @@
 {
-  "name": "skeletal",
+  "name": "lonepair",
   "version": "1.0.0",
   "description": "Browser-based chemical structure editor for publication-quality molecules, reactions and mechanisms, with NMR, pKa and BDE estimates.",
   "private": true,

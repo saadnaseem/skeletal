@@ -1,6 +1,6 @@
 # Third-party notices
 
-## inchi-js and the IUPAC InChI library (bundled into dist/skeletal.html)
+## inchi-js and the IUPAC InChI library (bundled into dist/lonepair.html)
 
 inchi-js 0.2.0, https://www.npmjs.com/package/inchi-js, MIT. It wraps the official IUPAC/InChI Trust InChI C library compiled to WebAssembly (InChI is distributed by the InChI Trust under the MIT license).
 
@@ -62,7 +62,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## OpenChemLib JS (bundled into dist/skeletal.html)
+## OpenChemLib JS (bundled into dist/lonepair.html)
 
 Version 9.25.1, https://github.com/cheminfo/openchemlib-js, BSD-3-Clause:
 

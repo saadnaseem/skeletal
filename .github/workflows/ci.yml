@@ -19,4 +19,4 @@ jobs:
         run: |
           python scripts/serve_site.py 8799 &
           sleep 1
-          SKELETAL_URL=http://localhost:8799/ npm run test:e2e
+          LONEPAIR_URL=http://localhost:8799/ npm run test:e2e
