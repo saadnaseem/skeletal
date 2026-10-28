@@ -427,3 +427,17 @@ def test_3d_view_generates_conformer_offline(page):
     assert r["smi"] == page.evaluate("OCL.Molecule.fromSmiles('C[C@H](N)C(=O)O').toIsomericSmiles()")
     pdb = page.evaluate("(async()=> (await exportData('pdb')).data)()")
     assert pdb.startswith("HEADER") and "CONECT" in pdb
+
+
+def test_journal_presets_set_bond_length_and_styles(page):
+    page.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O'); sel.clear()")
+    mean = "(()=>{ const ls=doc.bonds.map(b=>{const A=ix.atom.get(b.a),B=ix.atom.get(b.b); return Math.hypot(A.x-B.x,A.y-B.y)}); return ls.reduce((a,b)=>a+b,0)/ls.length; })()"
+    page.click("#presetSeg [data-p=rsc]")
+    assert abs(page.evaluate(mean) - 12.2) < 0.01 and page.evaluate("S().lineWidth") == 0.45 and page.evaluate("S().fontSize") == 7
+    assert 'BondLength="12.2' in page.evaluate("FORMATS.write('cdxml', subDoc(null))")
+    page.fill("#ov_bondLength", "18"); page.dispatch_event("#ov_bondLength", "change")
+    assert abs(page.evaluate(mean) - 18) < 0.01
+    page.click("#presetSeg [data-p=nature]")  # a journal style replaces custom settings
+    assert abs(page.evaluate(mean) - 10.8) < 0.01 and page.evaluate("doc.styleOv") is None and page.evaluate("S().fontSize") == 6
+    page.keyboard.press("Control+z"); page.keyboard.press("Control+z"); page.keyboard.press("Control+z")
+    assert abs(page.evaluate(mean) - 14.4) < 0.01 and page.evaluate("doc.style") == "acs"

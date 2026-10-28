@@ -130,6 +130,10 @@ dl.props dd.code{font-size:12.5px}
 .seg{display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; width:100%}
 .seg button{flex:1; border:0; background:var(--btn); padding:6px 8px; font-size:13px}
 .seg button + button{border-left:1px solid var(--line)}
+.seg4{display:grid; grid-template-columns:1fr 1fr}
+.seg4 button + button{border-left:0}
+.seg4 button:nth-child(even){border-left:1px solid var(--line)}
+.seg4 button:nth-child(n+3){border-top:1px solid var(--line)}
 .seg button[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
 label.chk{display:flex; gap:8px; align-items:center; font-size:13px; cursor:pointer}
 .swatches{display:flex; gap:6px; flex-wrap:wrap}
@@ -311,14 +315,17 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     </section>
     <section>
       <h2>Style</h2>
-      <div class="seg" id="presetSeg">
-        <button data-p="acs" aria-pressed="true">ACS Document 1996</button>
+      <div class="seg seg4" id="presetSeg">
+        <button data-p="acs" aria-pressed="true">ACS 1996</button>
+        <button data-p="rsc" aria-pressed="false">RSC</button>
+        <button data-p="nature" aria-pressed="false">Nature Reviews</button>
         <button data-p="slides" aria-pressed="false">Slides</button>
       </div>
-      <p class="note" style="margin-top:8px">ACS Document 1996: bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18% of length, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Slides keeps the geometry with heavier lines and bold labels.</p>
-      <div class="row"><button class="tb" id="bAcsAll">Apply ACS 1996 to all pages</button></div>
+      <p class="note" id="presetNote" style="margin-top:8px"></p>
+      <div class="row"><button class="tb" id="bAcsAll">Apply this style to all pages</button></div>
       <p class="note" style="margin:12px 0 6px">Drawing settings <span style="color:var(--ink-2)">(blank = style default)</span></p>
       <div class="dset" id="drawSet">
+        <label for="ov_bondLength">Bond length</label><span><input type="number" id="ov_bondLength" data-ov="bondLength" min="5" max="40" step="0.1"> pt</span>
         <label for="ov_lineWidth">Line width</label><span><input type="number" id="ov_lineWidth" data-ov="lineWidth" min="0.1" max="6" step="0.05"> pt</span>
         <label for="ov_boldWidth">Bold width</label><span><input type="number" id="ov_boldWidth" data-ov="boldWidth" min="0.3" max="12" step="0.1"> pt</span>
         <label for="ov_wedge">Wedge width</label><span><input type="number" id="ov_wedge" data-ov="wedge" min="1" max="14" step="0.1"> pt</span>
@@ -449,14 +456,19 @@ const OCL_RES_3D='H4sIAAAAAAACE3y9ya5lu7Id9i/qvy0GyWDhtpv+hOzI0oPdugKkNCDAP2/EKL
 'use strict';
 const SK_SRC = (()=>{ try{ return document.documentElement.outerHTML; }catch(e){ return null; } })();
 /* ================= constants ================= */
-const L = 14.4; // bond length in pt (ACS 1996)
+// bond length in pt for the drawing being edited or rendered: set from its style by useStyle()/renderDoc()
+let L = 14.4;
 const FONT = "Arial, Helvetica, 'Liberation Sans', sans-serif";
+// journal styles. acs: ChemDraw "ACS Document 1996"; rsc: ChemDraw 22 "RSC (1 Column) Document";
+// nature: Nature Reviews chemical structure style guide (0.381 cm bonds, 0.021 cm lines, 0.055 cm bold, 0.042 cm margin, 0.06 cm hash, 6 pt Arial)
 const PRESETS = {
-  acs:    { lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
-  slides: { lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
+  acs:    { name:'ACS 1996', bondLength:14.4, lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
+  rsc:    { name:'RSC', bondLength:12.2, lineWidth:0.45, boldWidth:1.6, spacing:0.20, hashSpacing:1.75, margin:1.25, fontSize:7, fontWeight:400, wedge:2.6, head:0.85 },
+  nature: { name:'Nature Reviews', bondLength:10.8, lineWidth:0.6, boldWidth:1.56, spacing:0.18, hashSpacing:1.7, margin:1.19, fontSize:6, fontWeight:400, wedge:2.5, head:0.8 },
+  slides: { name:'Slides', bondLength:14.4, lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
 };
 // per-document overrides of the preset (ChemDraw "Drawing Settings"): [min, max] in pt, spacing as a fraction of bond length
-const STYLE_LIMITS = { lineWidth:[0.1,6], boldWidth:[0.3,12], spacing:[0.08,0.4], hashSpacing:[0.8,8], wedge:[1,14], margin:[0,6] };
+const STYLE_LIMITS = { bondLength:[5,40], lineWidth:[0.1,6], boldWidth:[0.3,12], spacing:[0.08,0.4], hashSpacing:[0.8,8], wedge:[1,14], margin:[0,6] };
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr').split(' ');
 const ELSET = new Set(ELEMENTS);
 // nicknames: s = SMILES with attachment atom first, l = form used when the bond comes from the right
@@ -552,6 +564,16 @@ function sanitizeDoc(d){
 }
 function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], nid:1, style:'acs', colorAtoms:false}; }
 const _sCache=new Map();
+function useStyle(d){ L = S(d).bondLength || 14.4; return L; }
+// scale a drawing's geometry about its centre (used when the bond length changes; text sizes stay in pt)
+function rescaleDoc(d, f){
+  if (!(f>0) || Math.abs(f-1)<1e-9) return;
+  const pts=[...d.atoms, ...d.texts, ...d.pluses]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
+  if (!pts.length) return; let cx=0, cy=0; for (const p of pts){ cx+=p.x; cy+=p.y; } cx/=pts.length; cy/=pts.length;
+  const sx=v=>cx+(v-cx)*f, sy=v=>cy+(v-cy)*f;
+  for (const o of [...d.atoms, ...d.texts, ...d.pluses]){ o.x=sx(o.x); o.y=sy(o.y); }
+  for (const r of d.arrows){ r.x1=sx(r.x1); r.y1=sy(r.y1); r.x2=sx(r.x2); r.y2=sy(r.y2); if (r.cx!=null){ r.cx=sx(r.cx); r.cy=sy(r.cy); } }
+}
 function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
   if(!s){ s={...(PRESETS[d.style]||PRESETS.acs), ...(d.styleOv||{})}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
 function buildIndex(d){
@@ -904,6 +926,7 @@ function renderPlus(d,p,out){ const st=S(d), s=3.8*st.head, col=p.color||'#000';
   out.push(strokeLine(V(p.x-s,p.y),V(p.x+s,p.y),st.lineWidth*1.1,col,'butt')); out.push(strokeLine(V(p.x,p.y-s),V(p.x,p.y+s),st.lineWidth*1.1,col,'butt')); }
 
 function renderDoc(d, ix){
+  useStyle(d);
   ix = ix || buildIndex(d);
   const labels=new Map(); for (const a of d.atoms) labels.set(a.id, layoutLabel(d,ix,a));
   const out=[];
@@ -2680,7 +2703,7 @@ const VIEW3D = (()=>{
 function newProject(){ return {v:2, uid:Math.random().toString(36).slice(2,10), name:'Untitled project', pages:[{id:1,name:'Page 1',doc:newDoc()}], cur:0, versions:[], nextPage:2, modified:Date.now()}; }
 let project = newProject();
 let doc = project.pages[0].doc, ix = buildIndex(doc);
-function setDoc(d){ doc=d; project.pages[project.cur].doc=d; }
+function setDoc(d){ doc=d; project.pages[project.cur].doc=d; useStyle(d); }
 const pageState = new Map();
 let sel = new Set();          // keys: a<id>, r<id> (arrow), t<id>, p<id>
 let hover = null, drag = null, preview = null;
@@ -4099,8 +4122,16 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; changed(); }; }
-function syncStyleUI(){ syncDrawSet(); document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
-$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); doc.style=b.dataset.p; changed(); });
+function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
+// changing the style or bond length rescales the drawing so bonds keep the style's length
+function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
+$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; }); changed(); }); // a journal style replaces custom settings, as in ChemDraw
+const PRESET_NOTES = {
+  acs:'ACS Document 1996 (ChemDraw): bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18%, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Used by ACS journals and Organic Syntheses.',
+  rsc:'RSC 1-column (ChemDraw 22 style sheet): bond length 12.2 pt, line width 0.45 pt, bold width 1.6 pt, bond spacing 20%, hash spacing 1.75 pt, margin 1.25 pt, Helvetica/Arial 7 pt labels.',
+  nature:'Nature Reviews structure guide: fixed length 0.381 cm (10.8 pt), line width 0.021 cm, bold width 0.055 cm, bond spacing 18%, hash spacing 0.06 cm, margin 0.042 cm, Arial 6 pt labels.',
+  slides:'Slides: ACS geometry with heavier lines and bold 11 pt labels for presentations.',
+};
 function syncDrawSet(){
   const base=PRESETS[doc.style]||PRESETS.acs, ov=doc.styleOv||{};
   document.querySelectorAll('#drawSet [data-ov]').forEach(inp=>{ const k=inp.dataset.ov, pct=inp.hasAttribute('data-pct'), f=v=>pct? String(Math.round(v*100)) : String(+v.toFixed(2));
@@ -4109,15 +4140,17 @@ function syncDrawSet(){
 $('#drawSet').addEventListener('change', e=>{
   const inp=e.target.closest('[data-ov]'); if (!inp) return;
   const k=inp.dataset.ov, [lo,hi]=STYLE_LIMITS[k], raw=inp.value.trim();
-  pushUndo(); const ov={...(doc.styleOv||{})};
+  const ov={...(doc.styleOv||{})};
   if (raw==='' || !Number.isFinite(+raw)) delete ov[k];
   else ov[k]=Math.min(hi,Math.max(lo, inp.hasAttribute('data-pct') ? +raw/100 : +raw));
-  if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv;
+  if (JSON.stringify(ov)===JSON.stringify(doc.styleOv||{})) return; // nothing changed (e.g. a second change event on blur)
+  pushUndo();
+  restyle(doc,()=>{ if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv; });
   changed();
 });
 $('#drawSet').addEventListener('focusout', ()=>setTimeout(syncDrawSet,0));
-$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); delete doc.styleOv; changed(); toast('Drawing settings reset to the style defaults'); };
-$('#bOvAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; } changed(); toast('Drawing settings applied to every page'); };
+$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); restyle(doc,()=>{ delete doc.styleOv; }); changed(); toast('Drawing settings reset to the style defaults'); };
+$('#bOvAll').onclick=()=>{ for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; }); useStyle(doc); changed(); toast('Drawing settings applied to every page'); };
 $('#colorAtoms').addEventListener('change', e=>{ pushUndo(); doc.colorAtoms=e.target.checked; changed(); });
 
 /* ================= templates ================= */
@@ -4172,7 +4205,7 @@ $('#bNew').onclick=()=>{
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
-$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; delete pg.doc.styleOv; } changed(); toast('ACS Document 1996 applied to every page'); };
+$('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=st; delete pg.doc.labelSize; delete pg.doc.styleOv; }); useStyle(doc); changed(); toast(`${PRESETS[st].name} applied to every page`); };
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
@@ -4339,7 +4372,7 @@ function pageExportSVG(d, mode){
 function hasContent(d){ return d.atoms.length||d.arrows.length||d.texts.length||d.pluses.length; }
 function exportPdf(which, mode='crop'){
   let svgs=[];
-  if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); }
+  if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); useStyle(doc); }
   else if (mode!=='crop' && doc.page){ svgs.push(...pageExportSVG(doc, mode)); }
   else { const d=subDoc(sel.size?sel:null); if (hasContent(d)) svgs.push(...pageExportSVG(d,'crop')); }
   if (!svgs.length){ toast('Nothing to export yet'); return; }

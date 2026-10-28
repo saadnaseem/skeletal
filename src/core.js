@@ -1,14 +1,19 @@
 'use strict';
 const SK_SRC = (()=>{ try{ return document.documentElement.outerHTML; }catch(e){ return null; } })();
 /* ================= constants ================= */
-const L = 14.4; // bond length in pt (ACS 1996)
+// bond length in pt for the drawing being edited or rendered: set from its style by useStyle()/renderDoc()
+let L = 14.4;
 const FONT = "Arial, Helvetica, 'Liberation Sans', sans-serif";
+// journal styles. acs: ChemDraw "ACS Document 1996"; rsc: ChemDraw 22 "RSC (1 Column) Document";
+// nature: Nature Reviews chemical structure style guide (0.381 cm bonds, 0.021 cm lines, 0.055 cm bold, 0.042 cm margin, 0.06 cm hash, 6 pt Arial)
 const PRESETS = {
-  acs:    { lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
-  slides: { lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
+  acs:    { name:'ACS 1996', bondLength:14.4, lineWidth:0.6, boldWidth:2.0, spacing:0.18, hashSpacing:2.5, margin:1.6, fontSize:10, fontWeight:400, wedge:3.2, head:1.0 },
+  rsc:    { name:'RSC', bondLength:12.2, lineWidth:0.45, boldWidth:1.6, spacing:0.20, hashSpacing:1.75, margin:1.25, fontSize:7, fontWeight:400, wedge:2.6, head:0.85 },
+  nature: { name:'Nature Reviews', bondLength:10.8, lineWidth:0.6, boldWidth:1.56, spacing:0.18, hashSpacing:1.7, margin:1.19, fontSize:6, fontWeight:400, wedge:2.5, head:0.8 },
+  slides: { name:'Slides', bondLength:14.4, lineWidth:1.1, boldWidth:3.0, spacing:0.21, hashSpacing:2.7, margin:1.9, fontSize:11, fontWeight:700, wedge:4.4, head:1.25 },
 };
 // per-document overrides of the preset (ChemDraw "Drawing Settings"): [min, max] in pt, spacing as a fraction of bond length
-const STYLE_LIMITS = { lineWidth:[0.1,6], boldWidth:[0.3,12], spacing:[0.08,0.4], hashSpacing:[0.8,8], wedge:[1,14], margin:[0,6] };
+const STYLE_LIMITS = { bondLength:[5,40], lineWidth:[0.1,6], boldWidth:[0.3,12], spacing:[0.08,0.4], hashSpacing:[0.8,8], wedge:[1,14], margin:[0,6] };
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr').split(' ');
 const ELSET = new Set(ELEMENTS);
 // nicknames: s = SMILES with attachment atom first, l = form used when the bond comes from the right
@@ -104,6 +109,16 @@ function sanitizeDoc(d){
 }
 function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], nid:1, style:'acs', colorAtoms:false}; }
 const _sCache=new Map();
+function useStyle(d){ L = S(d).bondLength || 14.4; return L; }
+// scale a drawing's geometry about its centre (used when the bond length changes; text sizes stay in pt)
+function rescaleDoc(d, f){
+  if (!(f>0) || Math.abs(f-1)<1e-9) return;
+  const pts=[...d.atoms, ...d.texts, ...d.pluses]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
+  if (!pts.length) return; let cx=0, cy=0; for (const p of pts){ cx+=p.x; cy+=p.y; } cx/=pts.length; cy/=pts.length;
+  const sx=v=>cx+(v-cx)*f, sy=v=>cy+(v-cy)*f;
+  for (const o of [...d.atoms, ...d.texts, ...d.pluses]){ o.x=sx(o.x); o.y=sy(o.y); }
+  for (const r of d.arrows){ r.x1=sx(r.x1); r.y1=sy(r.y1); r.x2=sx(r.x2); r.y2=sy(r.y2); if (r.cx!=null){ r.cx=sx(r.cx); r.cy=sy(r.cy); } }
+}
 function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
   if(!s){ s={...(PRESETS[d.style]||PRESETS.acs), ...(d.styleOv||{})}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
 function buildIndex(d){
@@ -456,6 +471,7 @@ function renderPlus(d,p,out){ const st=S(d), s=3.8*st.head, col=p.color||'#000';
   out.push(strokeLine(V(p.x-s,p.y),V(p.x+s,p.y),st.lineWidth*1.1,col,'butt')); out.push(strokeLine(V(p.x,p.y-s),V(p.x,p.y+s),st.lineWidth*1.1,col,'butt')); }
 
 function renderDoc(d, ix){
+  useStyle(d);
   ix = ix || buildIndex(d);
   const labels=new Map(); for (const a of d.atoms) labels.set(a.id, layoutLabel(d,ix,a));
   const out=[];

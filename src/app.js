@@ -2,7 +2,7 @@
 function newProject(){ return {v:2, uid:Math.random().toString(36).slice(2,10), name:'Untitled project', pages:[{id:1,name:'Page 1',doc:newDoc()}], cur:0, versions:[], nextPage:2, modified:Date.now()}; }
 let project = newProject();
 let doc = project.pages[0].doc, ix = buildIndex(doc);
-function setDoc(d){ doc=d; project.pages[project.cur].doc=d; }
+function setDoc(d){ doc=d; project.pages[project.cur].doc=d; useStyle(d); }
 const pageState = new Map();
 let sel = new Set();          // keys: a<id>, r<id> (arrow), t<id>, p<id>
 let hover = null, drag = null, preview = null;
@@ -1421,8 +1421,16 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; changed(); }; }
-function syncStyleUI(){ syncDrawSet(); document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
-$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); doc.style=b.dataset.p; changed(); });
+function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
+// changing the style or bond length rescales the drawing so bonds keep the style's length
+function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
+$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; }); changed(); }); // a journal style replaces custom settings, as in ChemDraw
+const PRESET_NOTES = {
+  acs:'ACS Document 1996 (ChemDraw): bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18%, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Used by ACS journals and Organic Syntheses.',
+  rsc:'RSC 1-column (ChemDraw 22 style sheet): bond length 12.2 pt, line width 0.45 pt, bold width 1.6 pt, bond spacing 20%, hash spacing 1.75 pt, margin 1.25 pt, Helvetica/Arial 7 pt labels.',
+  nature:'Nature Reviews structure guide: fixed length 0.381 cm (10.8 pt), line width 0.021 cm, bold width 0.055 cm, bond spacing 18%, hash spacing 0.06 cm, margin 0.042 cm, Arial 6 pt labels.',
+  slides:'Slides: ACS geometry with heavier lines and bold 11 pt labels for presentations.',
+};
 function syncDrawSet(){
   const base=PRESETS[doc.style]||PRESETS.acs, ov=doc.styleOv||{};
   document.querySelectorAll('#drawSet [data-ov]').forEach(inp=>{ const k=inp.dataset.ov, pct=inp.hasAttribute('data-pct'), f=v=>pct? String(Math.round(v*100)) : String(+v.toFixed(2));
@@ -1431,15 +1439,17 @@ function syncDrawSet(){
 $('#drawSet').addEventListener('change', e=>{
   const inp=e.target.closest('[data-ov]'); if (!inp) return;
   const k=inp.dataset.ov, [lo,hi]=STYLE_LIMITS[k], raw=inp.value.trim();
-  pushUndo(); const ov={...(doc.styleOv||{})};
+  const ov={...(doc.styleOv||{})};
   if (raw==='' || !Number.isFinite(+raw)) delete ov[k];
   else ov[k]=Math.min(hi,Math.max(lo, inp.hasAttribute('data-pct') ? +raw/100 : +raw));
-  if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv;
+  if (JSON.stringify(ov)===JSON.stringify(doc.styleOv||{})) return; // nothing changed (e.g. a second change event on blur)
+  pushUndo();
+  restyle(doc,()=>{ if (Object.keys(ov).length) doc.styleOv=ov; else delete doc.styleOv; });
   changed();
 });
 $('#drawSet').addEventListener('focusout', ()=>setTimeout(syncDrawSet,0));
-$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); delete doc.styleOv; changed(); toast('Drawing settings reset to the style defaults'); };
-$('#bOvAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; } changed(); toast('Drawing settings applied to every page'); };
+$('#bOvReset').onclick=()=>{ if (!doc.styleOv) return; pushUndo(); restyle(doc,()=>{ delete doc.styleOv; }); changed(); toast('Drawing settings reset to the style defaults'); };
+$('#bOvAll').onclick=()=>{ for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=doc.style; if (doc.styleOv) pg.doc.styleOv={...doc.styleOv}; else delete pg.doc.styleOv; }); useStyle(doc); changed(); toast('Drawing settings applied to every page'); };
 $('#colorAtoms').addEventListener('change', e=>{ pushUndo(); doc.colorAtoms=e.target.checked; changed(); });
 
 /* ================= templates ================= */
@@ -1494,7 +1504,7 @@ $('#bNew').onclick=()=>{
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
-$('#bAcsAll').onclick=()=>{ for (const pg of project.pages){ pg.doc.style='acs'; delete pg.doc.labelSize; delete pg.doc.styleOv; } changed(); toast('ACS Document 1996 applied to every page'); };
+$('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=st; delete pg.doc.labelSize; delete pg.doc.styleOv; }); useStyle(doc); changed(); toast(`${PRESETS[st].name} applied to every page`); };
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
@@ -1661,7 +1671,7 @@ function pageExportSVG(d, mode){
 function hasContent(d){ return d.atoms.length||d.arrows.length||d.texts.length||d.pluses.length; }
 function exportPdf(which, mode='crop'){
   let svgs=[];
-  if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); }
+  if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); useStyle(doc); }
   else if (mode!=='crop' && doc.page){ svgs.push(...pageExportSVG(doc, mode)); }
   else { const d=subDoc(sel.size?sel:null); if (hasContent(d)) svgs.push(...pageExportSVG(d,'crop')); }
   if (!svgs.length){ toast('Nothing to export yet'); return; }
