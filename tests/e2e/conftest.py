@@ -1,17 +1,17 @@
-"""Browser tests for dist/skeletal.html (run `npm run build` first)."""
+"""Browser tests for dist/lonepair.html (run `npm run build` first)."""
 import os, pathlib, pytest
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-DIST = ROOT / "dist" / "skeletal.html"
-# SKELETAL_URL runs the suite against a served copy instead (e.g. scripts/serve_site.py, which applies the Pages headers)
-URL = os.environ.get("SKELETAL_URL")
+DIST = ROOT / "dist" / "lonepair.html"
+# LONEPAIR_URL runs the suite against a served copy instead (e.g. scripts/serve_site.py, which applies the Pages headers)
+URL = os.environ.get("LONEPAIR_URL")
 
 
 @pytest.fixture(scope="session")
 def browser():
     if not URL and not DIST.exists():
-        pytest.exit("dist/skeletal.html not found; run `npm run build` first", returncode=2)
+        pytest.exit("dist/lonepair.html not found; run `npm run build` first", returncode=2)
     with sync_playwright() as p:
         b = p.chromium.launch()
         yield b

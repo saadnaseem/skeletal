@@ -1,6 +1,6 @@
 """Serve site/ locally with the headers from site/_headers, the way Cloudflare Pages applies them.
 Usage: python scripts/serve_site.py [port]   (then open http://localhost:PORT/, or run the browser tests with
-SKELETAL_URL=http://localhost:PORT/ python -m pytest tests/e2e)"""
+LONEPAIR_URL=http://localhost:PORT/ python -m pytest tests/e2e)"""
 import http.server, pathlib, sys
 SITE = pathlib.Path(__file__).resolve().parents[1] / "site"
 

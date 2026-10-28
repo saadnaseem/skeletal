@@ -1,4 +1,4 @@
-// Builds dist/skeletal.html: one self-contained file (app code + OpenChemLib inlined).
+// Builds dist/lonepair.html: one self-contained file (app code + OpenChemLib inlined).
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
@@ -31,7 +31,7 @@ for (const marker of ['/*OCL*/', '/*APP*/']) if (!shell.includes(marker)) throw 
 const html = shell.replace('/*OCL*/', () => oclCode).replace('/*APP*/', () => '\n' + appCode + '\n');
 
 await mkdir(path.join(root, 'dist'), { recursive: true });
-const out = path.join(root, 'dist', 'skeletal.html');
+const out = path.join(root, 'dist', 'lonepair.html');
 await writeFile(out, html);
 const mb = (Buffer.byteLength(html) / 1048576).toFixed(2);
 console.log(`Built ${path.relative(root, out)} (${mb} MB)`);

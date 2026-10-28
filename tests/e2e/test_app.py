@@ -559,3 +559,17 @@ def test_nmr_solving_guide(page):
     page.click("[data-gtab=aro]"); assert "H3: 7.89" in page.inner_text("#gzOut")  # 4'-methoxyacetophenone, Reich increments
     page.click("[data-gtab=examples]"); page.click("#dialog details summary >> nth=0"); page.click("[data-ex='0']")
     assert smiles(page) == page.evaluate("OCL.Molecule.fromSmiles('CCOC(C)=O').toIsomericSmiles()")
+
+
+def test_renamed_to_lone_pair_and_old_saves_still_load(browser):
+    from conftest import _open
+    pg = _open(browser, {"width": 1200, "height": 800})
+    assert pg.title() == "Lone Pair" and "Lone Pair" in pg.inner_text(".brand")
+    assert pg.evaluate("buildProjectHtml()").count("– Lone Pair</title>") == 1
+    assert "/Producer (Lone Pair)" in pg.evaluate("new TextDecoder().decode(PDF.build([exportSVG(subDoc(null),{}).svg]))")
+    # an autosave written by the app under its old name (same storage keys) is restored on reload
+    pg.evaluate("""(()=>{ const p=newProject(); p.name='Old Skeletal work'; p.pages[0].doc.atoms=[{id:1,x:0,y:0,el:'O',charge:0,lp:0,rad:0}]; p.pages[0].doc.nid=2;
+      localStorage.setItem('skeletal.p.'+p.uid, JSON.stringify(p)); localStorage.setItem('skeletal.last', p.uid); })()""")
+    pg.reload(); pg.wait_for_timeout(600)
+    assert pg.evaluate("project.name") == "Old Skeletal work" and pg.evaluate("doc.atoms[0].el") == "O"
+    pg.context.close()

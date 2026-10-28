@@ -1,5 +1,7 @@
 # Code and usability review
 
+> The app was renamed **Lone Pair** (lonepair.app) in October 2026. This document uses its earlier working name, Skeletal.
+
 Review of Skeletal v1.0.0 (about 3,200 lines of JavaScript across 5 source files). It covered static analysis, unit tests, browser tests, a held-out accuracy check and a hands-on usability walkthrough on desktop and mobile viewports.
 
 ## Summary
