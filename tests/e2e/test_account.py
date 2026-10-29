@@ -54,12 +54,12 @@ def server():
     gport, wport, state = free_port(), free_port(), tempfile.mkdtemp(prefix="lp-d1-")
     g = ThreadingHTTPServer(("127.0.0.1", gport), FakeGoogle); threading.Thread(target=g.serve_forever, daemon=True).start()
     w = lambda *a, **kw: subprocess.run([*WRANGLER, *a], cwd=ROOT, capture_output=True, text=True, timeout=180, **kw)
-    r = w("d1", "migrations", "apply", "lonepair", "--local", "--persist-to", state)
+    r = w("d1", "migrations", "apply", "lonepair", "--config", "wrangler.local.toml", "--local", "--persist-to", state)
     if r.returncode: pytest.skip("wrangler not usable here (needs Node 22): " + (r.stderr or r.stdout)[-300:])
     binds = {"GOOGLE_CLIENT_ID": CLIENT_ID, "GOOGLE_CLIENT_SECRET": CLIENT_SECRET, "GOOGLE_ISSUER": ISSUER,
              "GOOGLE_AUTH_URL": f"http://127.0.0.1:{gport}/auth", "GOOGLE_TOKEN_URL": f"http://127.0.0.1:{gport}/token"}
-    # wrangler.toml isn't a Pages config (see its header), so the D1 binding is passed here, using the same local database
-    db_id = next(l.split('"')[1] for l in (ROOT / "wrangler.toml").read_text().splitlines() if l.startswith("database_id"))
+    # Production wrangler.toml has no database. The placeholder id used by local tests is in wrangler.local.toml.
+    db_id = next(l.split('"')[1] for l in (ROOT / "wrangler.local.toml").read_text().splitlines() if l.strip().startswith("database_id"))
     args = [*WRANGLER, "pages", "dev", "site", "--port", str(wport), "--ip", "127.0.0.1", "--persist-to", state, "--d1", f"DB={db_id}", "--compatibility-date", "2026-09-01"]
     for k, v in binds.items(): args += ["--binding", f"{k}={v}"]
     proc = subprocess.Popen(args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -70,7 +70,7 @@ def server():
         except Exception: time.sleep(0.5)
     else:
         proc.kill(); pytest.fail("wrangler pages dev did not start:\n" + proc.stdout.read()[-2000:])
-    sql = lambda q: json.loads(w("d1", "execute", "lonepair", "--local", "--persist-to", state, "--json", "--command", q).stdout)[0]["results"]
+    sql = lambda q: json.loads(w("d1", "execute", "lonepair", "--config", "wrangler.local.toml", "--local", "--persist-to", state, "--json", "--command", q).stdout)[0]["results"]
     yield {"base": base, "sql": sql}
     proc.terminate(); g.shutdown()
 

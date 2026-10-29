@@ -102,10 +102,10 @@ npx wrangler login
 npx wrangler d1 create lonepair
 ```
 
-Copy the `database_id` it prints into `wrangler.toml` (replacing the zeros), commit it, then create the tables:
+Copy the `database_id` it prints into `wrangler.local.toml` (replacing the zeros), commit it, then create the tables. Leave `wrangler.toml` as the static-site config. Putting the placeholder id there makes `npx wrangler deploy` fail.
 
 ```bash
-npx wrangler d1 migrations apply lonepair --remote
+npx wrangler d1 migrations apply lonepair --config wrangler.local.toml --remote
 ```
 
 Wrangler needs Node 22. Check with `node --version`.

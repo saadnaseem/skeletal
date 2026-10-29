@@ -1,14 +1,9 @@
-# Used by the `wrangler d1 ...` commands and local testing only. It has no pages_build_output_dir on purpose, so Cloudflare
-# Pages does NOT read it: the site deploys whether or not sign-in is set up, and the D1 binding is added in the dashboard.
-name = "lonepair"
+# Workers Builds runs `npm run build:pages`, then `npx wrangler deploy`.
+# This file publishes the static site only. The accounts database lives in
+# wrangler.local.toml so a placeholder id is never sent on deploy.
+# Sign-in stays hidden until that database exists (docs/DEPLOY.md).
+name = "lone-pair"
 compatibility_date = "2026-09-01"
 
-# Accounts database. Create it once with `npx wrangler d1 create lonepair` and paste the id it prints here (see docs/DEPLOY.md).
-[[d1_databases]]
-binding = "DB"
-database_name = "lonepair"
-database_id = "00000000-0000-0000-0000-000000000000"
-migrations_dir = "migrations"
-
-# In the Pages project: bind this database as DB, and set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (secret) under
-# Settings. Never put the secret in this file. Without them the site works as before and the Sign in button stays hidden.
+[assets]
+directory = "./site"

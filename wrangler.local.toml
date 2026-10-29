@@ -1,0 +1,10 @@
+# Local and remote D1 commands only. Production deploy reads wrangler.toml and does not bind this database.
+# After `npx wrangler d1 create lonepair`, paste the printed id over the zeros below.
+name = "lone-pair"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lonepair"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
