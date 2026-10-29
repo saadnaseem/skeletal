@@ -34,6 +34,7 @@
   --btn:#2a333c; --btn-hover:#323d47; --danger:#f08a76; color-scheme: dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important} /* the hidden attribute always wins over display rules like .tb */
 :root{box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px)}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 html,body{height:100%; margin:0}
@@ -243,6 +244,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <button class="tb icon" id="bFlipV" title="Flip vertical" aria-label="Flip vertical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9L17 3v6zM7 15l10 6v-6z"/></svg></button>
     <button class="tb" id="bAlign" title="Align and space structures" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18" stroke-dasharray="2 2"/><rect x="4" y="7" width="5" height="10" rx="1"/><rect x="15" y="9" width="5" height="6" rx="1"/></svg><span class="hide-mobile">Align</span></button>
     <div class="sep"></div>
+    <button class="tb" id="bOpenTop" title="Open a project or file (Ctrl+O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v1"/><path d="M3 7v11a1 1 0 001 1h14.5a1 1 0 001-.8L21 11H7.5a1 1 0 00-1 .8L4 19"/></svg><span class="hide-mobile">Open</span></button>
     <button class="tb" id="bPage" title="Document size and pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg><span class="hide-mobile">Document</span></button>
     <button class="tb" id="bSolv" title="NMR solvent and impurity peaks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg><span class="hide-mobile">Solvent peaks</span></button>
     <button class="tb" id="bTlc" title="Insert a TLC plate: lanes, spots, Rf, eluent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M6 6.5h12M6 17.5h12" stroke-width="1.1"/><ellipse cx="9.5" cy="10" rx="1.3" ry=".9" fill="currentColor"/><ellipse cx="14.5" cy="14" rx="1.3" ry=".9" fill="currentColor"/></svg><span class="hide-mobile">TLC</span></button>
@@ -303,11 +305,13 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       <h2>Project</h2>
       <input class="name" id="projName" aria-label="Project name" value="Untitled project">
       <div class="row" style="margin-top:8px">
-        <button class="tb primary" id="bSaveHtml">Save project (.html)</button>
+        <button class="tb primary" id="bSaveHtml" title="Save the project (Ctrl+S)">Save project (.html)</button>
+        <button class="tb" id="bSaveNew" hidden title="Save a copy as a new file">Save as new file</button>
         <button class="tb" id="bSave">Save as .json</button>
       </div>
       <div class="row"><button class="tb" id="bOpen">Open project or file</button><button class="tb" id="bNew">New project</button>
         <input type="file" id="fileIn" accept=".html,.htm,.json,.svg,.png,.mol,.sdf,.txt,.smi,.cdxml,.cdx,.cml,.mrv,.inchi" hidden></div>
+      <p class="note" id="fileLink" hidden></p>
       <p class="note">The .html file is a complete copy of this editor with all your pages and versions inside. Open it in any browser to keep working, even offline, or open it here.</p>
       <div class="row" style="margin-top:12px; justify-content:space-between"><b style="font-size:13px">Versions</b><button class="tb" id="bVersion">Save version</button></div>
       <ul class="vlist" id="vlist"></ul>
@@ -380,6 +384,8 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
           <kbd>Space + drag</kbd><span>Pan (or two fingers)</span>
           <kbd>Ctrl + wheel</kbd><span>Zoom</span>
           <kbd>Ctrl C / V / D</kbd><span>Copy image, paste, duplicate</span>
+          <kbd>Ctrl S</kbd><span>Save the project (Chrome and Edge save back to the same file)</span>
+          <kbd>Ctrl O</kbd><span>Open a project, image or chemistry file</span>
           <kbd>Ctrl Shift S</kbd><span>Save as: every export format</span>
           <kbd>Ctrl Shift C</kbd><span>Copy SMILES of the selection (or the whole drawing)</span>
           <kbd>Right-click</kbd><span>Copy SMILES or molfile, look up name and CAS number</span>

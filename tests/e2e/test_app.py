@@ -584,3 +584,53 @@ def test_octet_error_for_extra_lone_pairs(page):
     assert page.is_visible("#valWarn") and "10 electrons" in page.inner_text("#valWarn") and "octet" in page.inner_text("#valWarn")
     page.evaluate("doc.atoms.find(a=>a.lp===2).lp=1; changed()")
     assert page.is_hidden("#valWarn")
+
+
+FAKE_FS = """(()=>{
+  // stand-ins for Chrome's file pickers: a handle records what is written to it
+  window._picks=0; window._writes=[];
+  const mk=(name, content)=>({ name, content, kind:'file',
+    async getFile(){ return new File([this.content], this.name); },
+    async createWritable(){ const h=this; let buf=''; return { async write(b){ buf += typeof b==='string'? b : await b.text(); }, async close(){ h.content=buf; window._writes.push([h.name, buf.length]); } }; } });
+  window._mk=mk; window._saveTarget=mk('my-project.html','');
+  window.showSaveFilePicker=async()=>{ window._picks++; return window._saveTarget; };
+  window.showOpenFilePicker=async()=>[window._openTarget];
+})()"""
+
+
+def test_ctrl_s_saves_back_to_the_same_file(page):
+    page.evaluate(FAKE_FS)
+    page.evaluate("tryLoadText('CCO'); project.name='Ethanol study'")
+    page.keyboard.press("Control+s")
+    wait_until(page, "window._writes.length===1")
+    assert page.evaluate("window._picks") == 1 and "Save to my-project.html" in page.inner_text("#bSaveHtml")
+    assert page.evaluate("window._saveTarget.content.includes('id=\"sk-project\"')")  # a full, reopenable project file
+    page.evaluate("tryLoadText('c1ccccc1')")
+    assert "Unsaved changes" in page.inner_text("#fileLink") and page.title().startswith("• my-project.html")
+    page.focus("#projName"); page.keyboard.press("Control+s")  # works from inside a text field too
+    wait_until(page, "window._writes.length===2")
+    assert page.evaluate("window._picks") == 1, "the second save must not ask for a file again"
+    assert "All changes saved" in page.inner_text("#fileLink") and page.title() == "my-project.html – Lone Pair"
+    page.click("#bSaveHtml"); wait_until(page, "window._writes.length===3")  # panel button uses the same file
+    page.click("#bSaveNew"); wait_until(page, "window._picks===2")           # 'Save as new file' asks again
+
+
+def test_ctrl_o_opens_a_project_and_saves_back_to_it(page):
+    page.evaluate(FAKE_FS)
+    html = page.evaluate("(()=>{ tryLoadText('CC(=O)O'); project.name='Acetic'; return buildProjectHtml(); })()")
+    page.evaluate("(h)=>{ window._openTarget=window._mk('acetic.html', h); loadProject(newProject()); }", html)
+    page.keyboard.press("Control+o")
+    wait_until(page, "project.name==='Acetic'")
+    assert "Save to acetic.html" in page.inner_text("#bSaveHtml")
+    page.evaluate("tryLoadText('CCO')"); page.keyboard.press("Control+s")
+    wait_until(page, "window._writes.length===1")
+    assert page.evaluate("window._picks") == 0 and page.evaluate("window._openTarget.content.includes('Acetic')")
+    page.click("#bOpenTop"); wait_until(page, "document.querySelector('#dialog h3') && document.querySelector('#dialog h3').innerText.startsWith('Open')")  # header button; asks before replacing work
+
+
+def test_save_without_file_access_downloads_a_copy(page):
+    page.evaluate("delete window.showSaveFilePicker; delete window.showOpenFilePicker; window.showSaveFilePicker=undefined; window.showOpenFilePicker=undefined; tryLoadText('CCO')")
+    with page.expect_download() as dl:
+        page.keyboard.press("Control+s")
+    assert dl.value.suggested_filename.endswith(".html")
+    assert page.is_hidden("#bSaveNew")
