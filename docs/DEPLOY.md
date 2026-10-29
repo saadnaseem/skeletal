@@ -88,12 +88,76 @@ Also check that:
 - Name/CAS lookup works.
 - A saved `.html` project opens.
 
+## 6. Turn on "Sign in with Google" (optional, about 20 minutes)
+
+Signing in is never required: people can use everything without an account. Until you finish these steps, the site works and the Sign in button stays hidden.
+
+**a. Create the accounts database** (on your Mac, in the repo folder):
+
+```bash
+npx wrangler login
+```
+
+```bash
+npx wrangler d1 create lonepair
+```
+
+Copy the `database_id` it prints into `wrangler.toml` (replacing the zeros), commit it, then create the tables:
+
+```bash
+npx wrangler d1 migrations apply lonepair --remote
+```
+
+Wrangler needs Node 22. Check with `node --version`.
+
+**b. Create the Google sign-in client.** Go to <https://console.cloud.google.com>, create a project called "Lone Pair", then:
+
+1. **APIs & Services → OAuth consent screen** (also called **Google Auth Platform → Branding**). Fill in:
+   - App name: **Lone Pair**
+   - Support email: your Gmail
+   - App domain / home page: `https://lonepair.app`
+   - Privacy policy: `https://lonepair.app/privacy.html`
+   - Authorized domain: `lonepair.app`
+2. **Audience:** External. Choose **Publish app**, so anyone with a Google account can sign in and not just test users. The app only asks for name and email (`openid email profile`), which doesn't need Google's security review.
+3. **Clients → Create client → Web application.** Name it "lonepair.app". Under **Authorized redirect URIs**, add:
+   - `https://lonepair.app/api/auth/google/callback`
+   - `https://lonepair.pages.dev/api/auth/google/callback` (so the temporary address works too)
+4. Copy the **Client ID** and **Client secret**.
+
+**c. Connect them to the site.** In Cloudflare, open **Workers & Pages → lonepair → Settings**:
+
+1. **Bindings → Add → D1 database.** Variable name `DB`, database `lonepair`.
+2. **Variables and Secrets → Add:**
+   - `GOOGLE_CLIENT_ID` (type: Text) = the client ID
+   - `GOOGLE_CLIENT_SECRET` (type: **Secret**) = the client secret
+3. Do this for **Production**, and for **Preview** too if you want sign-in on preview links.
+4. Open **Deployments**, then **Retry deployment** on the latest one, so it picks up the settings.
+
+**d. Test it.** Open <https://lonepair.app>, click **Sign in with Google**, and pick your account. You should come back signed in, with your initials in the top bar.
+
+**e. Set up the privacy contact.** The privacy page lists `privacy@lonepair.app`. Create it for free under **lonepair.app → Email → Email Routing**, forwarding to your Gmail.
+
+## 7. See who signed up
+
+All sign-ins:
+
+```bash
+npx wrangler d1 execute lonepair --remote --command "SELECT name, email, datetime(created_at/1000,'unixepoch') AS joined, datetime(last_seen_at/1000,'unixepoch') AS last_seen, sign_ins FROM users ORDER BY created_at DESC"
+```
+
+Sign-ups per day:
+
+```bash
+npx wrangler d1 execute lonepair --remote --command "SELECT date(created_at/1000,'unixepoch') AS day, COUNT(*) AS signups FROM users GROUP BY day ORDER BY day DESC"
+```
+
+You can also run these queries in the dashboard: **Workers & Pages → D1 → lonepair → Console**.
+
+The email addresses are for knowing your users and contacting them about the service. Before sending newsletters or marketing, ask people to opt in; the privacy page promises that. For visit counts that include people who don't sign in, turn on **Web Analytics** in the Pages project's **Metrics** tab. The site's security policy already allows it, and it uses no cookies.
+
 ## Optional extras
 
-- **Cloudflare Web Analytics** (privacy-friendly, no cookies). Its tracking script would be blocked by the site's security policy. If you turn it on, edit `scripts/build_pages.mjs`:
-  - Add `https://static.cloudflareinsights.com` to `script-src`.
-  - Add `https://cloudflareinsights.com` to `connect-src`.
-  - Push the change.
+- **Cloudflare Web Analytics** (privacy-friendly, no cookies). The security policy already allows it: turn it on in the Pages project under **Metrics**.
 - **Social handles:** reserve @lonepair or @lonepairapp before announcing.
 - **Trademark:** search "Lone Pair" in software classes 9 and 42 at <https://tmsearch.uspto.gov/> before you put money into branding.
 

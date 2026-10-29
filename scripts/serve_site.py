@@ -17,6 +17,12 @@ def matches(pattern, path):
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k): super().__init__(*a, directory=str(SITE), **k)
+    def do_GET(self):
+        # stand-in for the Pages Functions when sign-in isn't configured (no Google secrets): same answer as server/auth.js
+        if self.path.split("?")[0] == "/api/me":
+            body = b'{"available": false, "signedIn": false}'
+            self.send_response(200); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        super().do_GET()
     def end_headers(self):
         path = self.path.split("?")[0]
         for pattern, hs in parse_headers():

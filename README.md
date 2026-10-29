@@ -153,10 +153,10 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 104 unit tests (Node test runner)
+npm test             # 105 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 49 browser tests (Playwright)
+npm run test:e2e     # 57 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
@@ -242,7 +242,9 @@ npx wrangler pages deploy site --project-name lonepair
 
 **Custom domain.** In the Pages project, open **Custom domains → Set up a custom domain**. If the domain's DNS is already on Cloudflare (as with forkways.com), a domain or subdomain such as `lonepair.app` is added and certified automatically.
 
-**What visitors can save.** There is no server, so nothing is stored on your side:
+**Optional sign-in.** On the hosted site, people can choose to **Sign in with Google**. That stores their name, email and visit times in a Cloudflare D1 database (`functions/`, `server/auth.js`, `migrations/`). Drawings are never uploaded. Setup steps are in [docs/DEPLOY.md](docs/DEPLOY.md#6-turn-on-sign-in-with-google-optional-about-20-minutes). Without that setup, or in downloaded copies, the button doesn't appear.
+
+**What visitors can save.** Drawings are never stored on your side:
 
 - **Autosave:** work is kept in each visitor's own browser (`localStorage`, per browser and device).
 - **Files:** **Save project (.html)** and every export download to their computer, and they can reopen them on any device.
