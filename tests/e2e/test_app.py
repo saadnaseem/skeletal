@@ -589,6 +589,17 @@ def test_octet_error_for_extra_lone_pairs(page):
     assert page.is_hidden("#valWarn")
 
 
+def test_hypervalent_halogen_needs_electronegative_partners(page):
+    # Br with four carbons: used to read "BrH" with no warning
+    page.evaluate("""(()=>{ tryLoadText('CBr'); const br=doc.atoms.find(a=>a.el==='Br');
+      for (let i=0;i<3;i++) placeBondFrom(br, nextDir(br), 1, 'none'); changed(); })()""")
+    assert page.is_visible("#valWarn") and "Br has 4 bonds" in page.inner_text("#valWarn")
+    assert "BrH" not in page.evaluate("cv.textContent").replace(" ", "")
+    for smi in ["FBr(F)(F)(F)F", "[O-]Cl(=O)(=O)=O", "c1ccccc1I(OC(C)=O)OC(C)=O", "CC(=O)OI1(OC(C)=O)(OC(C)=O)OC(=O)c2ccccc21"]:
+        page.evaluate(f"loadProject(newProject()); tryLoadText('{smi}')")
+        assert page.is_hidden("#valWarn"), smi
+
+
 FAKE_FS = """(()=>{
   // stand-ins for Chrome's file pickers: a handle records what is written to it
   window._picks=0; window._writes=[];

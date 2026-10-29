@@ -117,3 +117,19 @@ test('valence check counts drawn lone pairs against the octet', () => {
   assert.equal(why('FS(F)(F)F', () => a => a.el === 'S', { lp: 1 }), null);  // SF4: S may expand its octet
   assert.match(why('[NH4+]', () => a => a.el === 'N', { lp: 1 }), /10 electrons/);
 });
+
+test('halogens go past one bond only towards O, N or F', () => {
+  const ve = get('valenceError'), bi = get('buildIndex'), ih = get('implicitH'), bs = get('bondSum');
+  // the reported drawing: Br with four carbons, no radical, used to read "BrH" with no warning
+  const atoms = [{ id: 1, el: 'Br', x: 0, y: 0 }, ...[2, 3, 4, 5].map((id, i) => ({ id, el: 'C', x: Math.cos(i * 1.57), y: Math.sin(i * 1.57) }))];
+  const d = { atoms, bonds: [2, 3, 4, 5].map((b, i) => ({ id: 10 + i, a: 1, b, order: 1 })), arrows: [], texts: [], pluses: [] };
+  const ix = bi(d), br = atoms[0];
+  assert.equal(ih(br, bs(ix, 1)), 0);
+  assert.match(ve(br, ix).why, /Br has 4 bonds; a halogen takes more than 1 only with O, N or F/);
+  const why = (smi, el) => { const d = docFromSmiles(get, smi); const a = d.atoms.find(a => a.el === el); a.rad = 0; const e = ve(a, bi(d)); return e ? e.why : null; };
+  assert.match(why('CBr(C)', 'Br'), /2 bonds/);
+  for (const [smi, el] of [['CBr', 'Br'], ['FBr(F)(F)(F)F', 'Br'], ['[O-]Cl(=O)(=O)=O', 'Cl'], ['[O-]I(=O)(=O)=O', 'I'], ['[O-]Br(=O)(=O)=O', 'Br'],
+    ['ClI(Cl)Cl', 'I'], ['CC(=O)OI1(OC(C)=O)(OC(C)=O)OC(=O)c2ccccc21', 'I'], ['O=I1(O)OC(=O)c2ccccc12', 'I'],
+    ['c1ccccc1I(OC(C)=O)OC(C)=O', 'I'], ['FC(F)(F)I1OC(C)(C)c2ccccc21', 'I'], ['c1ccc(cc1)[I+]c1ccccc1', 'I']])
+    assert.equal(why(smi, el), null, smi);
+});
