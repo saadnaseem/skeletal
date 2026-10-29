@@ -158,6 +158,37 @@ def test_eraser_miss_does_not_add_undo_step(page):
     assert page.evaluate("undoStack.length") == n
 
 
+
+def test_eraser_click_erases_one_item_and_drag_erases_a_box(page):
+    page.evaluate("tryLoadText('c1ccccc1.CCO'); setTool('erase')")  # benzene on the left, ethanol on the right
+    box = page.locator("#cv").bounding_box()
+    scr = lambda q: (box["x"] + q["x"] * page.evaluate("view.z") + page.evaluate("view.ox"), box["y"] + q["y"] * page.evaluate("view.z") + page.evaluate("view.oy"))
+    o = page.evaluate("(()=>{ const o=doc.atoms.find(a=>a.el==='O'); return {x:o.x,y:o.y}; })()")
+    page.mouse.click(*scr(o))  # a click erases just the item under it
+    assert page.evaluate("doc.atoms.length") == 8 and not page.evaluate("doc.atoms.some(a=>a.el==='O')")
+    # a drag around the benzene ring erases the ring and nothing else, in one undo step
+    b = page.evaluate("(()=>{ const r=doc.atoms.filter(a=>ix.adj.get(a.id).length===2 && doc.atoms.indexOf(a)<6); const xs=r.map(a=>a.x), ys=r.map(a=>a.y); return {x0:Math.min(...xs)-8,y0:Math.min(...ys)-8,x1:Math.max(...xs)+8,y1:Math.max(...ys)+8}; })()")
+    n = page.evaluate("undoStack.length")
+    page.mouse.move(*scr({"x": b["x0"], "y": b["y0"]})); page.mouse.down()
+    page.mouse.move(*scr({"x": (b["x0"] + b["x1"]) / 2, "y": (b["y0"] + b["y1"]) / 2}), steps=4)
+    page.mouse.move(*scr({"x": b["x1"], "y": b["y1"]}), steps=4)
+    assert page.evaluate("doc.atoms.length") == 8, "nothing is erased until the button is released"
+    assert '#e03131' in page.evaluate("cv.innerHTML")  # the red box shows what will go
+    page.mouse.up()
+    assert page.evaluate("doc.atoms.length") == 2 and page.evaluate("undoStack.length") == n + 1
+    page.keyboard.press("Control+z")
+    assert page.evaluate("doc.atoms.length") == 8
+
+
+def test_clear_button_wipes_the_page_and_undo_brings_it_back(page):
+    page.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O>>CC(=O)O')")
+    n = page.evaluate("doc.atoms.length + doc.arrows.length")
+    page.click("#bClear")
+    assert page.evaluate("doc.atoms.length + doc.bonds.length + doc.arrows.length") == 0
+    assert "Ctrl+Z" in page.inner_text("#toast")
+    page.keyboard.press("Control+z")
+    assert page.evaluate("doc.atoms.length + doc.arrows.length") == n
+
 def test_large_structure_renders_quickly(page):
     ms = page.evaluate("""()=>{ tryLoadText('C'.repeat(1)+'CC(C)'.repeat(60)+'c1ccc2ccccc2c1'); const t=performance.now(); for (let i=0;i<10;i++) render(); return (performance.now()-t)/10; }""")
     assert page.evaluate("doc.atoms.length") > 180

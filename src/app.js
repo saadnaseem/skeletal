@@ -324,7 +324,8 @@ function renderNow(){
   // previews
   if (preview){
     if (preview.lines) for (const [a,b] of preview.lines) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="${SELC}" stroke-width="${S().lineWidth*1.4}" stroke-linecap="round"/>`);
-    if (preview.rect){ const r=preview.rect; ov.push(`<rect x="${f2(Math.min(r.x0,r.x1))}" y="${f2(Math.min(r.y0,r.y1))}" width="${f2(Math.abs(r.x1-r.x0))}" height="${f2(Math.abs(r.y1-r.y0))}" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
+    if (preview.rect){ const r=preview.rect, c=preview.erase? '#e03131' : SELC; ov.push(`<rect x="${f2(Math.min(r.x0,r.x1))}" y="${f2(Math.min(r.y0,r.y1))}" width="${f2(Math.abs(r.x1-r.x0))}" height="${f2(Math.abs(r.y1-r.y0))}" fill="${c}" fill-opacity=".07" stroke="${c}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
+      if (preview.hits) for (const k of preview.hits) if (k[0]==='a'){ const a=ix.atom.get(+k.slice(1)); if (a) ov.push(`<circle cx="${f2(a.x)}" cy="${f2(a.y)}" r="${f2(L*0.22)}" fill="#e03131" fill-opacity=".25"/>`); } }
     if (preview.arrow){ const o=[]; renderArrow(doc,preview.arrow,o,SELC); ov.push(o.join('')); }
     if (preview.poly){ ov.push(`<path d="M${preview.poly.map(q=>f2(q.x)+' '+f2(q.y)).join('L')}Z" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
     if (preview.guides) for (const [a,b] of preview.guides) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="#d6336c" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
@@ -420,7 +421,7 @@ function beginTool(d){
     d.sub = tool.lasso ? 'lasso' : 'rect'; if (d.sub==='lasso') d.path=[d.start]; if (!d.shift){ sel.clear(); render(); }
     return;
   }
-  if (tool.id==='erase'){ if (h && h.type!=='handle'){ ensureUndo(d); eraseAt(h); render(); } return; }
+  if (tool.id==='erase') return; // a click erases on release; a drag draws the box to erase (endTool)
 }
 function eraseAt(h){
   if (!h) return;
@@ -480,7 +481,7 @@ function moveTool(d,p){
     }
     return;
   }
-  if (id==='erase'){ const hh=hitTest(p,d.ptype); if (hh && hh.type!=='handle'){ ensureUndo(d); eraseAt(hh); render(); } return; }
+  if (id==='erase'){ preview={rect:{x0:d.start.x,y0:d.start.y,x1:p.x,y1:p.y}, erase:true, hits:keysInRect({x0:d.start.x,y0:d.start.y,x1:p.x,y1:p.y})}; render(); return; }
   if (id==='bond' || id==='atom'){
     if (d.hit && d.hit.type==='bond' && id==='bond'){ return; }
     if (id==='atom' && !(d.hit && d.hit.type==='atom')) return;
@@ -502,12 +503,7 @@ function endTool(d,p){
   const id=tool.id, h=d.hit;
   if (id==='select'){
     if (d.sub==='rect' && d.moved){
-      const r=preview&&preview.rect; if (r){ const x0=Math.min(r.x0,r.x1),x1=Math.max(r.x0,r.x1),y0=Math.min(r.y0,r.y1),y1=Math.max(r.y0,r.y1); const inR=q=>q.x>=x0&&q.x<=x1&&q.y>=y0&&q.y<=y1;
-        for (const a of doc.atoms) if (inR(a)) sel.add('a'+a.id);
-        for (const ar of doc.arrows) if (inR(V(ar.x1,ar.y1))&&inR(V(ar.x2,ar.y2))) sel.add('r'+ar.id);
-        for (const t of doc.texts) if (inR(t)) sel.add('t'+t.id);
-        for (const q of doc.pluses) if (inR(q)) sel.add('p'+q.id);
-        for (const q of doc.plates) if (inR(q)) sel.add('l'+q.id); }
+      const r=preview&&preview.rect; if (r) for (const k of keysInRect(r)) sel.add(k);
       return;
     }
     if (d.sub==='lasso' && d.moved && d.path.length>2){
@@ -532,7 +528,12 @@ function endTool(d,p){
     if (d.sub==='move' && selAtoms().length===1){ const a=ix.atom.get(selAtoms()[0]); const near=atomNear(a,L*0.25,new Set([a.id])); if (near) mergeAtom(a.id,near.id); }
     return;
   }
-  if (id==='erase') return;
+  if (id==='erase'){
+    if (!d.moved){ if (h && h.type!=='handle'){ pushUndo(); eraseAt(h); changed(); } return; }
+    const keys=preview && preview.hits; preview=null;
+    if (keys && keys.size){ pushUndo(); deleteKeys(keys); sel.clear(); changed(); } else render();
+    return;
+  }
   if (id==='bond'){
     const bt=tool.bond;
     if (!d.moved && h && h.type==='bond'){
@@ -700,11 +701,27 @@ window.addEventListener('keydown', e=>{
 window.addEventListener('keyup', e=>{ if (e.key===' '){ spaceDown=false; cv.classList.remove('pan'); } });
 function selectAll(){ sel.clear(); doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); if(tool.id!=='select') setTool('select'); render(); scheduleAnalysis(); }
 function deleteSel(){
-  if (!sel.size) return; pushUndo();
-  const ka=new Set(selAtoms());
-  doc.atoms=doc.atoms.filter(a=>!ka.has(a.id));
-  doc.arrows=doc.arrows.filter(r=>!sel.has('r'+r.id)); doc.texts=doc.texts.filter(t=>!sel.has('t'+t.id)); doc.pluses=doc.pluses.filter(p=>!sel.has('p'+p.id)); doc.plates=doc.plates.filter(q=>!sel.has('l'+q.id));
-  sel.clear(); changed();
+  if (!sel.size) return; pushUndo(); deleteKeys(sel); sel.clear(); changed();
+}
+function deleteKeys(keys){ // keys like 'a12' (atom), 'r3' (arrow); bonds go with their atoms
+  doc.atoms=doc.atoms.filter(a=>!keys.has('a'+a.id));
+  doc.arrows=doc.arrows.filter(r=>!keys.has('r'+r.id)); doc.texts=doc.texts.filter(t=>!keys.has('t'+t.id)); doc.pluses=doc.pluses.filter(p=>!keys.has('p'+p.id)); doc.plates=doc.plates.filter(q=>!keys.has('l'+q.id));
+  ix=buildIndex(doc);
+}
+function keysInRect(r){
+  const x0=Math.min(r.x0,r.x1),x1=Math.max(r.x0,r.x1),y0=Math.min(r.y0,r.y1),y1=Math.max(r.y0,r.y1), inR=q=>q.x>=x0&&q.x<=x1&&q.y>=y0&&q.y<=y1, out=new Set();
+  for (const a of doc.atoms) if (inR(a)) out.add('a'+a.id);
+  for (const ar of doc.arrows) if (inR(V(ar.x1,ar.y1))&&inR(V(ar.x2,ar.y2))) out.add('r'+ar.id);
+  for (const t of doc.texts) if (inR(t)) out.add('t'+t.id);
+  for (const q of doc.pluses) if (inR(q)) out.add('p'+q.id);
+  for (const q of doc.plates) if (inR(q)) out.add('l'+q.id);
+  return out;
+}
+// Clear: wipe the page in one undoable step
+function clearPage(){
+  if (!hasContent(doc)){ toast('The page is already empty'); return; }
+  pushUndo(); doc.atoms=[]; doc.bonds=[]; doc.arrows=[]; doc.texts=[]; doc.pluses=[]; doc.plates=[]; sel.clear(); hover=null; changed();
+  toast(project.pages.length>1 ? 'Cleared this page (other pages are untouched). Ctrl+Z brings it back.' : 'Cleared. Ctrl+Z brings it back.');
 }
 
 /* ================= sub-documents, clipboard ================= */
@@ -1562,7 +1579,7 @@ const TOOLS = [
   {g:'basic', items:[
     {id:'select', o:{lasso:false}, t:'Select and move (V): drag a box', i:ic('<path d="M6 3l12 9-5.5 1.2L15 20l-2.6 1.1-2.6-6.6L6 18z" fill="currentColor" stroke-width="1.2"/>')},
     {id:'select', o:{lasso:true}, t:'Lasso select (L): drag a freehand loop', i:ic('<path d="M12 4c5 0 8 2.2 8 5s-3.6 5-8 5c-1.7 0-3.3-.3-4.5-.9" stroke-dasharray="2.4 2"/><path d="M7.5 13.1C5.4 12.2 4 10.7 4 9c0-2.8 3.6-5 8-5"/><path d="M7.5 13.1c-.6 1.6.2 3.4 1.6 4.4 1 .7 1.1 2 .3 2.9"/>')},
-    {id:'erase', t:'Eraser (E)', i:ic('<path d="M4 16l9-9 6 6-7 7H7z"/><path d="M9 11l6 6M12 20h8"/>')},
+    {id:'erase', t:'Eraser (E): click to erase, or drag a box to erase everything inside', i:ic('<path d="M4 16l9-9 6 6-7 7H7z"/><path d="M9 11l6 6M12 20h8"/>')},
     {id:'text', t:'Text (T)', i:ic('<path d="M6 5h12M12 5v14M9 19h6"/>')},
   ]},
   {g:'bonds', items:[
@@ -1726,7 +1743,7 @@ function renderTemplates(){ $('#tpl').innerHTML=TEMPLATES.map(([n,s])=>`<button 
   });
 })();
 $('#bUndo').onclick=undo; $('#bRedo').onclick=redo;
-$('#bClean').onclick=cleanUp; $('#bFlipH').onclick=()=>flip('h'); $('#bFlipV').onclick=()=>flip('v');
+$('#bClean').onclick=cleanUp; $('#bClear').onclick=clearPage; $('#bFlipH').onclick=()=>flip('h'); $('#bFlipV').onclick=()=>flip('v');
 const alignMenu=$('#alignMenu');
 function closeAlignMenu(){ if (alignMenu.hidden) return; alignMenu.hidden=true; $('#bAlign').setAttribute('aria-expanded','false'); }
 $('#bAlign').onclick=e=>{
