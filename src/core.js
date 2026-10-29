@@ -33,7 +33,7 @@ const ABBR = {
 };
 const GENERIC = new Set(['R','R1','R2','R3','R4','R5','R6',"R'","R''",'X','Ar','Nu','E','LG','PG','Z','M','L','Ln']);
 const CPK = {N:'#2f4fd6',O:'#d1231f',S:'#b38a00',P:'#d06a00',F:'#1f8f3a',Cl:'#1f8f3a',Br:'#8b2a14',I:'#6a1fa0',B:'#c26a6a',Si:'#8a7a5c',Se:'#b36b00'};
-const VAL = {H:[1],B:[3],C:[4],Si:[4],N:[3],P:[3,5],As:[3,5],O:[2],S:[2,4,6],Se:[2,4,6],Te:[2,4,6],F:[1],Cl:[1,3,5,7],Br:[1,3,5],I:[1,3,5]};
+const VAL = {H:[1],B:[3],C:[4],Si:[4],N:[3],P:[3,5],As:[3,5],O:[2],S:[2,4,6],Se:[2,4,6],Te:[2,4,6],F:[1],Cl:[1,3,5,7],Br:[1,3,5,7],I:[1,3,5,7]};
 const GROUP = {H:'h',B:'b',C:'c',Si:'c',N:'n',P:'n',As:'n',O:'o',S:'o',Se:'o',Te:'o',F:'x',Cl:'x',Br:'x',I:'x'};
 
 function kindOf(el){
@@ -148,9 +148,12 @@ function implicitH(atom, bsum){
     let v=v0;
     if (g==='c') v=v0-Math.abs(ch); else if (g==='n'||g==='o'||g==='x') v=v0+ch; else if (g==='b') v=v0-ch; else if (g==='h') v=v0-Math.abs(ch);
     if (v>=bsum) return Math.max(0, v-bsum-(atom.rad?1:0));
+    if (g==='x') return 0; // a halogen in a higher valence state never takes H to fill it (no "BrH" on CBr(C)(C)C)
   }
   return 0;
 }
+// halogens go past one bond only towards electronegative partners: ClO4-, BrF5, ICl3, PhI(OAc)2, IBX, Togni reagents
+const HYPER_LIG=new Set(['N','O','F','Cl']);
 // atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
 const OCTET=new Set(['B','C','N','O','F']);
 function valenceError(atom, ix){
@@ -161,6 +164,10 @@ function valenceError(atom, ix){
   const g=GROUP[atom.el], ch=atom.charge||0;
   let max=-1; for (const v0 of vals){ let v=v0; if (g==='c') v=v0-Math.abs(ch); else if (g==='n'||g==='o'||g==='x') v=v0+ch; else if (g==='b') v=v0-ch; else if (g==='h') v=v0-Math.abs(ch); max=Math.max(max,v, v0>vals[0]? v0+Math.abs(ch) : -1); } // hypervalent states take a charge as an extra bond (PF6-, IF6-)
   const bs=bondSum(ix,atom.id), have=bs+(atom.rad?1:0);
+  if (g==='x' && have>vals[0]+ch && have<=max && !(ix.adj.get(atom.id)||[]).some(({o})=>{ const e=ix.atom.get(o)?.el; return e!==atom.el && HYPER_LIG.has(e); })){
+    const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
+    return {have, max:vals[0]+ch, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; a halogen takes more than ${vals[0]+ch} only with O, N or F partners (e.g. ClO4\u2212, BrF5, PhI(OAc)2)`};
+  }
   if (have<=max){
     // octet (duet for H): second-row atoms can't hold more than 8 electrons, so drawn lone pairs count too
     const cap = atom.el==='H' ? 2 : OCTET.has(atom.el) ? 8 : 0;
