@@ -66,7 +66,9 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 ### Projects
 - Multiple pages per project, shown as tabs.
 - Named versions stored inside the project, with one-click restore. Restoring first saves your current state as another version.
-- **Save project (.html)** writes a complete copy of the editor with your pages and versions inside it. Double-click the file to keep working.
+- **Save project (.html)** (Ctrl/⌘ + S) writes a complete copy of the editor with your pages and versions inside it. Double-click the file to keep working, or open it again on the website.
+  - **Chrome and Edge:** Lone Pair remembers the file you saved or opened, and Ctrl/⌘ + S writes back into it. The tab title shows • while there are unsaved changes, and **Save as new file** makes a copy.
+  - **Firefox and Safari:** saving downloads a new copy each time.
 - Exported PNGs and SVGs carry the drawing data, so you can open them in Lone Pair and edit them again.
 
 ### Chemistry tools
@@ -115,6 +117,8 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 | Draw without angle snapping | Hold Alt while dragging |
 | Pan and zoom | Space + drag, two fingers, or Ctrl + wheel |
 | Copy image, paste, duplicate | Ctrl/⌘ + C, V, D |
+| Save the project | Ctrl/⌘ + S. In Chrome and Edge this writes back to the file you saved or opened; other browsers download a copy |
+| Open a project or file | Ctrl/⌘ + O, or **Open** in the header, or drag a file onto the canvas |
 | Copy SMILES | Ctrl/⌘ + Shift + C, or right-click |
 | Group, ungroup | Ctrl/⌘ + G, Ctrl/⌘ + Shift + G |
 | Nudge the selection | Arrow keys (Shift: 5 pt) |

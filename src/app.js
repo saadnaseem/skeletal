@@ -17,7 +17,7 @@ function pushUndo(){ undoStack.push(JSON.stringify(doc)); if(undoStack.length>20
 function undo(){ if(!undoStack.length) return; redoStack.push(JSON.stringify(doc)); setDoc(JSON.parse(undoStack.pop())); sel.clear(); changed(); }
 function redo(){ if(!redoStack.length) return; undoStack.push(JSON.stringify(doc)); setDoc(JSON.parse(redoStack.pop())); sel.clear(); changed(); }
 function updateUndoButtons(){ $('#bUndo').disabled=!undoStack.length; $('#bRedo').disabled=!redoStack.length; }
-function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
+function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); syncFileUI(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
 function syncPageUI(){ const e=$('#expArea'); if(!e) return; const has=!!doc.page; e.disabled=!has; if(!has) e.value='crop'; const p=doc.page; $('#pageInfo').textContent = p ? `${(PAGE_PRESETS[p.preset]||{n:'Custom'}).n.split(' (')[0]}, ${p.across} × ${p.down} ${p.across*p.down>1?'sheets':'sheet'} (${inch(p.w*p.across)} × ${inch(p.h*p.down)} in)` : 'Free canvas'; }
 function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[t]; if(!m||!m.has(id)) sel.delete(k);} }
 let _saveT=null;
@@ -1432,20 +1432,20 @@ function openSaveAs(){
   dialog.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exportAs(b.dataset.x, !!b.dataset.copyX));
 }
 function saveDrawing(){ saveFile(fileBase()+'.json', JSON.stringify(project)); }
-$('#fileIn').addEventListener('change', async e=>{
-  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+$('#fileIn').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if (f) openFile(f, null); });
+async function openFile(f, handle){
   try{
     if (/\.png$/i.test(f.name)){ const s=readPngMeta(new Uint8Array(await f.arrayBuffer())); if(!s){ toast('This PNG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(s)),0,viewCenter()); return; }
     const fm=/\.(cdxml|cdx|cml|mrv)$/i.exec(f.name);
     if (fm){ const k=fm[1].toLowerCase(); const data = k==='cdx' ? new Uint8Array(await f.arrayBuffer()) : await f.text(); insertForeign(FORMATS.read(k,data), f.name); return; }
     const t=await f.text();
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
-    if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj); return; }
-    if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
+    if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
+    if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
     if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
     if (!tryLoadText(t.trim())) toast('Could not read this file');
   }catch(err){ console.warn(err); toast('Could not read this file'); }
-});
+}
 // drag and drop files
 stage.addEventListener('dragover', e=>{ e.preventDefault(); });
 stage.addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f){ const dt=new DataTransfer(); dt.items.add(f); $('#fileIn').files=dt.files; $('#fileIn').dispatchEvent(new Event('change')); } });
@@ -1654,10 +1654,11 @@ document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) &
 $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
-$('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bSaveHtml').onclick=saveHtml; $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>$('#fileIn').click();
+$('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile(); $('#bSaveNew').onclick=()=>saveProject(true);
+$('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
 $('#bNew').onclick=()=>{
-  const go=()=>{ closeDialog(); loadProject(newProject()); toast('New project started'); };
+  const go=()=>{ closeDialog(); loadProject(newProject()); linkFile(null); toast('New project started'); };
   if (projectIsEmpty()) { go(); return; }
   openDialog(`<h3>Start a new project?</h3><p>You won’t be able to reopen “${esc(project.name)}” from here afterwards. Save it as an HTML file first if you want to keep it.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="npSave">Save current first</button><button class="tb primary" id="npGo">New project</button></div>`);
   $('#npGo').onclick=go; $('#npSave').onclick=()=>saveHtml();
@@ -1776,16 +1777,61 @@ function saveHtml(){
   let html; try{ html=buildProjectHtml(); }catch(e){ console.warn(e); toast('Could not build the HTML file here; saving JSON instead'); saveDrawing(); return; }
   saveFile(fileBase()+'.html', html);
 }
+/* ================= the project file on disk =================
+   Chrome and Edge let a page keep a handle to a file, so Save writes back to the file the user saved or opened.
+   Other browsers (and sandboxed frames) fall back to downloading a copy and the ordinary file chooser. */
+let projHandle=null, savedAt=0, _fallbackNoted=false;
+const PROJECT_TYPES=[{description:'Lone Pair project', accept:{'text/html':['.html','.htm']}}, {description:'Lone Pair project (JSON)', accept:{'application/json':['.json']}}];
+const OPEN_TYPES=[{description:'Lone Pair projects, images and chemistry files', accept:{'text/html':['.html','.htm'], 'application/json':['.json'], 'image/png':['.png'], 'image/svg+xml':['.svg'],
+  'chemical/x-mdl-molfile':['.mol','.sdf'], 'chemical/x-cdxml':['.cdxml','.cdx'], 'chemical/x-cml':['.cml','.mrv'], 'text/plain':['.smi','.txt','.inchi']}}];
+function linkFile(h){ projHandle=h; savedAt=project.modified; syncFileUI(); }
+const fileDirty=()=>!!projHandle && project.modified>savedAt;
+function syncFileUI(){
+  const b=$('#bSaveHtml'), note=$('#fileLink'); if (!b || !note) return;
+  b.textContent = projHandle ? `Save to ${projHandle.name}` : 'Save project (.html)';
+  $('#bSaveNew').hidden=!projHandle;
+  note.hidden=!projHandle;
+  if (projHandle) note.textContent = (fileDirty()? 'Unsaved changes. ' : 'All changes saved. ') + 'Ctrl+S writes to this file.';
+  document.title = projHandle ? `${fileDirty()?'• ':''}${projHandle.name} – Lone Pair` : 'Lone Pair';
+}
+async function writeProject(h){
+  if (editingText) commitText();
+  const json=/\.json$/i.test(h.name), data = json ? JSON.stringify(project) : buildProjectHtml();
+  if (h.queryPermission && (await h.queryPermission({mode:'readwrite'}))!=='granted' && (await h.requestPermission({mode:'readwrite'}))!=='granted') throw new Error('Permission to write the file was not given');
+  const w=await h.createWritable(); await w.write(new Blob([data],{type: json?'application/json':'text/html'})); await w.close();
+  linkFile(h);
+}
+async function saveProject(asNew){
+  if (window.showSaveFilePicker){
+    try{ const h = (!asNew && projHandle) || await window.showSaveFilePicker({suggestedName:fileBase()+'.html', types:PROJECT_TYPES});
+      await writeProject(h); toast('Saved to '+h.name); return; }
+    catch(e){ if (e && e.name==='AbortError') return; console.warn(e); } // e.g. blocked in a sandboxed frame: download instead
+  }
+  saveHtml();
+  if (!_fallbackNoted){ _fallbackNoted=true; setTimeout(()=>toast('Saved as a download. In Chrome or Edge, Save writes back to the same file.'),2300); }
+}
+async function openProjectFile(){
+  if (window.showOpenFilePicker){
+    try{ const [h]=await window.showOpenFilePicker({types:OPEN_TYPES}); const f=await h.getFile(); await openFile(f, /\.(html?|json)$/i.test(f.name)? h : null); return; }
+    catch(e){ if (e && e.name==='AbortError') return; console.warn(e); }
+  }
+  $('#fileIn').click();
+}
+// Ctrl/⌘+S and Ctrl/⌘+O work everywhere, including inside text fields (capture phase, before the browser's own save/open)
+window.addEventListener('keydown', e=>{
+  if (!(e.ctrlKey||e.metaKey) || e.altKey || e.shiftKey) return; const k=e.key.toLowerCase(); if (k!=='s' && k!=='o') return;
+  e.preventDefault(); e.stopPropagation(); if (k==='s') saveProject(); else openProjectFile();
+}, true);
 function extractProject(html){
   const m=html.match(/<script[^>]*id="sk-project"[^>]*>([\s\S]*?)<\/script>/i); if(!m || !m[1].trim()) return null;
   try{ return JSON.parse(m[1]); }catch(e){ return null; }
 }
 function projectIsEmpty(){ return project.pages.every(p=>!hasContent(p.doc)) && !project.versions.length; }
-function confirmOpenProject(p){
-  const go=()=>{ closeDialog(); loadProject(p); toast(`Opened ${project.name}`); };
+function confirmOpenProject(p, handle){
+  const go=()=>{ closeDialog(); loadProject(p); linkFile(handle||null); toast(`Opened ${project.name}`); };
   if (projectIsEmpty()) { go(); return; }
   openDialog(`<h3>Open “${esc(p.name||'project')}”?</h3><p>This replaces the project you have open now. Save it first if you want to keep a copy.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="opSave">Save current first</button><button class="tb primary" id="opGo">Open</button></div>`);
-  $('#opGo').onclick=go; $('#opSave').onclick=async()=>{ await saveHtml(); };
+  $('#opGo').onclick=go; $('#opSave').onclick=async()=>{ await saveProject(); };
 }
 /* ================= text formatting ================= */
 const TSIZES=[6,7,8,9,10,11,12,14,16,18,20,24,28,32,36,48,60,72];
