@@ -171,12 +171,19 @@ def test_mobile_layout_fits_and_panel_opens(mobile):
     assert mobile.locator("#panel").evaluate("el=>el.classList.contains('open')")
 
 
-def test_new_project_asks_before_replacing_work(page):
-    page.evaluate("tryLoadText('CCO')")
+def test_new_project_keeps_the_old_one_under_recent_projects(page):
+    page.evaluate("tryLoadText('CCO'); project.name='Ethanol'")
+    page.click("#bNew")
+    assert page.evaluate("doc.atoms.length") == 0 and page.evaluate("project.pages.length") == 1
+    wait_until(page, "document.querySelector('#rlist').innerText.includes('Ethanol')")
+    page.click("#rlist [data-ro]"); wait_until(page, "project.name === 'Ethanol'")
+    assert page.evaluate("[project.name, doc.atoms.length]") == ["Ethanol", 3]
+    # when the browser can't store it, ask first, as before
+    page.evaluate("(()=>{ tryLoadText('CCN'); window._ls=Storage.prototype.setItem; Storage.prototype.setItem=function(){ throw new Error('full'); }; })()")
     page.click("#bNew")
     assert "New project" in page.inner_text("#dialog")
-    page.click("#npGo")
-    assert page.evaluate("doc.atoms.length") == 0 and page.evaluate("project.pages.length") == 1
+    page.click("#npGo"); page.evaluate("(()=>{ Storage.prototype.setItem=window._ls; })()")
+    assert page.evaluate("doc.atoms.length") == 0
 
 
 def test_align_menu_scheme_row_aligns_middles_and_spaces_evenly(page):
