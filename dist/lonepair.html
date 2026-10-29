@@ -320,6 +320,8 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       <p class="note">The .html file is a complete copy of this editor with all your pages and versions inside. Open it in any browser to keep working, even offline, or open it here.</p>
       <div class="row" style="margin-top:12px; justify-content:space-between"><b style="font-size:13px">Versions</b><button class="tb" id="bVersion">Save version</button></div>
       <ul class="vlist" id="vlist"></ul>
+      <div class="row" style="margin-top:12px"><b style="font-size:13px" title="Projects autosaved in this browser, e.g. from other tabs">Recent projects</b></div>
+      <ul class="vlist" id="rlist"></ul>
     </section>
     <section>
       <h2>Export</h2>
@@ -3035,8 +3037,97 @@ let _saveT=null;
 let _saveWarned=false;
 const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
 // write the autosave now (before leaving the page, e.g. to sign in)
-function saveNow(){ clearTimeout(_saveT); try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){} }
-function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } }),400); }
+let _savePending=false;
+function saveNow(){ clearTimeout(_saveT); _savePending=false; try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); return true; }catch(e){ return false; } }
+function autosave(){ project.modified=Date.now(); _savePending=true; clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ if (!_savePending) return; if (!saveNow() && !_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } }),400); }
+
+/* ================= one project per tab ================= */
+// sessionStorage (one per tab, kept across reloads) remembers which project this tab works on. A Web Lock named after the
+// project marks it as open, so a new tab never reopens a project another tab is editing (their autosaves would overwrite
+// each other). The browser drops the lock when the tab closes, so the project can be reopened later.
+const TAB_KEY='lonepair.tab', LOCK='lonepair.open.', KEEP_PROJECTS=30;
+let _held=null, _tabSrc=null; // _held: {uid, release}; _tabSrc: uid of the saved .html file this page was opened from
+const newId=()=>Math.random().toString(36).slice(2,10);
+function lockFor(uid, opts){ // resolves true once this tab holds the lock (false: another tab has the project open)
+  return new Promise(ok=>{ const h={uid, release:null};
+    navigator.locks.request(LOCK+uid, opts||{}, lock=>{ if (!lock){ ok(false); return; }
+      if (!(opts && opts.ifAvailable) && project.uid!==uid){ ok(false); return; } // switched again before this lock came through
+      releaseProject(); _held=h; ok(true); return new Promise(res=>{ h.release=res; }); }).catch(()=>ok(true)); });
+}
+function releaseProject(){ const h=_held; _held=null; if (h){ _released.set(h.uid, Date.now()); if (h.release) h.release(); } }
+function holdProject(){
+  try{ sessionStorage.setItem(TAB_KEY, JSON.stringify({uid:project.uid, src:_tabSrc})); }catch(e){}
+  if (!navigator.locks || (_held && _held.uid===project.uid)) return;
+  releaseProject(); lockFor(project.uid);
+}
+async function claimProject(uid, tries=1){ // take the project for this tab unless another tab has it open
+  if (!navigator.locks) return true;
+  for (let i=0;i<tries;i++){ if (await lockFor(uid,{ifAvailable:true})) return true; if (i<tries-1) await new Promise(r=>setTimeout(r,150)); }
+  return false;
+}
+let _myClient=null, _released=new Map(); // our lock client id; uids this tab let go of moments ago (the browser frees locks a little later)
+async function openInOtherTabs(){
+  if (!navigator.locks) return new Set();
+  try{ const q=await navigator.locks.query(), ours=l=>l.name===LOCK+(_held&&_held.uid);
+    if (!_myClient){ const l=q.held.find(ours); if (l) _myClient=l.clientId; }
+    const s=new Set(); for (const l of q.held){ if (typeof l.name!=='string' || !l.name.startsWith(LOCK) || ours(l)) continue;
+      const uid=l.name.slice(LOCK.length); if (_myClient ? l.clientId===_myClient : Date.now()-(_released.get(uid)||0)<3000) continue; s.add(uid); }
+    s.delete(project.uid); return s; }catch(e){ return new Set(); }
+}
+function storedProject(uid){ try{ const s=localStorage.getItem('skeletal.p.'+uid); return s? JSON.parse(s) : null; }catch(e){ return null; } }
+function storedProjects(){ // autosaved projects in this browser, newest first
+  const out=[]; try{ for (let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if (!k || !k.startsWith('skeletal.p.')) continue;
+    try{ const p=JSON.parse(localStorage.getItem(k)); out.push({uid:k.slice(11), name:p.name||'Untitled project', modified:+p.modified||0, pages:(p.pages||[]).length, empty:!(p.pages||[]).some(pg=>pg.doc && hasContent(pg.doc)) && !(p.versions||[]).length}); }catch(e){} } }catch(e){}
+  return out.sort((a,b)=>b.modified-a.modified);
+}
+function copyOfProject(p){ const c=JSON.parse(JSON.stringify(p)); c.uid=newId(); c.name=(p.name||'Untitled project')+' (copy)'; c.modified=Date.now(); return c; }
+async function pruneProjects(){ // keep the newest autosaves; drop empty ones and the oldest beyond KEEP_PROJECTS
+  const open=await openInOtherTabs(); let kept=0;
+  for (const r of storedProjects()){ if (r.uid===project.uid || open.has(r.uid)) continue;
+    if (r.empty || ++kept>KEEP_PROJECTS) try{ localStorage.removeItem('skeletal.p.'+r.uid); }catch(e){} }
+}
+async function pickStartProject(){
+  let tab=null; try{ tab=JSON.parse(sessionStorage.getItem(TAB_KEY)||'null'); }catch(e){}
+  let embedded=null; try{ const el=document.getElementById('sk-project'), raw=el && el.textContent.trim(); if (raw) embedded=JSON.parse(raw); }catch(e){}
+  _tabSrc = embedded && embedded.uid || null;
+  // 1. this tab's own project after a reload; a tab made with "Duplicate" gets its own copy instead
+  if (tab && tab.uid && (tab.src||null)===_tabSrc){ const p=storedProject(tab.uid);
+    if (p){ if (await claimProject(p.uid,3)) return {p}; return {p:copyOfProject(p), copy:true, note:`This tab has its own copy of \u201c${p.name}\u201d`}; } }
+  // 2. a saved .html file: its project, with any newer unsaved changes made to it in this browser
+  if (embedded){ let p=embedded, note=null; const l=p.uid && storedProject(p.uid); if (l && (l.modified||0)>(p.modified||0)){ p=l; note='Restored your unsaved changes'; }
+    if (!p.uid || await claimProject(p.uid)) return {p, note};
+    return {p:copyOfProject(p), copy:true, note:`\u201c${p.name}\u201d is open in another tab, so this tab has its own copy`}; }
+  // 3. the project used last, unless another tab has it open: then start a fresh one
+  let last=null; try{ last=localStorage.getItem('skeletal.last'); }catch(e){}
+  const p=last && storedProject(last);
+  if (p){ if (await claimProject(p.uid)) return {p}; return {p:null, note:`New project. \u201c${p.name}\u201d is open in another tab.`}; }
+  try{ const old=localStorage.getItem('skeletal.doc'); if (old){ const n=newProject(); n.pages[0].doc=JSON.parse(old); return {p:n}; } }catch(e){}
+  return {p:null};
+}
+window.addEventListener('pagehide', ()=>{ if (_savePending) saveNow(); releaseProject(); });
+window.addEventListener('pageshow', e=>{ if (e.persisted) holdProject(); });
+let _recentT=null; const recentSoon=()=>{ clearTimeout(_recentT); _recentT=setTimeout(()=>{ if (!document.hidden) renderRecent(); },600); };
+window.addEventListener('storage', e=>{ if (!e.key || e.key.startsWith('skeletal.p.')) recentSoon(); });
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) recentSoon(); });
+function ago(t){ const d=new Date(t), s=(Date.now()-t)/1000; if (s<60) return 'just now'; if (s<3600) return Math.round(s/60)+' min ago';
+  return d.toDateString()===new Date().toDateString() ? d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : d.toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
+async function renderRecent(){
+  const ul=$('#rlist'); if (!ul) return;
+  const open=await openInOtherTabs(), list=storedProjects().filter(r=>r.uid!==project.uid && !r.empty).slice(0,10);
+  ul.innerHTML = list.length ? list.map(r=>{ const o=open.has(r.uid);
+    return `<li><div class="vn"><b title="${esc(r.name)}">${esc(r.name)}</b><small>${ago(r.modified)} · ${r.pages} page${r.pages===1?'':'s'}${o?' · open in another tab':''}</small></div>${o?'':`<button class="mini" data-ro="${r.uid}">Open</button><button class="mini" data-rd="${r.uid}" aria-label="Remove from this browser">\u2715</button>`}</li>`; }).join('')
+    : `<li style="justify-content:center;color:var(--ink-2);font-size:12.5px;background:transparent;border-style:dashed">Projects from other tabs show up here</li>`;
+  ul.onclick=async e=>{
+    const o=e.target.closest('[data-ro]'), d=e.target.closest('[data-rd]');
+    if (o){ const uid=o.dataset.ro, p=storedProject(uid); if (!p){ renderRecent(); return; }
+      if (editingText) commitText(); if (_savePending || !projectIsEmpty()) saveNow();
+      if (!await claimProject(uid,5)){ toast(`\u201c${p.name}\u201d is open in another tab`); renderRecent(); return; } // retries: a tab closed or left just now frees its lock a moment later
+      loadProject(p); linkFile(null); toast(`Opened ${project.name}`); }
+    if (d){ const uid=d.dataset.rd, r=storedProjects().find(x=>x.uid===uid); if (!r) return;
+      openDialog(`<h3>Remove \u201c${esc(r.name)}\u201d?</h3><p>This deletes its autosaved copy from this browser. Files you saved are not affected.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="rdGo">Remove</button></div>`);
+      $('#rdGo').onclick=()=>{ try{ localStorage.removeItem('skeletal.p.'+uid); }catch(err){} closeDialog(); renderRecent(); toast('Removed'); }; }
+  };
+}
 
 /* ================= model edits ================= */
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
@@ -4674,10 +4765,12 @@ initAccount(); $('#bSaveNew').onclick=()=>saveProject(true);
 $('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
 $('#bNew').onclick=()=>{
-  const go=()=>{ closeDialog(); loadProject(newProject()); linkFile(null); toast('New project started'); };
+  const go=(kept)=>{ closeDialog(); const old=project.name; loadProject(newProject()); linkFile(null); toast(kept? `New project started. \u201c${old}\u201d is under Recent projects.` : 'New project started'); };
   if (projectIsEmpty()) { go(); return; }
+  if (editingText) commitText();
+  if (saveNow()) { go(true); return; } // autosaved: it can be reopened from Recent projects
   openDialog(`<h3>Start a new project?</h3><p>You won’t be able to reopen “${esc(project.name)}” from here afterwards. Save it as an HTML file first if you want to keep it.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="npSave">Save current first</button><button class="tb primary" id="npGo">New project</button></div>`);
-  $('#npGo').onclick=go; $('#npSave').onclick=()=>saveHtml();
+  $('#npGo').onclick=()=>go(); $('#npSave').onclick=()=>saveHtml();
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
@@ -4698,8 +4791,8 @@ function normalizeProject(p){
 function loadProject(p, quiet){
   project=normalizeProject(p); pageState.clear();
   doc=project.pages[project.cur].doc; undoStack=[]; redoStack=[]; sel.clear();
-  $('#projName').value=project.name;
-  if (!quiet){ changed(); fit(); renderPages(); renderVersions(); }
+  $('#projName').value=project.name; holdProject();
+  if (!quiet){ changed(); fit(); renderPages(); renderVersions(); renderRecent(); }
 }
 function fileBase(){ return (project.name||'Untitled project').replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80) || 'lonepair'; }
 $('#projName').addEventListener('change', e=>{ project.name=e.target.value.trim()||'Untitled project'; e.target.value=project.name; autosave(); });
@@ -4885,7 +4978,10 @@ function extractProject(html){
 }
 function projectIsEmpty(){ return project.pages.every(p=>!hasContent(p.doc)) && !project.versions.length; }
 function confirmOpenProject(p, handle){
-  const go=()=>{ closeDialog(); loadProject(p); linkFile(handle||null); toast(`Opened ${project.name}`); };
+  const go=async()=>{ closeDialog();
+    if (p.uid && p.uid!==project.uid && (await openInOtherTabs()).has(p.uid)){ p=copyOfProject(p); handle=null; toast(`It is open in another tab, so this tab has its own copy`); }
+    else toast(`Opened ${p.name||'project'}`);
+    if (_savePending || !projectIsEmpty()) saveNow(); loadProject(p); linkFile(handle||null); };
   if (projectIsEmpty()) { go(); return; }
   openDialog(`<h3>Open “${esc(p.name||'project')}”?</h3><p>This replaces the project you have open now. Save it first if you want to keep a copy.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="opSave">Save current first</button><button class="tb primary" id="opGo">Open</button></div>`);
   $('#opGo').onclick=go; $('#opSave').onclick=async()=>{ await saveProject(); };
@@ -5492,22 +5588,13 @@ function bdeAt(kind, id, screen){
     pushUndo(); doc.texts.push({id:nid(),x:p.x,y:p.y,text:txt,size:7,color:'#b3261e'}); closeInfo(); changed(); };
 }
 
-function init(){
+async function init(){
+  const start=await pickStartProject(); // first, so nothing is drawn before the tab knows its project
   renderTools(); renderSwatches(); renderTemplates(); initTextUI(); initLabelSize();
-  let loaded=null, note=null;
-  try{
-    const el=document.getElementById('sk-project'); const raw=el && el.textContent.trim();
-    if (raw){ loaded=JSON.parse(raw);
-      try{ const local=localStorage.getItem('skeletal.p.'+loaded.uid); if (local){ const l=JSON.parse(local); if ((l.modified||0)>(loaded.modified||0)){ loaded=l; note='Restored your unsaved changes'; } } }catch(e){}
-    }
-  }catch(e){ loaded=null; }
-  if (!loaded){
-    try{ const last=localStorage.getItem('skeletal.last'); const s=last && localStorage.getItem('skeletal.p.'+last); if (s) loaded=JSON.parse(s);
-      else { const old=localStorage.getItem('skeletal.doc'); if (old){ loaded=newProject(); loaded.pages[0].doc=JSON.parse(old); } } }catch(e){}
-  }
-  if (loaded) loadProject(loaded,true);
+  if (start.p) loadProject(start.p,true); else holdProject();
+  if (start.copy) saveNow(); // a copied tab keeps its copy when reloaded
   ix=buildIndex(doc); setTool('bond',{bond:{order:1,stereo:'none'}});
-  requestAnimationFrame(()=>{ fit(); scheduleAnalysis(); updateUndoButtons(); syncStyleUI(); renderPages(); renderVersions(); if(note) toast(note); });
+  requestAnimationFrame(()=>{ fit(); scheduleAnalysis(); updateUndoButtons(); syncStyleUI(); renderPages(); renderVersions(); if(start.note) toast(start.note); pruneProjects().then(renderRecent); });
 }
 init();
 
