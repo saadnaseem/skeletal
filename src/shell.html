@@ -215,6 +215,11 @@ table.peaks{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:1
 table.peaks th{text-align:left; color:var(--ink-2); font-weight:600; border-bottom:1px solid var(--line); padding:4px 6px}
 table.peaks td{border-bottom:1px solid var(--line); padding:4px 6px}
 .guide table.peaks{font-variant-numeric:normal; font-size:13px; line-height:1.4} /* prose, not number columns */
+.fb textarea{width:100%; min-height:130px; resize:vertical; box-sizing:border-box; font:inherit; font-size:14px; padding:9px 10px; border:1px solid var(--line); border-radius:7px; background:var(--paper); color:var(--ink)}
+.fb input[type=email]{width:100%; box-sizing:border-box; margin-top:10px; font:inherit; font-size:14px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; background:var(--paper); color:var(--ink)}
+.fb label.chk{display:flex; gap:7px; align-items:center; margin-top:10px; font-size:13px; color:var(--ink-2)}
+.fb .hp{position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden}
+.fb .err{color:var(--danger); font-size:13px; margin-top:8px}
 .vlist{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:6px}
 .vlist li{display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:7px; padding:6px 8px; background:var(--btn)}
 .vlist .vn{flex:1; min-width:0}
@@ -267,6 +272,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <button class="tb" id="bTlc" title="Insert a TLC plate: lanes, spots, Rf, eluent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M6 6.5h12M6 17.5h12" stroke-width="1.1"/><ellipse cx="9.5" cy="10" rx="1.3" ry=".9" fill="currentColor"/><ellipse cx="14.5" cy="14" rx="1.3" ry=".9" fill="currentColor"/></svg><span class="hide-mobile">TLC</span></button>
     <button class="tb" id="bSmiles" title="Insert from SMILES"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>SMILES</span></button>
     <div class="spacer"></div>
+    <button class="tb" id="bFeedback" title="Send feedback: a bug, an idea or a wish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span class="hide-mobile">Feedback</span></button>
     <button class="tb" id="bAccount" hidden></button>
     <button class="tb only-mobile" id="bPanel" aria-expanded="false">Analysis</button>
     <button class="tb primary" id="bCopy" title="Copy image for PowerPoint or Word (Ctrl+C)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg><span>Copy image</span></button>

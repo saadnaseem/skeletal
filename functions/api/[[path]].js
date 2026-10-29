@@ -1,3 +1,4 @@
-// Every /api/* request on the hosted site goes to the sign-in handler (server/auth.js).
-import { handle } from '../../server/auth.js';
-export const onRequest = ({ request, env }) => handle(request, env);
+// Every /api/* request on a Cloudflare Pages copy of the site goes to the same handlers as the Worker (server/api.js).
+// The feedback form needs the Worker's send_email binding, so on Pages it answers "not set up".
+import { api } from '../../server/api.js';
+export const onRequest = ({ request, env }) => api(request, env);

@@ -1,7 +1,8 @@
 """Serve site/ locally with the headers from site/_headers, the way Cloudflare Pages applies them.
 Usage: python scripts/serve_site.py [port]   (then open http://localhost:PORT/, or run the browser tests with
 LONEPAIR_URL=http://localhost:PORT/ python -m pytest tests/e2e)"""
-import http.server, pathlib, sys
+import http.server, json, pathlib, sys
+SENT = []
 SITE = pathlib.Path(__file__).resolve().parents[1] / "site"
 
 def parse_headers():
@@ -22,7 +23,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.split("?")[0] == "/api/me":
             body = b'{"available": false, "signedIn": false}'
             self.send_response(200); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        if self.path == "/__feedback":  # test hook: the messages the form sent
+            body = json.dumps(SENT).encode()
+            self.send_response(200); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         super().do_GET()
+    def do_POST(self):
+        # stand-in for server/feedback.js: checks the same things and keeps the message instead of emailing it
+        if self.path == "/api/feedback":
+            n = int(self.headers.get("content-length", 0)); data = json.loads(self.rfile.read(n) or b"{}")
+            ok = self.headers.get("origin") == f"http://{self.headers.get('host')}" and str(data.get("message", "")).strip()
+            if ok and not data.get("website"): SENT.append(data)
+            body = json.dumps({"ok": True} if ok else {"error": "bad request"}).encode()
+            self.send_response(200 if ok else 400); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        self.send_response(404); self.end_headers()
     def end_headers(self):
         path = self.path.split("?")[0]
         for pattern, hs in parse_headers():

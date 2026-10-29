@@ -721,3 +721,28 @@ def test_link_preview_tags(page):
             assert r.ok, f
         assert page.request.get(URL.rstrip("/") + "/og-image.png").body()[:8] == b"\x89PNG\r\n\x1a\n"
         assert page.evaluate("!!document.querySelector('link[rel=apple-touch-icon]')")
+
+
+def test_feedback_form(page):
+    from conftest import URL
+    page.evaluate("tryLoadText('CCO')")
+    page.click("#bFeedback")
+    assert "Send feedback" in page.inner_text("#dialog")
+    page.click("#fbGo")  # empty message: asks for one, sends nothing
+    assert page.is_visible("#fbErr") and "write a message" in page.inner_text("#fbErr")
+    page.fill("#fbMsg", "Love the BDE tool! Could pKa show a range?")
+    page.fill("#fbEmail", "ada@example.com")
+    page.check("#fbDraw")
+    if not URL:  # the downloaded file has no server: it offers email, with the message filled in
+        page.click("#fbGo")
+        link = page.locator("#fbErr a")
+        assert link.inner_text() == "feedback@lonepair.app" and "BDE%20tool" in link.get_attribute("href") and "SMILES%3A%20CCO" in link.get_attribute("href")
+        return
+    page.focus("#fbMsg"); page.keyboard.press("Control+Enter")  # Ctrl+Enter sends
+    page.wait_for_selector("#toast.show"); assert "Thank you" in page.inner_text("#toast")
+    assert not page.is_visible("#fbMsg")
+    sent = page.request.get(URL.rstrip("/") + "/__feedback").json()[-1]
+    assert sent["message"] == "Love the BDE tool! Could pKa show a range?" and sent["email"] == "ada@example.com"
+    assert sent["context"]["smiles"] == "CCO" and sent["website"] == ""
+    page.click("#bFeedback")  # the form starts empty again, and remembers the email
+    assert page.input_value("#fbMsg") == "" and page.input_value("#fbEmail") == "ada@example.com"
