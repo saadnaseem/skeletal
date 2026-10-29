@@ -550,12 +550,14 @@ def test_nmr_solving_guide(page):
     page.click("#bGuide")
     assert "DBE = 5" in page.inner_text("#gcFout")
     # wait for each result to update rather than reading it at once (CI machines are slower)
-    page.fill("#gcF", "C6H6"); wait_until(page, "document.getElementById('gcFout').innerText.includes('DBE = 4')")
-    # Linux CI sometimes types into the number box without the app seeing it, so also fire 'change' (the calculator listens to both)
-    page.fill("#gc13", "88"); page.dispatch_event("#gc13", "change")
-    try: wait_until(page, "document.getElementById('gc13out').innerText.includes('C4H8O2')")
-    except AssertionError: raise AssertionError("Rule of 13 didn't update: " + str(page.evaluate("[document.getElementById('gc13').value, document.getElementById('gc13out').innerText, document.querySelectorAll('#gc13').length]")))
-    page.fill("#gcI", "2, 3"); page.fill("#gcIH", "10"); wait_until(page, "document.getElementById('gcIout').innerText.startsWith('4H : 6H')")
+    # Playwright's fill() on these boxes sometimes leaves the old value on Linux CI, so set each value and fire 'input' directly
+    def put(sel, v): page.evaluate("([s,v])=>{ const e=document.querySelector(s); e.value=v; e.dispatchEvent(new Event('input',{bubbles:true})); }", [sel, v])
+    def expect(expr, what):
+        try: wait_until(page, expr)
+        except AssertionError: raise AssertionError(what + " didn't update: " + str(page.evaluate("['#gcF','#gc13','#gcI','#gcIH','#gcFout','#gc13out','#gcIout'].map(s=>{ const e=document.querySelector(s); return e && (e.value ?? e.innerText); })")))
+    put("#gcF", "C6H6"); expect("document.getElementById('gcFout').innerText.includes('DBE = 4')", "DBE")
+    put("#gc13", "88"); expect("document.getElementById('gc13out').innerText.includes('C4H8O2')", "Rule of 13")
+    put("#gcI", "2, 3"); put("#gcIH", "10"); expect("document.getElementById('gcIout').innerText.startsWith('4H : 6H')", "Integrals")
     for tab in ["h1", "c13", "split", "aro", "methods", "examples", "sources"]:
         page.click(f"[data-gtab={tab}]")
         assert page.locator("#dialog .tabs [aria-pressed=true]").get_attribute("data-gtab") == tab
