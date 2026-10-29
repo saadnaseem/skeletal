@@ -77,6 +77,10 @@ table.fmt td{padding:6px 8px; vertical-align:top}
 .guide-calc input{height:28px; border:1px solid var(--line); background:var(--btn); border-radius:6px; padding:0 6px}
 .guide-ex{border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0}
 .dialog h4{margin:14px 0 6px; font-size:13.5px}
+.avatar{display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--accent); color:var(--accent-ink); font-size:11px; font-weight:700}
+#bAccount svg{width:16px; height:16px}
+.nudge{position:fixed; right:16px; bottom:16px; z-index:25; max-width:340px; background:var(--btn); border:1px solid var(--line); border-radius:10px; padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,.16); font-size:13.5px}
+.nudge p{margin:0 0 10px}
 .menusep{grid-column:1/-1; height:1px; background:var(--line); margin:3px 2px}
 .menunote{grid-column:1/-1; margin:4px 6px 2px; font-size:12px; color:var(--ink-2); max-width:30em; white-space:normal}
 .tb.icon{padding:0; width:34px; justify-content:center}
@@ -250,6 +254,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
     <button class="tb" id="bTlc" title="Insert a TLC plate: lanes, spots, Rf, eluent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M6 6.5h12M6 17.5h12" stroke-width="1.1"/><ellipse cx="9.5" cy="10" rx="1.3" ry=".9" fill="currentColor"/><ellipse cx="14.5" cy="14" rx="1.3" ry=".9" fill="currentColor"/></svg><span class="hide-mobile">TLC</span></button>
     <button class="tb" id="bSmiles" title="Insert from SMILES"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>SMILES</span></button>
     <div class="spacer"></div>
+    <button class="tb" id="bAccount" hidden></button>
     <button class="tb only-mobile" id="bPanel" aria-expanded="false">Analysis</button>
     <button class="tb primary" id="bCopy" title="Copy image for PowerPoint or Word (Ctrl+C)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg><span>Copy image</span></button>
   </header>
@@ -443,6 +448,10 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <button role="menuitem" data-cmd="delete" data-need="sel"><span>Delete</span><kbd>Del</kbd></button>
 </div>
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog"></div></div>
+<div class="nudge" id="signinNudge" hidden data-sk role="dialog" aria-label="Sign in invitation">
+  <p><b>Enjoying Lone Pair?</b> Sign in with Google to hear about new features. It's optional; your drawings stay on your computer.</p>
+  <div class="row"><button class="tb primary" id="nudgeIn">Sign in with Google</button><button class="tb" id="nudgeNo">Not now</button><a class="note" href="/privacy.html" target="_blank" rel="noopener">Privacy</a></div>
+</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script data-sk>var OCL=(()=>{var Yw=Object.defineProperty;var ne1=Object.getOwnPropertyDescriptor;var Pe1=Object.getOwnPropertyNames;var Ae1=Object.prototype.hasOwnProperty;var Vx=(s,_)=>{for(var f1 in _)Yw(s,f1,{get:_[f1],enumerable:!0})},re1=(s,_,f1,S)=>{if(_&&typeof _=="object"||typeof _=="function")for(let S1 of Pe1(_))!Ae1.call(s,S1)&&S1!==f1&&Yw(s,S1,{get:()=>_[S1],enumerable:!(S=ne1(_,S1))||S.enumerable});return s};var ee1=s=>re1(Yw({},"__esModule",{value:!0}),s);var Rt1={};Vx(Rt1,{Canonizer:()=>Ee1,CanonizerUtil:()=>Ge1,CanvasEditor:()=>Ce1,ConformerGenerator:()=>ze1,DrugScoreCalculator:()=>Se1,DruglikenessPredictor:()=>Ie1,ForceFieldMMFF94:()=>Ye1,InChI:()=>Jw,MCS:()=>Xe1,Molecule:()=>We1,MoleculeProperties:()=>Ke1,Reaction:()=>Je1,ReactionEncoder:()=>Ze1,Reactor:()=>_e1,Resources:()=>$e1,RingCollection:()=>nt1,SDFileParser:()=>Pt1,SSSearcher:()=>At1,SSSearcherWithIndex:()=>rt1,SmilesParser:()=>et1,ToxicityPredictor:()=>tt1,Transformer:()=>it1,Util:()=>Dt1,registerCustomElement:()=>qe1,version:()=>at1});var N4={},te1=class{copyMolecule(s){let _=s.getIDCodeAndCoordinates();navigator.clipboard.writeText(`${_.idCode} ${_.coordinates}`)}pasteMolecule(){return null}},Nx="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",yU=new Uint8Array(256);for(let s=0;s<Nx.length;s++)yU[Nx.charCodeAt(s)]=s;function ie1(s){let _=s.length*.75,f1=s.length,S,S1=0,Y1,q1,f0,W1;s.at(-1)==="="&&(_--,s.at(-2)==="="&&_--);let i0=new ArrayBuffer(_),g0=new Uint8Array(i0);for(S=0;S<f1;S+=4)Y1=yU[s.charCodeAt(S)],q1=yU[s.charCodeAt(S+1)],f0=yU[s.charCodeAt(S+2)],W1=yU[s.charCodeAt(S+3)],g0[S1++]=Y1<<2|q1>>4,g0[S1++]=(q1&15)<<4|f0>>2,g0[S1++]=(f0&3)<<6|W1&63;return i0}function Xw(s){return s.toString(16).padStart(2,"0")}var nf=globalThis.devicePixelRatio||1,Gx=class{constructor(s){this.ctx=s,this.ctx.textAlign="left",this.ctx.textBaseline="top",this.currentFontSize=12,this.currentFont="12px sans-serif",this.ctx.font=this.currentFont,this.currentColor="#000000",this.currentLineWidth=1,this.canvasCache=new Map}clearRect(s,_,f1,S){this.ctx.clearRect(s,_,f1,S)}getBackgroundRGB(){return 16777215}getForegroundRGB(){return 0}getSelectionBackgroundRGB(){return 12310268}getLineWidth(){return this.currentLineWidth}setRGB(s){let _=s>>>16&255,f1=s>>>8&255,S=s>>>0&255;this.currentColor=`#${Xw(_)}${Xw(f1)}${Xw(S)}`,this.ctx.fillStyle=this.currentColor,this.ctx.strokeStyle=this.currentColor}setFont(s,_,f1){this.currentFontSize=s,this.currentFont=`${_?"bold":""} ${f1?"italic":""} ${s}px sans-serif`,this.ctx.font=this.currentFont}getFontSize(){return this.currentFontSize}getBounds(s){let _=this.ctx.measureText(s);return{x:_.actualBoundingBoxLeft,y:_.actualBoundingBoxAscent,width:_.actualBoundingBoxRight,height:_.actualBoundingBoxAscent}}drawString(s,_,f1){this.ctx.fillText(f1,s,_)}drawCenteredString(s,_,f1){this.ctx.textAlign="center",this.ctx.textBaseline="middle",this.ctx.fillText(f1,s,_),this.ctx.textAlign="left",this.ctx.textBaseline="top"}setLineWidth(s){this.currentLineWidth=s,this.ctx.lineWidth=s}fillRectangle(s,_,f1,S){this.ctx.fillRect(s,_,f1,S)}fillCircle(s,_,f1){let S=f1/2;this.ctx.beginPath(),this.ctx.arc(s+S,_+S,S,0,2*Math.PI),this.ctx.fill()}drawLine(s,_,f1,S){this.ctx.beginPath(),this.ctx.moveTo(s,_),this.ctx.lineTo(f1,S),this.ctx.stroke()}drawPolygon(s){this.ctx.beginPath(),this.ctx.moveTo(s.getX(0),s.getY(0));for(let _=1;_<s.getSize();_++)this.ctx.lineTo(s.getX(_),s.getY(_));this.ctx.stroke()}drawRectangle(s,_,f1,S){this.ctx.strokeRect(s,_,f1,S)}fillPolygon(s){this.ctx.beginPath(),this.ctx.moveTo(s.getX(0),s.getY(0));for(let _=1;_<s.getSize();_++)this.ctx.lineTo(s.getX(_),s.getY(_));this.ctx.fill()}drawImage(s,_,f1,S,S1,Y1,q1,f0,W1){if(arguments.length!==9)throw new Error(`drawImage call with ${arguments.length} arguments unimplemented`);let i0=this.canvasCache.get(s);if(!i0){i0=document.createElement("canvas");let g0=s.imageData;i0.width=g0.width,i0.height=g0.height;let Y0=i0.getContext("2d");Y0.globalAlpha=0,Y0.putImageData(g0,0,0),this.canvasCache.set(s,i0)}this.ctx.drawImage(i0,_,f1,S,S1,Y1,q1,f0,W1)}isDarkBackground(){return!1}},De1=class{constructor(s,_){this.canvasElement=s,this.changeListener=_,this.drawContext=new Gx(this.canvasElement.getContext("2d"))}getBackgroundRGB(){return 16777215}getCanvasWidth(){return this.canvasElement.width}getCanvasHeight(){return this.canvasElement.height}getDrawContext(){return this.drawContext}onChange(s,_){this.changeListener?.({what:s,isUserEvent:_})}getClipboardHandler(){return new te1}},ae1=`
 /* We can customize editor styles here. */
@@ -3018,6 +3027,8 @@ function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); co
 let _saveT=null;
 let _saveWarned=false;
 const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
+// write the autosave now (before leaving the page, e.g. to sign in)
+function saveNow(){ clearTimeout(_saveT); try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){} }
 function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } }),400); }
 
 /* ================= model edits ================= */
@@ -4649,7 +4660,10 @@ document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) &
 $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
-$('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile(); $('#bSaveNew').onclick=()=>saveProject(true);
+$('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
+$('#bAccount').onclick=()=>openAccountMenu();
+$('#nudgeIn').onclick=()=>{ $('#signinNudge').hidden=true; signIn(); }; $('#nudgeNo').onclick=()=>{ $('#signinNudge').hidden=true; };
+initAccount(); $('#bSaveNew').onclick=()=>saveProject(true);
 $('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
 $('#bNew').onclick=()=>{
@@ -4772,6 +4786,47 @@ function saveHtml(){
   let html; try{ html=buildProjectHtml(); }catch(e){ console.warn(e); toast('Could not build the HTML file here; saving JSON instead'); saveDrawing(); return; }
   saveFile(fileBase()+'.html', html);
 }
+/* ================= optional Google sign-in (hosted site only) =================
+   The server (functions/, server/auth.js) answers /api/me only on lonepair.app; saved copies and plain static hosts
+   get no answer, so the Sign in button never appears there. Signing in is never required to use the editor. */
+let account=null, accountAvailable=false;
+const NUDGE_KEY='skeletal.signinNudge';
+async function initAccount(){
+  // only the Cloudflare build (npm run build:pages) carries this marker; downloaded and saved copies never call the server
+  if (!/^https?:$/.test(location.protocol) || !document.querySelector('meta[name="lp-api"]')) return;
+  let j=null; try{ const r=await fetch('/api/me',{credentials:'same-origin', headers:{accept:'application/json'}}); if (r.ok && (r.headers.get('content-type')||'').includes('json')) j=await r.json(); }catch(e){}
+  if (!j || !j.available) return;
+  accountAvailable=true; account=j.signedIn? j.user : null; syncAccountUI();
+  const q=new URLSearchParams(location.search), st=q.get('signin');
+  if (st){ q.delete('signin'); history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);
+    const msg={ok: account? `Signed in as ${account.name}` : 'Signed in', cancelled:'Sign-in cancelled', failed:'Sign-in didn\u2019t work. Please try again.', unavailable:'Sign-in isn\u2019t available right now'}[st]; if (msg) toast(msg); }
+  if (!account) setTimeout(maybeNudge, 4*60*1000);
+}
+function signIn(){ saveNow(); location.href='/api/auth/google'; }
+function syncAccountUI(){
+  const b=$('#bAccount'); b.hidden=!accountAvailable;
+  if (!accountAvailable) return;
+  if (account){ const ini=(account.name||account.email||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    b.innerHTML=`<span class="avatar" aria-hidden="true">${esc(ini)}</span><span class="hide-mobile">${esc((account.name||'').split(' ')[0]||'Account')}</span>`; b.title=`Signed in as ${account.email}`; }
+  else { b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 01-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 010-4.4V7H2.1a11 11 0 000 10l3.7-2.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 002.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg><span class="hide-mobile">Sign in with Google</span>`; b.title='Sign in with Google (optional)'; }
+}
+function openAccountMenu(){
+  if (!account){ signIn(); return; }
+  openDialog(`<h3>${esc(account.name)}</h3><p>${esc(account.email)}</p>
+    <p class="note">Lone Pair keeps your name, email and when you visit. Your drawings stay on your computer. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
+    <div class="actions" style="justify-content:space-between"><button class="tb" id="acDel">Delete my account</button><span><button class="tb" id="acOut">Sign out</button> <button class="tb primary" data-close>Done</button></span></div>`);
+  $('#acOut').onclick=async()=>{ try{ await fetch('/api/auth/logout',{method:'POST', credentials:'same-origin'}); }catch(e){} account=null; closeDialog(); syncAccountUI(); toast('Signed out'); };
+  $('#acDel').onclick=()=>{ openDialog(`<h3>Delete your account?</h3><p>This removes your name and email from Lone Pair. Your drawings aren\u2019t affected: they\u2019re on your computer.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="acDelGo">Delete account</button></div>`);
+    $('#acDelGo').onclick=async()=>{ let ok=false; try{ ok=(await fetch('/api/account/delete',{method:'POST', credentials:'same-origin'})).ok; }catch(e){}
+      closeDialog(); if (ok){ account=null; syncAccountUI(); toast('Your account was deleted'); } else toast('Couldn\u2019t delete the account. Please try again.'); }; };
+}
+// one gentle, dismissible invitation after a few minutes of use; never blocks the editor
+function maybeNudge(){
+  if (account || !accountAvailable || $('#modal').classList.contains('open')) return;
+  try{ const t=+localStorage.getItem(NUDGE_KEY)||0; if (Date.now()-t < 14*864e5) return; localStorage.setItem(NUDGE_KEY, String(Date.now())); }catch(e){ return; }
+  const n=$('#signinNudge'); n.hidden=false;
+}
+
 /* ================= the project file on disk =================
    Chrome and Edge let a page keep a handle to a file, so Save writes back to the file the user saved or opened.
    Other browsers (and sandboxed frames) fall back to downloading a copy and the ordinary file chooser. */

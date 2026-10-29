@@ -551,7 +551,10 @@ def test_nmr_solving_guide(page):
     assert "DBE = 5" in page.inner_text("#gcFout")
     # wait for each result to update rather than reading it at once (CI machines are slower)
     page.fill("#gcF", "C6H6"); wait_until(page, "document.getElementById('gcFout').innerText.includes('DBE = 4')")
-    page.fill("#gc13", "88"); wait_until(page, "document.getElementById('gc13out').innerText.includes('C4H8O2')")
+    # Linux CI sometimes types into the number box without the app seeing it, so also fire 'change' (the calculator listens to both)
+    page.fill("#gc13", "88"); page.dispatch_event("#gc13", "change")
+    try: wait_until(page, "document.getElementById('gc13out').innerText.includes('C4H8O2')")
+    except AssertionError: raise AssertionError("Rule of 13 didn't update: " + str(page.evaluate("[document.getElementById('gc13').value, document.getElementById('gc13out').innerText, document.querySelectorAll('#gc13').length]")))
     page.fill("#gcI", "2, 3"); page.fill("#gcIH", "10"); wait_until(page, "document.getElementById('gcIout').innerText.startsWith('4H : 6H')")
     for tab in ["h1", "c13", "split", "aro", "methods", "examples", "sources"]:
         page.click(f"[data-gtab={tab}]")

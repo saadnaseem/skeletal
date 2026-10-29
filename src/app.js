@@ -23,6 +23,8 @@ function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); co
 let _saveT=null;
 let _saveWarned=false;
 const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
+// write the autosave now (before leaving the page, e.g. to sign in)
+function saveNow(){ clearTimeout(_saveT); try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){} }
 function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } }),400); }
 
 /* ================= model edits ================= */
@@ -1654,7 +1656,10 @@ document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) &
 $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
-$('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile(); $('#bSaveNew').onclick=()=>saveProject(true);
+$('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
+$('#bAccount').onclick=()=>openAccountMenu();
+$('#nudgeIn').onclick=()=>{ $('#signinNudge').hidden=true; signIn(); }; $('#nudgeNo').onclick=()=>{ $('#signinNudge').hidden=true; };
+initAccount(); $('#bSaveNew').onclick=()=>saveProject(true);
 $('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
 $('#bNew').onclick=()=>{
@@ -1777,6 +1782,47 @@ function saveHtml(){
   let html; try{ html=buildProjectHtml(); }catch(e){ console.warn(e); toast('Could not build the HTML file here; saving JSON instead'); saveDrawing(); return; }
   saveFile(fileBase()+'.html', html);
 }
+/* ================= optional Google sign-in (hosted site only) =================
+   The server (functions/, server/auth.js) answers /api/me only on lonepair.app; saved copies and plain static hosts
+   get no answer, so the Sign in button never appears there. Signing in is never required to use the editor. */
+let account=null, accountAvailable=false;
+const NUDGE_KEY='skeletal.signinNudge';
+async function initAccount(){
+  // only the Cloudflare build (npm run build:pages) carries this marker; downloaded and saved copies never call the server
+  if (!/^https?:$/.test(location.protocol) || !document.querySelector('meta[name="lp-api"]')) return;
+  let j=null; try{ const r=await fetch('/api/me',{credentials:'same-origin', headers:{accept:'application/json'}}); if (r.ok && (r.headers.get('content-type')||'').includes('json')) j=await r.json(); }catch(e){}
+  if (!j || !j.available) return;
+  accountAvailable=true; account=j.signedIn? j.user : null; syncAccountUI();
+  const q=new URLSearchParams(location.search), st=q.get('signin');
+  if (st){ q.delete('signin'); history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);
+    const msg={ok: account? `Signed in as ${account.name}` : 'Signed in', cancelled:'Sign-in cancelled', failed:'Sign-in didn\u2019t work. Please try again.', unavailable:'Sign-in isn\u2019t available right now'}[st]; if (msg) toast(msg); }
+  if (!account) setTimeout(maybeNudge, 4*60*1000);
+}
+function signIn(){ saveNow(); location.href='/api/auth/google'; }
+function syncAccountUI(){
+  const b=$('#bAccount'); b.hidden=!accountAvailable;
+  if (!accountAvailable) return;
+  if (account){ const ini=(account.name||account.email||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    b.innerHTML=`<span class="avatar" aria-hidden="true">${esc(ini)}</span><span class="hide-mobile">${esc((account.name||'').split(' ')[0]||'Account')}</span>`; b.title=`Signed in as ${account.email}`; }
+  else { b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 01-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 010-4.4V7H2.1a11 11 0 000 10l3.7-2.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 002.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg><span class="hide-mobile">Sign in with Google</span>`; b.title='Sign in with Google (optional)'; }
+}
+function openAccountMenu(){
+  if (!account){ signIn(); return; }
+  openDialog(`<h3>${esc(account.name)}</h3><p>${esc(account.email)}</p>
+    <p class="note">Lone Pair keeps your name, email and when you visit. Your drawings stay on your computer. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
+    <div class="actions" style="justify-content:space-between"><button class="tb" id="acDel">Delete my account</button><span><button class="tb" id="acOut">Sign out</button> <button class="tb primary" data-close>Done</button></span></div>`);
+  $('#acOut').onclick=async()=>{ try{ await fetch('/api/auth/logout',{method:'POST', credentials:'same-origin'}); }catch(e){} account=null; closeDialog(); syncAccountUI(); toast('Signed out'); };
+  $('#acDel').onclick=()=>{ openDialog(`<h3>Delete your account?</h3><p>This removes your name and email from Lone Pair. Your drawings aren\u2019t affected: they\u2019re on your computer.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="acDelGo">Delete account</button></div>`);
+    $('#acDelGo').onclick=async()=>{ let ok=false; try{ ok=(await fetch('/api/account/delete',{method:'POST', credentials:'same-origin'})).ok; }catch(e){}
+      closeDialog(); if (ok){ account=null; syncAccountUI(); toast('Your account was deleted'); } else toast('Couldn\u2019t delete the account. Please try again.'); }; };
+}
+// one gentle, dismissible invitation after a few minutes of use; never blocks the editor
+function maybeNudge(){
+  if (account || !accountAvailable || $('#modal').classList.contains('open')) return;
+  try{ const t=+localStorage.getItem(NUDGE_KEY)||0; if (Date.now()-t < 14*864e5) return; localStorage.setItem(NUDGE_KEY, String(Date.now())); }catch(e){ return; }
+  const n=$('#signinNudge'); n.hidden=false;
+}
+
 /* ================= the project file on disk =================
    Chrome and Edge let a page keep a handle to a file, so Save writes back to the file the user saved or opened.
    Other browsers (and sandboxed frames) fall back to downloading a copy and the ordinary file chooser. */
