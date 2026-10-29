@@ -376,7 +376,7 @@ function onPointerMove(e){
   if (drag.mode==='pan'){ view.ox=drag.ox+(e.clientX-drag.sx); view.oy=drag.oy+(e.clientY-drag.sy); render(); return; }
   const p=toDoc(e);
   if (!drag.moved && Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>(drag.ptype==='touch'?8:4)) drag.moved=true;
-  drag.alt=e.altKey; drag.cur=p;
+  drag.alt=e.altKey; drag.shiftNow=e.shiftKey; drag.cur=p;
   if (drag.moved) moveTool(drag,p);
   drag.last=p;
 }
@@ -495,10 +495,14 @@ function moveTool(d,p){
   if (id==='arrow'){
     let e=p; const curved=CURVED.has(tool.arrow);
     if (!curved && !d.alt){ const v=sub(p,d.start); e=add(d.start,mul(snapAngle(v),len(v))); }
-    preview={arrow:{type:tool.arrow,x1:d.start.x,y1:d.start.y,x2:e.x,y2:e.y}}; render(); return;
+    const r={type:tool.arrow,x1:d.start.x,y1:d.start.y,x2:e.x,y2:e.y}; if (curved) bendArrow(r, curlyCCW(d));
+    preview={arrow:r}; render(); return;
   }
   if (id==='ring' || id==='text' || id==='plus' || id==='charge'){ if (id==='plus'||id==='text'){ /* nothing */ } return; }
 }
+// curved arrows bend clockwise or counter-clockwise (as seen going from tail to head); Shift while drawing flips it
+const curlyCCW=d=>!!tool.ccw !== !!(d.shiftNow ?? d.shift);
+function bendArrow(r, ccw){ const P1=V(r.x1,r.y1), P2=V(r.x2,r.y2), c=add(mul(add(P1,P2),0.5), mul(perp(norm(sub(P2,P1))), (ccw?1:-1)*dist(P1,P2)*0.35)); r.cx=c.x; r.cy=c.y; }
 function endTool(d,p){
   const id=tool.id, h=d.hit;
   if (id==='select'){
@@ -595,7 +599,7 @@ function endTool(d,p){
     let e=p; if (!curved && !d.alt){ const v=sub(p,d.start); e=add(d.start,mul(snapAngle(v),len(v))); }
     if (dist(e,d.start)<4) return;
     pushUndo(); const r={id:nid(),type:tool.arrow,x1:d.start.x,y1:d.start.y,x2:e.x,y2:e.y};
-    if (curved){ const c=arrowControl(r); r.cx=c.x; r.cy=c.y; }
+    if (curved) bendArrow(r, curlyCCW(d));
     doc.arrows.push(r);
     return;
   }
@@ -1619,8 +1623,10 @@ const TOOLS = [
     {id:'arrow', o:{arrow:'resonance'}, t:'Resonance arrow', i:ic('<path d="M7 12h10"/><path d="M2.5 12L8 8.8v6.4zM21.5 12L16 8.8v6.4z" fill="currentColor"/>')},
     {id:'arrow', o:{arrow:'dashed'}, t:'Dashed arrow', i:ic('<path d="M3 12h2.5M8 12h2.5M13 12h2.5"/><path d="M21 12l-6-3.5v7z" fill="currentColor"/>')},
     {id:'arrow', o:{arrow:'nogo'}, t:'Failed reaction arrow', i:ic('<path d="M3 12h14M8 8.5l4 7M12 8.5l-4 7"/><path d="M21 12l-6-3.5v7z" fill="currentColor"/>')},
-    {id:'arrow', o:{arrow:'curly'}, t:'Curved arrow (electron pair). Drag from start to end', i:ic('<path d="M4 17C5 7 14 5 18 11"/><path d="M20 15.5l-5.5-2.6 5-3.6z" fill="currentColor"/>')},
-    {id:'arrow', o:{arrow:'fishhook'}, t:'Fishhook arrow (single electron)', i:ic('<path d="M4 17C5 7 14 5 18 11"/><path d="M20 15l-6-1.6 4.2-2.4z" fill="currentColor"/>')},
+    {id:'arrow', o:{arrow:'curly', ccw:false}, t:'Curved arrow (electron pair), clockwise. Drag from start to end; Shift flips the bend', i:ic('<path d="M4 17C5 7 14 5 18 11"/><path d="M20 15.5l-5.5-2.6 5-3.6z" fill="currentColor"/>')},
+    {id:'arrow', o:{arrow:'curly', ccw:true}, t:'Curved arrow (electron pair), counter-clockwise. Drag from start to end; Shift flips the bend', i:ic('<path d="M20 17C19 7 10 5 6 11"/><path d="M4 15.5l5.5-2.6-5-3.6z" fill="currentColor"/>')},
+    {id:'arrow', o:{arrow:'fishhook', ccw:false}, t:'Fishhook arrow (single electron), clockwise. Shift flips the bend', i:ic('<path d="M4 17C5 7 14 5 18 11"/><path d="M20 15l-6-1.6 4.2-2.4z" fill="currentColor"/>')},
+    {id:'arrow', o:{arrow:'fishhook', ccw:true}, t:'Fishhook arrow (single electron), counter-clockwise. Shift flips the bend', i:ic('<path d="M20 17C19 7 10 5 6 11"/><path d="M4 15l6-1.6-4.2-2.4z" fill="currentColor"/>')},
   ]},
 ];
 function renderTools(){

@@ -19,7 +19,7 @@ def smiles(page):
 
 
 def test_loads_cleanly(page):
-    assert page.locator("#tools .tool").count() == 44
+    assert page.locator("#tools .tool").count() == 46
     assert page.locator("#empty").is_visible()
 
 
@@ -188,6 +188,24 @@ def test_clear_button_wipes_the_page_and_undo_brings_it_back(page):
     assert "Ctrl+Z" in page.inner_text("#toast")
     page.keyboard.press("Control+z")
     assert page.evaluate("doc.atoms.length + doc.arrows.length") == n
+
+
+def test_curly_arrows_bend_either_way(page):
+    box = page.locator("#cv").bounding_box()
+    def draw(tool_title, y, shift=False):
+        page.click(f"#tools .tool[title^='{tool_title}']")
+        x0, x1, yy = box["x"] + 300, box["x"] + 500, box["y"] + y
+        if shift: page.keyboard.down("Shift")
+        page.mouse.move(x0, yy); page.mouse.down(); page.mouse.move(x0 + 100, yy, steps=3); page.mouse.move(x1, yy, steps=3); page.mouse.up()
+        if shift: page.keyboard.up("Shift")
+        # which side the control point is on, seen from tail to head: on screen y grows downward, so "up" is clockwise
+        return page.evaluate("(()=>{ const r=doc.arrows[doc.arrows.length-1]; return [r.type, Math.sign((r.x2-r.x1)*(r.cy-r.y1)-(r.y2-r.y1)*(r.cx-r.x1))]; })()")
+    assert draw("Curved arrow (electron pair), clockwise", 150) == ["curly", -1]
+    assert draw("Curved arrow (electron pair), counter-clockwise", 250) == ["curly", 1]
+    assert draw("Fishhook arrow (single electron), counter-clockwise", 350) == ["fishhook", 1]
+    assert draw("Fishhook arrow (single electron), clockwise", 450) == ["fishhook", -1]
+    assert draw("Curved arrow (electron pair), clockwise", 550, shift=True) == ["curly", 1]  # Shift flips the bend
+    assert page.locator("#tools .tool[aria-pressed=true]").get_attribute("title").startswith("Curved arrow (electron pair), clockwise")
 
 def test_large_structure_renders_quickly(page):
     ms = page.evaluate("""()=>{ tryLoadText('C'.repeat(1)+'CC(C)'.repeat(60)+'c1ccc2ccccc2c1'); const t=performance.now(); for (let i=0;i<10;i++) render(); return (performance.now()-t)/10; }""")
