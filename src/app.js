@@ -1769,7 +1769,7 @@ $('#bSmiles').onclick=openSmilesDialog;
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
-$('#bAccount').onclick=()=>openAccountMenu();
+$('#bAccount').onclick=()=>openAccountMenu(); $('#bFeedback').onclick=openFeedback;
 $('#nudgeIn').onclick=()=>{ $('#signinNudge').hidden=true; signIn(); }; $('#nudgeNo').onclick=()=>{ $('#signinNudge').hidden=true; };
 initAccount(); $('#bSaveNew').onclick=()=>saveProject(true);
 $('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
@@ -1913,6 +1913,45 @@ async function initAccount(){
   if (!account) setTimeout(maybeNudge, 4*60*1000);
 }
 function signIn(){ saveNow(); location.href='/api/auth/google'; }
+
+/* ================= feedback ================= */
+// The hosted site emails the message to the owner (server/feedback.js); a downloaded copy has no server, so it offers email instead.
+const FEEDBACK_MAIL='feedback@lonepair.app';
+const canPost=()=>/^https?:$/.test(location.protocol) && !!document.querySelector('meta[name="lp-api"]');
+let _fbDraft={message:'', email:''};
+function openFeedback(){
+  let saved=''; try{ saved=localStorage.getItem('lonepair.fbEmail')||''; }catch(e){}
+  const hasDrawing=hasContent(doc);
+  openDialog(`<div class="fb"><h3>Send feedback</h3><p>Found a bug, missing a feature, or just want to say hi? It goes straight to the person who builds Lone Pair.</p>
+    <textarea id="fbMsg" maxlength="5000" placeholder="What\u2019s on your mind?" aria-label="Message">${esc(_fbDraft.message)}</textarea>
+    <input type="email" id="fbEmail" maxlength="254" placeholder="Your email (optional, if you\u2019d like a reply)" aria-label="Your email (optional)" value="${esc(_fbDraft.email||saved)}">
+    ${hasDrawing? '<label class="chk"><input type="checkbox" id="fbDraw"> Include my current drawing (as SMILES), to show what I mean</label>' : ''}
+    <div class="hp" aria-hidden="true"><label>Website <input id="fbWeb" tabindex="-1" autocomplete="off"></label></div>
+    <div class="err" id="fbErr" hidden></div>
+    <div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="fbGo">Send</button></div></div>`);
+  const keep=()=>{ _fbDraft={message:$('#fbMsg').value, email:$('#fbEmail').value}; };
+  $('#fbMsg').addEventListener('input',keep); $('#fbEmail').addEventListener('input',keep);
+  $('#fbMsg').addEventListener('keydown',e=>{ if (e.key==='Enter' && (e.ctrlKey||e.metaKey)){ e.preventDefault(); sendFeedback(); } });
+  $('#fbGo').onclick=sendFeedback;
+}
+function feedbackError(html){ const e=$('#fbErr'); e.innerHTML=html; e.hidden=false; }
+function mailtoFeedback(msg){ return `mailto:${FEEDBACK_MAIL}?subject=${encodeURIComponent('Lone Pair feedback')}&body=${encodeURIComponent(msg)}`; }
+async function sendFeedback(){
+  const message=$('#fbMsg').value.trim(), email=$('#fbEmail').value.trim(), go=$('#fbGo');
+  if (!message){ feedbackError('Please write a message first.'); $('#fbMsg').focus(); return; }
+  if (email && !$('#fbEmail').checkValidity()){ feedbackError('That email address doesn\u2019t look right.'); $('#fbEmail').focus(); return; }
+  let smiles=''; if ($('#fbDraw') && $('#fbDraw').checked){ try{ const {ids}=lookupIds(); const r=ids.length && analysisFor(ids); if (r) smiles=r.smiles; }catch(e){} }
+  if (!canPost()){ feedbackError(`This copy of Lone Pair isn\u2019t connected to the website, so please email it instead: <a href="${esc(mailtoFeedback(message+(smiles?'\n\nSMILES: '+smiles:'')))}">${FEEDBACK_MAIL}</a>`); return; }
+  go.disabled=true; go.textContent='Sending\u2026';
+  let r=null, j=null;
+  try{ r=await fetch('/api/feedback',{method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'},
+      body:JSON.stringify({message, email, website:$('#fbWeb').value, context:{smiles, page:location.pathname}})});
+    j=await r.json().catch(()=>null); }catch(e){}
+  if (r && r.ok){ try{ if (email) localStorage.setItem('lonepair.fbEmail', email); }catch(e){} _fbDraft={message:'', email:''}; closeDialog(); toast('Thank you! Your feedback was sent.'); return; }
+  go.disabled=false; go.textContent='Send';
+  const why = j && j.error && r && r.status!==503 && r.status<500 ? esc(j.error)+'. ' : 'It didn\u2019t go through. ';
+  feedbackError(`${why}You can also email it: <a href="${esc(mailtoFeedback(message))}">${FEEDBACK_MAIL}</a>`);
+}
 function syncAccountUI(){
   const b=$('#bAccount'); b.hidden=!accountAvailable;
   if (!accountAvailable) return;

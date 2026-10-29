@@ -1,9 +1,17 @@
 # Workers Builds runs `npm run build:pages`, then `npx wrangler deploy`.
-# This file publishes the static site only. The accounts database lives in
-# wrangler.local.toml so a placeholder id is never sent on deploy.
+# Cloudflare serves site/ as static files and runs worker/index.js only for /api/* (feedback form, optional sign-in).
+# The accounts database lives in wrangler.local.toml so a placeholder id is never sent on deploy.
 # Sign-in stays hidden until that database exists (docs/DEPLOY.md).
 name = "lone-pair"
+main = "worker/index.js"
 compatibility_date = "2026-09-01"
+keep_vars = true # keep variables set in the dashboard when a new version deploys
 
 [assets]
 directory = "./site"
+binding = "ASSETS"
+
+# Feedback form: sends through Email Routing on lonepair.app to the secret FEEDBACK_TO, a verified destination address.
+# Set it once: Workers & Pages -> lone-pair -> Settings -> Variables and Secrets -> Add, type Secret (docs/DEPLOY.md).
+[[send_email]]
+name = "FEEDBACK"

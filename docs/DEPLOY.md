@@ -137,6 +137,18 @@ Wrangler needs Node 22. Check with `node --version`.
 
 **e. Set up the privacy contact.** The privacy page lists `privacy@lonepair.app`. Create it for free under **lonepair.app → Email → Email Routing**, forwarding to your Gmail.
 
+## 6½. Turn on the Feedback form (5 minutes)
+
+The **Feedback** button in the app emails each message to you. It sends through Email Routing on lonepair.app, so Email Routing must be on, with your inbox as a **verified destination address** (you did this for `privacy@lonepair.app`).
+
+1. In Cloudflare, open **Workers & Pages → lone-pair → Settings → Variables and Secrets → Add**.
+2. Type **Secret**, name `FEEDBACK_TO`, value your verified inbox (for example your Gmail). Choose **Deploy**.
+   It is a secret so your address never appears in the public GitHub repo.
+3. Optional, for people using a downloaded copy (which can't reach the server, so it offers email instead): under **lonepair.app → Email → Email Routing → Routing rules**, add `feedback@lonepair.app` → your inbox.
+4. Test it: open https://lonepair.app, click **Feedback**, send "test". It should arrive within a minute from *Lone Pair feedback &lt;feedback@lonepair.app&gt;*; check Spam the first time and mark it "Not spam". Reply goes to the sender's email, if they gave one.
+
+Until `FEEDBACK_TO` is set, the form says it couldn't send and offers `feedback@lonepair.app` instead.
+
 ## 7. See who signed up
 
 All sign-ins:
