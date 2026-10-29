@@ -706,3 +706,18 @@ def test_save_without_file_access_downloads_a_copy(page):
         page.keyboard.press("Control+s")
     assert dl.value.suggested_filename.endswith(".html")
     assert page.is_hidden("#bSaveNew")
+
+
+def test_link_preview_tags(page):
+    # what Slack, iMessage, LinkedIn, X and WhatsApp show when someone pastes the link
+    meta = page.evaluate("Object.fromEntries([...document.querySelectorAll('meta[property^=\"og:\"],meta[name^=\"twitter:\"]')].map(m=>[m.getAttribute('property')||m.name, m.content]))")
+    assert meta["og:site_name"] == "Lone Pair" and meta["og:title"].startswith("Lone Pair")
+    assert meta["og:image"] == "https://lonepair.app/og-image.png" and meta["og:image:width"] == "1200" and meta["og:image:height"] == "630"
+    assert meta["twitter:card"] == "summary_large_image" and meta["twitter:image"] == meta["og:image"]
+    from conftest import URL
+    if URL:  # the hosted build serves the image and icons it points to
+        for f in ["og-image.png", "apple-touch-icon.png", "favicon-32.png", "icon-192.png", "icon-512.png", "site.webmanifest"]:
+            r = page.request.get(URL.rstrip("/") + "/" + f)
+            assert r.ok, f
+        assert page.request.get(URL.rstrip("/") + "/og-image.png").body()[:8] == b"\x89PNG\r\n\x1a\n"
+        assert page.evaluate("!!document.querySelector('link[rel=apple-touch-icon]')")
