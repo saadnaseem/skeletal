@@ -1,4 +1,4 @@
-"""Draws the link-preview card and app icons in assets/ from the Lone Pair logo (the nitrogen with its lone pair).
+"""Draws the link-preview card and app icons in assets/ from the Lone Pair logo (pyridine, its nitrogen's lone pair in blue).
 Run after changing the logo: python scripts/make_brand_images.py (needs Playwright: pip install -r requirements-dev.txt).
 build_pages.mjs copies the PNGs into site/."""
 import pathlib
@@ -7,9 +7,9 @@ from playwright.sync_api import sync_playwright
 OUT = pathlib.Path(__file__).resolve().parents[1] / "assets"
 INK, ACCENT, SOFT = "#18212b", "#2459a8", "#56626f"
 # the logo in a 32-unit box, as in the favicon (src/shell.html)
-MARK = f'''<path d="M3.5 27L9.6 23.8M22.4 23.8L28.5 27" fill="none" stroke="{INK}" stroke-width="2.8" stroke-linecap="round"/>
-<text x="16" y="24.6" text-anchor="middle" font-size="13" font-weight="700" fill="{INK}" font-family="Arial, Helvetica, sans-serif">N</text>
-<circle cx="13.3" cy="10.6" r="2.2" fill="{ACCENT}"/><circle cx="18.7" cy="10.6" r="2.2" fill="{ACCENT}"/>'''
+MARK = f'''<path d="M20.2 10.8L24.7 13.4L24.7 23.4L16 28.4L7.3 23.4L7.3 13.4L11.8 10.8M19.2 13L21.2 14.2M21.2 22.6L17 25M9.8 20.8L9.8 16" fill="none" stroke="{INK}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="16" y="11.5" text-anchor="middle" font-size="8.6" font-weight="700" fill="{INK}" font-family="Arial, Helvetica, sans-serif">N</text>
+<circle cx="14" cy="3" r="1.5" fill="{ACCENT}"/><circle cx="18" cy="3" r="1.5" fill="{ACCENT}"/>'''
 
 
 def icon(size, radius):

@@ -4,7 +4,7 @@
 <meta charset="utf-8" data-sk>
 <meta data-sk name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title data-sk>Lone Pair</title>
-<link data-sk rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23ffffff%22/%3E%3Cpath%20d%3D%22M3.5%2027L9.6%2023.8M22.4%2023.8L28.5%2027%22%20fill%3D%22none%22%20stroke%3D%22%2318212b%22%20stroke-width%3D%222.8%22%20stroke-linecap%3D%22round%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2224.6%22%20text-anchor%3D%22middle%22%20font-size%3D%2213%22%20font-weight%3D%22700%22%20fill%3D%22%2318212b%22%20font-family%3D%22Arial%2C%20Helvetica%2C%20sans-serif%22%3EN%3C/text%3E%3Ccircle%20cx%3D%2213.3%22%20cy%3D%2210.6%22%20r%3D%222.2%22%20fill%3D%22%232459a8%22/%3E%3Ccircle%20cx%3D%2218.7%22%20cy%3D%2210.6%22%20r%3D%222.2%22%20fill%3D%22%232459a8%22/%3E%3C/svg%3E">
+<link data-sk rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23ffffff%22/%3E%3Cpath%20d%3D%22M20.2%2010.8L24.7%2013.4L24.7%2023.4L16%2028.4L7.3%2023.4L7.3%2013.4L11.8%2010.8M19.2%2013L21.2%2014.2M21.2%2022.6L17%2025M9.8%2020.8L9.8%2016%22%20fill%3D%22none%22%20stroke%3D%22%2318212b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3Ctext%20x%3D%2216%22%20y%3D%2211.5%22%20text-anchor%3D%22middle%22%20font-size%3D%228.6%22%20font-weight%3D%22700%22%20fill%3D%22%2318212b%22%20font-family%3D%22Arial%2C%20Helvetica%2C%20sans-serif%22%3EN%3C/text%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%223%22%20r%3D%221.5%22%20fill%3D%22%232459a8%22/%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%223%22%20r%3D%221.5%22%20fill%3D%22%232459a8%22/%3E%3C/svg%3E">
 <meta name="description" content="Lone Pair: draw publication-quality chemical structures and reactions in ACS style, with NMR, mass spec, InChI and ChemDraw-compatible export. Free, in the browser, works offline.">
 <meta property="og:title" content="Lone Pair: chemical structure editor">
 <meta property="og:description" content="Draw molecules, reactions and mechanisms in journal style; export to ChemDraw, PNG, SVG, PDF. NMR and mass spec built in. Free and offline.">
@@ -15,7 +15,7 @@
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Lone Pair logo, a nitrogen with its lone pair, and the words: chemical structure editor for publication-quality figures">
+<meta property="og:image:alt" content="Lone Pair logo, pyridine with the lone pair on its nitrogen, and the words: chemical structure editor for publication-quality figures">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Lone Pair: chemical structure editor">
 <meta name="twitter:description" content="Draw molecules, reactions and mechanisms in journal style; export to ChemDraw, PNG, SVG, PDF. NMR and mass spec built in. Free and offline.">
@@ -58,7 +58,7 @@ button{cursor:pointer}
 #app{height:100%; display:grid; grid-template-columns:auto 1fr 296px; grid-template-rows:auto 1fr; }
 header.top{grid-column:1/-1; display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--chrome); min-width:0}
 .brand{display:flex; align-items:center; gap:8px; font-weight:700; font-size:16px; letter-spacing:-.01em; margin-right:10px; white-space:nowrap}
-.brand svg{width:22px; height:22px}
+.brand svg{width:28px; height:28px; margin:-3px 0}
 .sep{width:1px; align-self:stretch; background:var(--line); margin:2px 6px}
 .tb{display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 10px; border:1px solid var(--line); background:var(--btn); border-radius:7px; white-space:nowrap}
 .tb:hover{background:var(--btn-hover)}
@@ -256,7 +256,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
 <body>
 <div id="app">
   <header class="top">
-    <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1.8 20.8L7.3 17.8M16.7 17.8L22.2 20.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><text x="12" y="18.6" text-anchor="middle" font-size="9.5" font-weight="700" fill="currentColor" font-family="Arial, Helvetica, sans-serif">N</text><circle cx="10.1" cy="8.4" r="1.6" fill="var(--accent)"/><circle cx="13.9" cy="8.4" r="1.6" fill="var(--accent)"/></svg><span>Lone Pair</span></div>
+    <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M20.2 10.8L24.7 13.4L24.7 23.4L16 28.4L7.3 23.4L7.3 13.4L11.8 10.8M19.2 13L21.2 14.2M21.2 22.6L17 25M9.8 20.8L9.8 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="16" y="11.5" text-anchor="middle" font-size="8.6" font-weight="700" fill="currentColor" font-family="Arial, Helvetica, sans-serif">N</text><circle cx="14" cy="3" r="1.5" fill="var(--accent)"/><circle cx="18" cy="3" r="1.5" fill="var(--accent)"/></svg><span>Lone Pair</span></div>
     <button class="tb icon" id="bUndo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 010 12h-2" transform="translate(0,-6)"/></svg></button>
     <button class="tb icon" id="bRedo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7l5 5-5 5"/><path d="M20 12H10a6 6 0 000 12h2" transform="translate(0,-6)"/></svg></button>
     <div class="sep"></div>
