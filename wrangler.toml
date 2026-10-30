@@ -1,4 +1,4 @@
-# Workers Builds runs `npm run build:pages`, then `npx wrangler deploy`.
+# Workers Builds runs `npm run build:pages`, then `npx wrangler deploy` on main and `npx wrangler preview` on other branches.
 # Cloudflare serves site/ as static files and runs worker/index.js only for /api/* (feedback form, optional sign-in).
 # The accounts database lives in wrangler.local.toml so a placeholder id is never sent on deploy.
 # Sign-in stays hidden until that database exists (docs/DEPLOY.md).
@@ -14,4 +14,9 @@ binding = "ASSETS"
 # Feedback form: sends through Email Routing on lonepair.app to the secret FEEDBACK_TO, a verified destination address.
 # Set it once: Workers & Pages -> lone-pair -> Settings -> Variables and Secrets -> Add, type Secret (docs/DEPLOY.md).
 [[send_email]]
+name = "FEEDBACK"
+
+# Pull-request previews (`wrangler preview`) need their bindings listed separately. A preview has no FEEDBACK_TO
+# secret unless one is added for previews, so its feedback form answers "not set up" and sends nothing.
+[[previews.send_email]]
 name = "FEEDBACK"
