@@ -149,6 +149,8 @@ The **Feedback** button in the app emails each message to you. It sends through 
 
 Until `FEEDBACK_TO` is set, the form says it couldn't send and offers `feedback@lonepair.app` instead.
 
+Limits: 5 messages per visitor per 10 minutes (IPv6 visitors per /64 block) and 100 per hour for the whole site, counted per server instance. To change the site-wide cap, add a variable `FEEDBACK_GLOBAL_LIMIT` (for example `200`) next to `FEEDBACK_TO`.
+
 ## 7. See who signed up
 
 All sign-ins:

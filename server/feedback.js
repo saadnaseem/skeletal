@@ -5,7 +5,8 @@
 
 const FROM = 'feedback@lonepair.app', MAX_MESSAGE = 5000, MAX_BODY = 20000;
 const LIMIT = 5, WINDOW_MS = 10 * 60 * 1000; // per visitor, per server instance: a brake on scripts, not a guarantee
-const recent = new Map();
+const GLOBAL_LIMIT = 100, GLOBAL_WINDOW_MS = 60 * 60 * 1000; // all visitors together, so many addresses can't flood the inbox
+const recent = new Map(), sent = [];
 const EMAIL_RE = /^[^\s@<>()",;:\\[\]]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$/;
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -13,10 +14,23 @@ const b64 = s => { const bytes = new TextEncoder().encode(s); let bin = ''; for 
 const wrap = s => s.replace(/.{1,76}/g, '$&\r\n');
 const header = s => /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`; // RFC 2047 for anything non-ASCII
 
-function limited(ip, now = Date.now()) {
-  const times = (recent.get(ip) || []).filter(t => now - t < WINDOW_MS);
-  if (times.length >= LIMIT) { recent.set(ip, times); return true; }
-  times.push(now); recent.set(ip, times);
+// rate-limit key for a visitor: IPv6 addresses by their /64 (one household or server gets a whole /64, so a single
+// sender could otherwise rotate through billions of addresses); IPv4-mapped IPv6 as the plain IPv4 address
+function addressBlock(ip) {
+  ip = String(ip || 'unknown').trim().toLowerCase();
+  const v4 = /(\d{1,3}(\.\d{1,3}){3})$/.exec(ip);
+  if (!ip.includes(':') || v4) return v4 ? v4[1] : ip;
+  const [h, t = ''] = ip.split('::'), a = h ? h.split(':') : [], b = t ? t.split(':') : [];
+  const full = [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return full.slice(0, 4).map(x => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
+}
+
+function limited(ip, now = Date.now(), globalLimit = GLOBAL_LIMIT) {
+  const key = addressBlock(ip);
+  while (sent.length && now - sent[0] >= GLOBAL_WINDOW_MS) sent.shift();
+  const times = (recent.get(key) || []).filter(t => now - t < WINDOW_MS);
+  if (times.length >= LIMIT || sent.length >= globalLimit) { recent.set(key, times); return true; }
+  times.push(now); recent.set(key, times); sent.push(now);
   if (recent.size > 5000) recent.clear();
   return false;
 }
@@ -50,7 +64,7 @@ export async function feedback(request, env, EmailMessage) {
   if (message.length > MAX_MESSAGE) return json({ error: `Please keep it under ${MAX_MESSAGE} characters` }, 400);
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   if (email && (email.length > 254 || !EMAIL_RE.test(email))) return json({ error: 'That email address doesn’t look right' }, 400);
-  if (limited(request.headers.get('cf-connecting-ip') || 'unknown')) return json({ error: 'Thanks! That’s a lot of messages at once; please try again in a few minutes' }, 429);
+  if (limited(request.headers.get('cf-connecting-ip'), Date.now(), +env.FEEDBACK_GLOBAL_LIMIT || GLOBAL_LIMIT)) return json({ error: 'Thanks! That’s a lot of messages at once; please try again in a few minutes' }, 429);
   const c = body.context && typeof body.context === 'object' ? body.context : {};
   const clip = (v, n) => typeof v === 'string' ? v.replace(/[\r\n]+/g, ' ').slice(0, n) : '';
   const context = { smiles: clip(c.smiles, 2000), page: clip(c.page, 200), ua: clip(request.headers.get('user-agent'), 300) };
@@ -63,4 +77,4 @@ export async function feedback(request, env, EmailMessage) {
   }
   return json({ ok: true });
 }
-export const _test = { limited, recent };
+export const _test = { limited, recent, sent, addressBlock };

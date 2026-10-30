@@ -46,8 +46,10 @@
 
   <h2>Feedback messages</h2>
   <p>When you use <b>Feedback</b>, your message is emailed to the person who runs Lone Pair, together with the email address you give (optional, so we can reply), your browser name and version, and, only if you tick the box, your current drawing as SMILES. The message is not stored on our server; it lives in that email inbox. Ask us to delete it at any time.</p>
+  <p>To stop floods of messages, the server briefly remembers how many messages came from each address (IPv6 addresses by their /64 block) in its memory. This is never written to disk or sent on, and it is forgotten after 10 minutes.</p>
 
   <h2>Features that contact other services</h2>
+  <p>The hosted site loads its interface font (Schibsted Grotesk) from Google Fonts, so your browser asks Google's servers for it, which shows them your IP address and browser. Google says it does not use this to build profiles (<a href="https://developers.google.com/fonts/faq/privacy">Google Fonts privacy FAQ</a>). Lone Pair works the same if the font is blocked.</p>
   <p>A few optional tools send a structure to a public database, only when you click them: <b>Look up name and CAS number</b> and inserting a compound by name (PubChem, US National Library of Medicine), and <b>Find in databases</b> (PubChem, RCSB PDB, ChEMBL, Google). They send only the structure's SMILES or InChIKey, never your account details.</p>
 
   <h2>Visitor statistics</h2>
