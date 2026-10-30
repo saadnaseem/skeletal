@@ -67,3 +67,26 @@ test('the /api router sends feedback and sign-in to the right handler', async ()
   const me = await api(new Request('https://lonepair.app/api/me'), {});
   assert.deepEqual(await me.json(), { available: false, signedIn: false });
 });
+
+test('IPv6 visitors are limited per /64, and IPv4-mapped addresses as plain IPv4', async () => {
+  const { addressBlock } = _test;
+  assert.equal(addressBlock('2001:db8:abcd:12:1::5'), '2001:db8:abcd:12::/64');
+  assert.equal(addressBlock('2001:DB8:abcd:0012:ffff:1:2:3'), '2001:db8:abcd:12::/64');
+  assert.equal(addressBlock('::ffff:198.51.100.9'), '198.51.100.9');
+  assert.equal(addressBlock('198.51.100.9'), '198.51.100.9');
+  _test.recent.clear(); _test.sent.length = 0; const e = env();
+  // one sender rotating through addresses in its own /64 is still one sender
+  for (let i = 0; i < 5; i++) assert.equal((await feedback(post({ message: 'm' + i }, { 'cf-connecting-ip': `2001:db8:1:2::${i + 1}` }), e, FakeMessage)).status, 200);
+  assert.equal((await feedback(post({ message: 'more' }, { 'cf-connecting-ip': '2001:db8:1:2:ffff::9' }), e, FakeMessage)).status, 429);
+  assert.equal((await feedback(post({ message: 'neighbour' }, { 'cf-connecting-ip': '2001:db8:1:3::1' }), e, FakeMessage)).status, 200);
+});
+
+test('a site-wide cap stops a flood from many addresses', async () => {
+  _test.recent.clear(); _test.sent.length = 0; const e = { ...env(), FEEDBACK_GLOBAL_LIMIT: '3' };
+  for (let i = 0; i < 3; i++) assert.equal((await feedback(post({ message: 'm' + i }, { 'cf-connecting-ip': '192.0.2.' + (i + 1) }), e, FakeMessage)).status, 200);
+  assert.equal((await feedback(post({ message: 'flood' }, { 'cf-connecting-ip': '192.0.2.200' }), e, FakeMessage)).status, 429);
+  assert.equal(e.sent.length, 3);
+  // the cap is per hour
+  assert.equal(_test.limited('192.0.2.201', Date.now() + 61 * 60 * 1000, 3), false);
+  _test.sent.length = 0;
+});

@@ -542,6 +542,7 @@ function endTool(d,p){
     const bt=tool.bond;
     if (!d.moved && h && h.type==='bond'){
       pushUndo(); const b=ix.bond.get(h.id);
+      if (b.kind){ delete b.kind; b.order=bt.order; b.stereo=bt.stereo; return; } // a hydrogen or dative bond becomes the tool's bond
       if (bt.stereo==='none'){
         if (bt.order===1){ if (b.stereo!=='none'){ b.stereo='none'; } else b.order = b.order===1?2 : b.order===2?3 : 1; }
         else if (bt.order===2){ if (b.order!==2){ b.order=2; b.stereo='none'; } else b.dbPos = cycleDb(b); }
@@ -689,6 +690,7 @@ window.addEventListener('keydown', e=>{
   }
   if (hover && hover.type==='bond'){
     const b=ix.bond.get(hover.id); if(!b) return;
+    if ('123wx'.includes(k)) delete b.kind;
     if ('123'.includes(k)){ pushUndo(); b.order=+k; b.stereo='none'; changed(); return; }
     if (k==='w'){ pushUndo(); b.order=1; b.stereo= b.stereo==='wedge'? (()=>{const t=b.a;b.a=b.b;b.b=t;return 'wedge';})() : 'wedge'; changed(); return; }
     if (k==='x'){ pushUndo(); b.order=1; b.stereo='hash'; changed(); return; }
@@ -801,11 +803,15 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
   changed(); fitIfNeeded();
 }
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
+// a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const d=normalizeDoc({...newDoc(), ...r, style:doc.style});
+  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
-  if (hasContent(doc)) pasteDoc(d,0,viewCenter()); else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page, styleOv:doc.styleOv, labelSize:doc.labelSize}); sel.clear(); changed(); fit(); }
-  toast('Opened '+(name||'drawing'));
+  if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
+  else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page}); sel.clear(); changed(); fit(); }
+  const left=Object.entries(skipped||{}).map(([k,n])=>n>1? `${n} ${k}s` : `1 ${k}`);
+  toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
 }
 function tryLoadText(txt, quiet){
   try{
@@ -1363,7 +1369,7 @@ function exportSVG(d, {pxPerPt=null, transparent=true, region=null}={}){
 }
 // raster formats other than PNG: JPEG and WebP from the canvas, GIF with the encoder below; all on white unless GIF is transparent
 async function rasterBlob(d, type, region){
-  const ppp=300/72, transparent = type==='gif' && $('#transp').checked;
+  const transparent = type==='gif' && $('#transp').checked, e0=exportSVG(d,{pxPerPt:1, transparent:false, region}), ppp=capScale(e0.w, e0.h, 300/72, RASTER_SAFE_AREA);
   const e=exportSVG(d,{pxPerPt:ppp, transparent:false, region}); const w=Math.round(e.w*ppp), h=Math.round(e.h*ppp);
   const c=await svgToCanvas(e.svg, w, h, transparent);
   if (type==='gif'){ const g=c.getContext('2d'); return new Blob([gifEncode(g.getImageData(0,0,w,h).data, w, h, transparent)],{type:'image/gif'}); }
@@ -1371,7 +1377,7 @@ async function rasterBlob(d, type, region){
 }
 function svgToCanvas(svgStr, wpx, hpx, transparent){
   return new Promise((res,rej)=>{ const img=new Image();
-    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); res(c); };
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if (!g) return rej(new Error('Image too large for this browser')); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); res(c); };
     img.onerror=()=>rej(new Error('Could not render image')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr); });
 }
 // GIF89a with a fixed palette: index 0 transparent/white, 32 greys for antialiased line art, then a 6×6×6 colour cube
@@ -1406,17 +1412,25 @@ function gifEncode(px, w, h, transparent){
 function svgToPngBlob(svgStr, wpx, hpx, transparent){
   return new Promise((res,rej)=>{
     const img=new Image();
-    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); c.toBlob(b=>b?res(b):rej(new Error('PNG encoding failed')),'image/png'); };
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if (!g) return rej(new Error('Image too large for this browser')); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); c.toBlob(b=>b?res(b):rej(new Error('PNG encoding failed')),'image/png'); };
     img.onerror=()=>rej(new Error('Could not render image'));
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr);
   });
 }
 function exportRegion(){ return (doc.page && $('#expArea').value==='doc') ? pageBounds(doc) : null; }
 function exportTarget(){ const d=subDoc(exportRegion()? null : (sel.size?sel:null)); if(!hasContent(d)) return null; return d; }
+// browsers refuse canvases past a size limit (desktop about 120-268 megapixels, iOS Safari 16.7): stay under the
+// desktop limit, and if drawing still fails, try once more under the iOS one
+const RASTER_MAX_SIDE=14000, RASTER_MAX_AREA=1.2e8, RASTER_SAFE_AREA=1.6e7;
+function capScale(w, h, ppp, area=RASTER_MAX_AREA){ return Math.min(ppp, RASTER_MAX_SIDE/Math.max(w,h,1e-9), Math.sqrt(area/Math.max(w*h,1e-9))); }
 async function makePng(d, pxPerPt, transparent, region){
-  if (region){ const w=region.x1-region.x0, h=region.y1-region.y0; const maxPpp=Math.min(14000/Math.max(w,h), Math.sqrt(1.2e8/(w*h))); if (pxPerPt>maxPpp){ pxPerPt=maxPpp; makePng.reduced=Math.round(pxPerPt*72); } else makePng.reduced=0; } else makePng.reduced=0;
-  const e=exportSVG(d,{pxPerPt,transparent,region});
-  const blob=await svgToPngBlob(e.svg, Math.round(e.w*pxPerPt), Math.round(e.h*pxPerPt), transparent);
+  const size=exportSVG(d,{pxPerPt:1,transparent,region}); let ppp=capScale(size.w, size.h, pxPerPt), e, blob;
+  for (const area of [RASTER_MAX_AREA, RASTER_SAFE_AREA]){
+    ppp=capScale(size.w, size.h, ppp, area); e=exportSVG(d,{pxPerPt:ppp,transparent,region});
+    try{ blob=await (makePng.draw||svgToPngBlob)(e.svg, Math.round(e.w*ppp), Math.round(e.h*ppp), transparent); break; }
+    catch(err){ if (area===RASTER_SAFE_AREA || ppp<=capScale(size.w, size.h, ppp, RASTER_SAFE_AREA)) throw err; }
+  }
+  makePng.reduced = ppp < pxPerPt*0.999 ? Math.round(ppp*72) : 0;
   return {blob, e};
 }
 async function copyImage(){
@@ -1465,9 +1479,12 @@ async function saveFile(filename, data){
 }
 async function downloadPng(){
   const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; }
-  const dpi=600, ppp=dpi/72; const {blob}=await makePng(d,ppp,$('#transp').checked,exportRegion());
-  const used=makePng.reduced||dpi; if (makePng.reduced) toast(`Large document: saved at ${used} dpi`);
-  saveFile(fileBase()+'.png', await pngWithMeta(blob,used,JSON.stringify(d)));
+  const dpi=600, ppp=dpi/72; let blob;
+  try{ ({blob}=await makePng(d,ppp,$('#transp').checked,exportRegion())); }
+  catch(e){ console.warn(e); toast('This drawing is too large for a PNG in this browser. Save it as SVG or PDF instead.', 6000); return; }
+  const used=makePng.reduced||dpi;
+  await saveFile(fileBase()+'.png', await pngWithMeta(blob,used,JSON.stringify(d)));
+  if (makePng.reduced) toast(`Large drawing: saved at ${used} dpi`, 4000);
 }
 function downloadSvg(){ const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; } const {svg}=exportSVG(d,{transparent:$('#transp').checked, region:exportRegion()}); saveFile(fileBase()+'.svg', '<?xml version="1.0" encoding="UTF-8"?>\n'+svg); }
 /* ================= Save as: every export format in one place ================= */
@@ -1511,7 +1528,7 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
   const mol=()=>{ if (!ids.length) throw new Error('There are no structures to export'); const {mol,generic}=toOCL(d,dix,ids); if (generic) toast('Generic labels (R, X) are written as unknown atoms'); return mol; };
   switch (id){
     case 'jpeg': case 'webp': case 'gif': return {data:await rasterBlob(exportTarget(), id, exportRegion())};
-    case 'eps': { const {svg}=exportSVG(exportTarget(),{transparent:true, region:exportRegion()}); return {data:PDF.eps(svg), mime:'application/postscript'}; }
+    case 'eps': { const {svg}=exportSVG(exportTarget(),{transparent:true, region:exportRegion()}); PDF.takeMissing(); return {data:PDF.eps(svg), mime:'application/postscript'}; }
     case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
     case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
     case 'json': return {data:JSON.stringify(project)};
@@ -1529,7 +1546,9 @@ async function exportAs(id, copy){
   try{
     const {data}=await exportData(id);
     if (copy){ copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); return; }
-    saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+    const lost = id==='eps' ? PDF.takeMissing() : [];
+    await saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+    warnMissingChars('EPS', lost);
   }catch(err){ toast(err.message||'Export failed'); }
 }
 function openSaveAs(){
@@ -1661,7 +1680,7 @@ function closeDialog(){ modal.classList.remove('open'); dialog.innerHTML=''; dia
 modal.addEventListener('pointerdown', e=>{ if (e.target===modal) closeDialog(); });
 dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
 let _toastT=null;
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),2200); }
+function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),ms); }
 
 function openSmilesDialog(){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
@@ -1791,11 +1810,8 @@ window.addEventListener('resize', ()=>{ render(); positionTed(); });
 
 /* ================= projects, pages, versions ================= */
 function normalizeProject(p){
-  const n={...newProject(), ...p};
-  n.pages=(p.pages&&p.pages.length? p.pages : [{id:1,name:'Page 1',doc:newDoc()}]).map((pg,i)=>({id:pg.id||i+1, name:pg.name||('Page '+(i+1)), doc:normalizeDoc(pg.doc||{})}));
-  n.cur=Math.min(Math.max(0,p.cur|0), n.pages.length-1);
-  n.versions=Array.isArray(p.versions)? p.versions : [];
-  n.nextPage=Math.max(n.nextPage||1, ...n.pages.map(pg=>pg.id+1));
+  const n=sanitizeProject(p); // every load path (files, autosave, saved .html) comes through here
+  for (const pg of n.pages) pg.doc=normalizeDoc(pg.doc||{});
   return n;
 }
 function loadProject(p, quiet){
@@ -1865,12 +1881,12 @@ function renderVersions(){
   const ul=$('#vlist');
   if (!project.versions.length){ ul.innerHTML=`<li style="justify-content:center;color:var(--ink-2);font-size:12.5px;background:transparent;border-style:dashed">No versions yet</li>`; return; }
   ul.innerHTML=project.versions.map(v=>{ const d=new Date(v.time); let n=0; try{ n=JSON.parse(v.pages).length; }catch(e){}
-    return `<li><div class="vn"><b title="${esc(v.name)}">${esc(v.name)}</b><small>${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}, ${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${n} page${n===1?'':'s'}</small></div><button class="mini" data-vr="${v.id}">Restore</button><button class="mini" data-vd="${v.id}" aria-label="Delete version">✕</button></li>`; }).join('');
+    return `<li><div class="vn"><b title="${esc(v.name)}">${esc(v.name)}</b><small>${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}, ${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${n} page${n===1?'':'s'}</small></div><button class="mini" data-vr="${esc(v.id)}">Restore</button><button class="mini" data-vd="${esc(v.id)}" aria-label="Delete version">✕</button></li>`; }).join('');
   ul.onclick=e=>{
     const r=e.target.closest('[data-vr]'), d=e.target.closest('[data-vd]');
     if (r){ const v=project.versions.find(x=>x.id===r.dataset.vr); if(!v) return;
       openDialog(`<h3>Restore “${esc(v.name)}”?</h3><p>Your current pages are saved as a new version first, so nothing is lost.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="vrGo">Restore</button></div>`);
-      $('#vrGo').onclick=()=>{ saveVersion('Before restoring '+v.name); const pages=JSON.parse(v.pages); project.pages=pages.map(p=>({...p, doc:normalizeDoc(p.doc)})); project.cur=0; pageState.clear(); doc=project.pages[0].doc; undoStack=[]; redoStack=[]; sel.clear(); closeDialog(); changed(); fit(); renderPages(); renderVersions(); toast('Version restored'); }; }
+      $('#vrGo').onclick=()=>{ saveVersion('Before restoring '+v.name); let pages; try{ pages=JSON.parse(v.pages); }catch(e){ closeDialog(); toast('This version is damaged and can\u2019t be restored'); return; } const n=normalizeProject({pages}); project.pages=n.pages; project.nextPage=Math.max(project.nextPage, n.nextPage); project.cur=0; pageState.clear(); doc=project.pages[0].doc; undoStack=[]; redoStack=[]; sel.clear(); closeDialog(); changed(); fit(); renderPages(); renderVersions(); toast('Version restored'); }; }
     if (d){ const v=project.versions.find(x=>x.id===d.dataset.vd); if(!v) return;
       openDialog(`<h3>Delete “${esc(v.name)}”?</h3><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="vdGo">Delete version</button></div>`);
       $('#vdGo').onclick=()=>{ project.versions=project.versions.filter(x=>x!==v); closeDialog(); renderVersions(); autosave(); }; }
@@ -2083,8 +2099,14 @@ function exportPdf(which, mode='crop'){
   else if (mode!=='crop' && doc.page){ svgs.push(...pageExportSVG(doc, mode)); }
   else { const d=subDoc(sel.size?sel:null); if (hasContent(d)) svgs.push(...pageExportSVG(d,'crop')); }
   if (!svgs.length){ toast('Nothing to export yet'); return; }
-  try{ const bytes=PDF.build(svgs); saveFile(fileBase()+(which==='all'?'':' - '+project.pages[project.cur].name)+'.pdf', new Blob([bytes],{type:'application/pdf'})); }
+  try{ PDF.takeMissing(); const bytes=PDF.build(svgs), lost=PDF.takeMissing();
+    saveFile(fileBase()+(which==='all'?'':' - '+project.pages[project.cur].name)+'.pdf', new Blob([bytes],{type:'application/pdf'})).then(()=>warnMissingChars('PDF', lost)); }
   catch(e){ console.warn(e); toast('Could not create the PDF'); }
+}
+// PDF and EPS use the standard fonts, which lack some characters (CJK, rare symbols); say which, after the save message
+function warnMissingChars(kind, lost){
+  if (!lost.length) return;
+  toast(`Saved, but ${lost.slice(0,6).join(' ')}${lost.length>6?' …':''} can’t be shown in ${kind} with the built-in fonts and appear as “?”. SVG and PNG keep them.`, 8000);
 }
 function exportPdfDialog(){
   const n=project.pages.filter(p=>hasContent(p.doc)).length;
@@ -2437,6 +2459,7 @@ const PAGE_PRESETS = {
   acs1:{w:240,h:648,n:'ACS single column (3.33 in wide)'}, acs2:{w:504,h:648,n:'ACS double column (7 in wide)'},
   slide169:{w:960,h:540,n:'Slide 16:9 (13.33 × 7.5 in)'}, slide43:{w:720,h:540,n:'Slide 4:3 (10 × 7.5 in)'},
 };
+Object.setPrototypeOf(PAGE_PRESETS, null); // doc.page.preset comes from files
 const inch=v=>Math.round(v/72*100)/100;
 function pageBounds(d){ const p=d.page; if(!p) return null; return {x0:p.x, y0:p.y, x1:p.x+p.w*p.across, y1:p.y+p.h*p.down}; }
 function renderPageBackdrop(){

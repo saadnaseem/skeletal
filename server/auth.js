@@ -16,7 +16,9 @@ const hex = bytes => [...bytes].map(b => b.toString(16).padStart(2, '0')).join('
 function cookies(request) {
   const out = {};
   for (const part of (request.headers.get('cookie') || '').split(';')) {
-    const i = part.indexOf('='); if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const i = part.indexOf('='); if (i <= 0) continue;
+    // another app on the domain may set a cookie that isn't valid percent-encoding; skip it rather than fail the request
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* not ours */ }
   }
   return out;
 }
@@ -62,7 +64,9 @@ async function start(request, env, url) {
 // Core 3.1.3.7 TLS validation stands in for checking its signature; issuer, audience, expiry and email are still checked.
 function claims(idToken, env) {
   const part = (idToken || '').split('.')[1]; if (!part) throw new Error('no ID token');
-  const c = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+  // the payload is base64url-encoded UTF-8: decode the bytes as UTF-8 so names like "José" survive (atob alone gives Latin-1)
+  const bin = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+  const c = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))));
   const issuers = env.GOOGLE_ISSUER ? [env.GOOGLE_ISSUER] : GOOGLE_ISSUERS;
   if (!issuers.includes(c.iss)) throw new Error('wrong issuer');
   if (c.aud !== env.GOOGLE_CLIENT_ID) throw new Error('wrong audience');
@@ -94,6 +98,7 @@ async function callback(request, env, url) {
     ON CONFLICT(id) DO UPDATE SET email = excluded.email, name = excluded.name, last_seen_at = excluded.last_seen_at, sign_ins = users.sign_ins + 1`)
     .bind(c.sub, c.email, c.name || c.email, now, now).run();
   const token = randomToken();
+  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND expires_at < ?').bind(c.sub, now).run(); // tidy this user's expired sessions
   await env.DB.prepare('INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
     .bind(hex(await sha256(token)), c.sub, now, now + SESSION_DAYS * 864e5).run();
   return redirect('/?signin=ok', [clearFlow, setCookie(url, SESSION_COOKIE, token, SESSION_DAYS * 86400)]);

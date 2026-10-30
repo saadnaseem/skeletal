@@ -5,7 +5,7 @@ const PDF = (()=>{
   const FONTS = ['Helvetica','Helvetica-Bold','Helvetica-Oblique','Helvetica-BoldOblique','Times-Roman','Times-Bold','Times-Italic','Times-BoldItalic','Courier','Courier-Bold','Courier-Oblique','Courier-BoldOblique','Symbol'];
   const WIN = {0x2212:0x96,0x2013:0x96,0x2014:0x97,0x2022:0x95,0x2018:0x91,0x2019:0x92,0x201C:0x93,0x201D:0x94,0x2026:0x85,0x20AC:0x80,0x2030:0x89,0x2020:0x86,0x2021:0x87};
   const SYM = {'α':'a','β':'b','γ':'g','δ':'d','ε':'e','ζ':'z','η':'h','θ':'q','ι':'i','κ':'k','λ':'l','μ':'m','ν':'n','ξ':'x','π':'p','ρ':'r','σ':'s','τ':'t','υ':'u','φ':'f','χ':'c','ψ':'y','ω':'w',
-    'Α':'A','Β':'B','Γ':'G','Δ':'D','Ε':'E','Θ':'Q','Λ':'L','Π':'P','Σ':'S','Φ':'F','Ψ':'Y','Ω':'W','→':'\u00AE','←':'\u00AC','↔':'\u00AB','⇌':'\u00AB','≈':'\u00BB','≠':'\u00B9','≤':'\u00A3','≥':'\u00B3','×':'\u00B4','÷':'\u00B8','∞':'\u00A5','·':'\u00D7'};
+    'Α':'A','Β':'B','Γ':'G','Δ':'D','Ε':'E','Θ':'Q','Λ':'L','Π':'P','Σ':'S','Φ':'F','Ψ':'Y','Ω':'W','→':'\u00AE','←':'\u00AC','↔':'\u00AB','⇌':'\u00AB','≈':'\u00BB','≠':'\u00B9','∆':'D','′':'\u00A2','″':'\u00B2','∂':'\u00B6','√':'\u00D6','∑':'\u00E5','↑':'\u00AD','↓':'\u00AF','⇒':'\u00DE','∈':'\u00CE','∠':'\u00D0','≡':'\u00BA','∝':'\u00B5','≤':'\u00A3','≥':'\u00B3','×':'\u00B4','÷':'\u00B8','∞':'\u00A5','·':'\u00D7'};
   const num=v=>{ const r=Math.round(v*1000)/1000; return (Object.is(r,-0)?0:r).toString(); };
   function rgb(c){
     if (!c || c==='none') return null;
@@ -17,14 +17,23 @@ const PDF = (()=>{
   }
   function attr(el, name, inh){ let e=el; while (e && e.getAttribute){ const v=e.getAttribute(name); if (v!=null) return v; if (!inh) break; e=e.parentNode; } return null; }
   function strEsc(bytes){ let s=''; for (const b of bytes){ if (b===40||b===41||b===92) s+='\\'+String.fromCharCode(b); else if (b<32||b>126) s+='\\'+b.toString(8).padStart(3,'0'); else s+=String.fromCharCode(b); } return '('+s+')'; }
+  // the standard fonts hold Latin-1, WinAnsi punctuation and the Symbol font's Greek and math signs; characters
+  // outside those are spelled with their compatibility form (⁻¹ -> −1, ﬁ -> fi, ő -> o) or, failing that, '?',
+  // and collected in `missing` so the app can say which ones a PDF or EPS can't show
+  const missing=new Set();
+  const code=ch=>{ const cp=ch.codePointAt(0);
+    if (SYM[ch]!=null) return {sym:true, b:SYM[ch].charCodeAt(0)};
+    if (cp<128 || (cp>=0xA0 && cp<=0xFF)) return {sym:false, b:cp};
+    if (WIN[cp]!=null) return {sym:false, b:WIN[cp]};
+    return null; };
   function segments(text){ // split into [{sym, bytes, str}]
     const out=[]; let cur=null;
+    const put=(c,str)=>{ if (!cur || cur.sym!==c.sym){ cur={sym:c.sym,bytes:[],str:''}; out.push(cur); } cur.bytes.push(c.b); cur.str+=str; };
     for (const ch of text){
-      const cp=ch.codePointAt(0); let sym=false, b;
-      if (SYM[ch]!=null){ sym=true; b=SYM[ch].charCodeAt(0); }
-      else if (cp<128 || (cp>=0xA0 && cp<=0xFF)) b=cp; else if (WIN[cp]!=null) b=WIN[cp]; else b=63;
-      if (!cur || cur.sym!==sym){ cur={sym,bytes:[],str:''}; out.push(cur); }
-      cur.bytes.push(b); cur.str+=ch;
+      const c=code(ch); if (c){ put(c,ch); continue; }
+      const alt=[...ch.normalize('NFKD').replace(/[\u0300-\u036f]/g,'')], cs=alt.map(code);
+      if (alt.length && cs.every(Boolean)) cs.forEach((x,i)=>put(x,alt[i]));
+      else { missing.add(ch); put({sym:false,b:63},'?'); }
     }
     return out;
   }
@@ -163,5 +172,7 @@ const PDF = (()=>{
     const bytes=new Uint8Array(out.length); for (let i=0;i<out.length;i++) bytes[i]=out.charCodeAt(i)&255;
     return bytes;
   }
-  return {build, eps};
+  // characters the last export couldn't show (printed as '?')
+  const takeMissing=()=>{ const m=[...missing]; missing.clear(); return m; };
+  return {build, eps, segments, takeMissing};
 })();
