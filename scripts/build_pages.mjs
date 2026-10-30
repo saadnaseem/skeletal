@@ -9,12 +9,27 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const site = path.join(root, 'site');
 // the hosted copy gets a marker so the app asks /api/me about sign-in (Pages Functions answer it; see server/auth.js)
 // it also links the PNG icons in assets/ (scripts/make_brand_images.py), which only exist on the hosted site
+// structured data (schema.org) so search engines know the page is a free web app, not an article about lone pairs
+const ORIGIN = 'https://lonepair.app';
+export const STRUCTURED_DATA = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    { '@type': 'WebSite', '@id': ORIGIN + '/#website', name: 'Lone Pair', alternateName: 'lonepair.app', url: ORIGIN + '/' },
+    { '@type': 'WebApplication', name: 'Lone Pair', url: ORIGIN + '/', applicationCategory: 'EducationalApplication',
+      applicationSubCategory: 'Chemical structure editor', operatingSystem: 'Any (web browser)', browserRequirements: 'Requires JavaScript',
+      description: 'Free chemical structure editor in the browser: draw molecules, reactions and mechanisms in ACS, RSC or Nature style; open and save ChemDraw CDXML and CDX files; predict NMR and mass spectra.',
+      image: ORIGIN + '/og-image.png', isAccessibleForFree: true, offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' } },
+  ],
+};
+// pages for search engines; the app itself is '/'
+export const PAGES = ['/', '/about', '/privacy'];
 const ICONS = ['og-image.png', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'favicon-32.png'];
 const html = (await readFile(path.join(root, 'dist', 'lonepair.html'), 'utf8')).replace('<meta charset="utf-8" data-sk>', `<meta charset="utf-8" data-sk>
 <meta name="lp-api" content="/api">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<link rel="manifest" href="/site.webmanifest">`);
+<link rel="manifest" href="/site.webmanifest">
+<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA)}</script>`);
 if (!html.includes('name="lp-api"')) throw new Error('could not add the lp-api marker to index.html');
 
 // Everything is inline (one file), so scripts and styles need 'unsafe-inline'; WebAssembly (InChI) needs 'wasm-unsafe-eval'.
@@ -63,7 +78,14 @@ await mkdir(site, { recursive: true });
 await writeFile(path.join(site, 'index.html'), html);
 await writeFile(path.join(site, '_headers'), headers);
 await writeFile(path.join(site, '_redirects'), redirects);
-await writeFile(path.join(site, 'robots.txt'), 'User-agent: *\nAllow: /\nDisallow: /api/\n');
+await writeFile(path.join(site, 'robots.txt'), `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
+const today = new Date().toISOString().slice(0, 10);
+await writeFile(path.join(site, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${PAGES.map(p => `  <url><loc>${ORIGIN}${p}</loc><lastmod>${today}</lastmod></url>`).join('\n')}
+</urlset>
+`);
+await writeFile(path.join(site, 'about.html'), await readFile(path.join(root, 'src', 'about.html'), 'utf8'));
 await writeFile(path.join(site, 'privacy.html'), await readFile(path.join(root, 'src', 'privacy.html'), 'utf8'));
 await writeFile(path.join(site, 'site.webmanifest'), manifest);
 for (const f of ICONS) await copyFile(path.join(root, 'assets', f), path.join(site, f));

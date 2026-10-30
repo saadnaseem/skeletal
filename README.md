@@ -153,7 +153,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 125 unit tests (Node test runner)
+npm test             # 128 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
