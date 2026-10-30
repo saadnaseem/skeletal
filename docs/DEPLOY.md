@@ -135,7 +135,9 @@ Wrangler needs Node 22. Check with `node --version`.
 
 **d. Test it.** Open <https://lonepair.app>, click **Sign in with Google**, and pick your account. You should come back signed in, with your initials in the top bar.
 
-**e. Set up the privacy contact.** The privacy page lists `privacy@lonepair.app`. Create it for free under **lonepair.app → Email → Email Routing**, forwarding to your Gmail.
+**e. Set up the contact addresses.** The privacy page lists `privacy@lonepair.app`, and **Send feedback** falls back to `feedback@lonepair.app` in downloaded copies and offline. Create both for free under **lonepair.app → Email → Email Routing**, forwarding to your Gmail.
+
+**Send feedback** on the site stores messages in the same D1 database. It only needs the `DB` binding and the migrations (step a applies all of them, including `0002_feedback.sql`), not the Google settings. After pulling a new migration, run `npx wrangler d1 migrations apply lonepair --remote` again.
 
 ## 7. See who signed up
 
@@ -154,6 +156,30 @@ npx wrangler d1 execute lonepair --remote --command "SELECT date(created_at/1000
 You can also run these queries in the dashboard: **Workers & Pages → D1 → lonepair → Console**.
 
 The email addresses are for knowing your users and contacting them about the service. Before sending newsletters or marketing, ask people to opt in; the privacy page promises that. For visit counts that include people who don't sign in, turn on **Web Analytics** in the Pages project's **Metrics** tab. The site's security policy already allows it, and it uses no cookies.
+
+## 8. Read feedback
+
+Newest first:
+
+```bash
+npx wrangler d1 execute lonepair --remote --command "SELECT id, datetime(created_at/1000,'unixepoch') AS sent, email, message FROM feedback WHERE status = 'new' ORDER BY created_at DESC"
+```
+
+Mark one as dealt with (replace 12 with its id):
+
+```bash
+npx wrangler d1 execute lonepair --remote --command "UPDATE feedback SET status = 'done' WHERE id = 12"
+```
+
+Limits, all set as variables in the Pages project settings:
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `FEEDBACK_LIMIT` | 5 | Messages per address (IPv6: per /64 network) per 10 minutes |
+| `FEEDBACK_GLOBAL_LIMIT` | 100 | Messages from everyone together per hour, so a flood from many addresses stops too |
+| `FEEDBACK_SECRET` | none | Recommended. Add it as an encrypted secret (`npx wrangler pages secret put FEEDBACK_SECRET`, any long random string). The address key is then an HMAC, which can't be reversed by hashing every IPv4 address |
+
+The address key is only kept for the 10-minute window; the next message clears older ones.
 
 ## Optional extras
 

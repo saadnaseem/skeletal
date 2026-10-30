@@ -35,6 +35,8 @@ const GENERIC = new Set(['R','R1','R2','R3','R4','R5','R6',"R'","R''",'X','Ar','
 const CPK = {N:'#2f4fd6',O:'#d1231f',S:'#b38a00',P:'#d06a00',F:'#1f8f3a',Cl:'#1f8f3a',Br:'#8b2a14',I:'#6a1fa0',B:'#c26a6a',Si:'#8a7a5c',Se:'#b36b00'};
 const VAL = {H:[1],B:[3],C:[4],Si:[4],N:[3],P:[3,5],As:[3,5],O:[2],S:[2,4,6],Se:[2,4,6],Te:[2,4,6],F:[1],Cl:[1,3,5,7],Br:[1,3,5,7],I:[1,3,5,7]};
 const GROUP = {H:'h',B:'b',C:'c',Si:'c',N:'n',P:'n',As:'n',O:'o',S:'o',Se:'o',Te:'o',F:'x',Cl:'x',Br:'x',I:'x'};
+// atom labels and style names come from users and files: keep 'constructor', '__proto__' etc. from finding Object.prototype
+for (const t of [PRESETS, ABBR, CPK, VAL, GROUP]) Object.setPrototypeOf(t, null);
 
 function kindOf(el){
   if (GENERIC.has(el)) return 'generic';
@@ -82,6 +84,8 @@ function tw(t,size,weight,family,italic){
 /* ================= document ================= */
 // Loaded files are untrusted: keep only known fields with safe types, because values end up in SVG markup.
 const COLOR_RE=/^#[0-9a-f]{3}([0-9a-f]{3})?$/i;
+// bonds that are drawn but carry no valence: hydrogen bonds (dashed) and dative bonds (arrow from donor b.a to acceptor b.b)
+const BOND_KINDS=['hbond','dative'];
 function sanitizeDoc(d){
   if (!d || typeof d!=='object') return {};
   const num=(v,def=0)=>{ const n=+v; return Number.isFinite(n) ? n : def; };
@@ -96,8 +100,8 @@ function sanitizeDoc(d){
     for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined},['id','x','y','el','charge','lp','rad','color','g','stg']));
-  out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color)},['id','a','b','order','stereo','dbPos','color']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso']));
+  out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
@@ -111,6 +115,29 @@ function sanitizeDoc(d){
     ['id','x','y','w','h','g','origin','front','solvent','showRf','color','lanes']));
   if (d.page && typeof d.page==='object'){ const p=d.page; const w=num(p.w), h=num(p.h);
     if (w>=36 && h>=36 && w<=20000 && h<=20000) out.page={preset:str(p.preset,20)||'custom', w, h, across:Math.max(1,Math.min(8,int(p.across,1))), down:Math.max(1,Math.min(8,int(p.down,1))), x:num(p.x), y:num(p.y)}; }
+  return out;
+}
+// the project around the page docs (saved .html/.json, autosave): sanitizeDoc covers each doc, this covers the rest
+const PROJECT_ID_RE=/^[a-z0-9]{1,16}$/, VERSION_MAX=20e6;
+function sanitizeProject(p){
+  if (!p || typeof p!=='object' || Array.isArray(p)) p={};
+  const str=(v,max)=> typeof v==='string' ? v.slice(0,max) : '';
+  const pages=[], seen=new Set();
+  for (const pg of Array.isArray(p.pages)? p.pages : []){
+    if (!pg || typeof pg!=='object') continue;
+    let id=+pg.id; if (!Number.isInteger(id) || id<1 || id>1e6 || seen.has(id)) id=0; else seen.add(id);
+    pages.push({id, name:str(pg.name,100), doc:pg.doc});
+  }
+  if (!pages.length) pages.push({id:1, name:'', doc:{}});
+  let next=Math.max(0,...seen)+1; for (const pg of pages) if (!pg.id) pg.id=next++;
+  pages.forEach((pg,i)=>{ if (!pg.name.trim()) pg.name='Page '+(i+1); });
+  const versions=(Array.isArray(p.versions)? p.versions : []).filter(v=>v && typeof v==='object' && typeof v.id==='string' && PROJECT_ID_RE.test(v.id) && typeof v.pages==='string' && v.pages.length<=VERSION_MAX).slice(0,500)
+    .map(v=>{ const t=Date.parse(v.time); return {id:v.id, name:str(v.name,200)||'Version', time:new Date(Number.isFinite(t)? t : 0).toISOString(), pages:v.pages}; });
+  const cur=+p.cur, modified=+p.modified, nextPage=+p.nextPage;
+  const out={ v:2, uid: typeof p.uid==='string' && PROJECT_ID_RE.test(p.uid) ? p.uid : Math.random().toString(36).slice(2,10), name:str(p.name,200).trim()||'Untitled project',
+    pages, cur: Number.isInteger(cur) ? Math.min(Math.max(0,cur), pages.length-1) : 0, versions,
+    nextPage: Math.max(Number.isInteger(nextPage) && nextPage<=1e6 ? nextPage : 1, ...pages.map(pg=>pg.id+1)), modified: Number.isFinite(modified) && modified>0 ? modified : 0 };
+  if (typeof p.rev==='string' && PROJECT_ID_RE.test(p.rev)) out.rev=p.rev;
   return out;
 }
 function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], plates:[], nid:1, style:'acs', colorAtoms:false}; }
@@ -139,7 +166,9 @@ function buildIndex(d){
   for (const q of d.plates) ix.plate.set(q.id,q);
   return ix;
 }
-function bondSum(ix,id){ let s=0; for(const {b} of ix.adj.get(id)||[]) s+=b.order; return s; }
+function bondSum(ix,id){ let s=0; for(const {b} of ix.adj.get(id)||[]) if (!b.kind) s+=b.order; return s; }
+// what an atom label shows: D and T for hydrogen isotopes, otherwise the element (the mass number is drawn separately)
+function atomSymbol(a){ return a.el==='H' && (a.iso===2||a.iso===3) ? (a.iso===2?'D':'T') : a.el; }
 function implicitH(atom, bsum){
   if (kindOf(atom.el)!=='element') return 0;
   const vals=VAL[atom.el]; if(!vals) return 0;
@@ -157,7 +186,7 @@ const HYPER_LIG=new Set(['N','O','F','Cl']);
 // atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
 const OCTET=new Set(['B','C','N','O','F']);
 function valenceError(atom, ix){
-  const n=(ix.adj.get(atom.id)||[]).length, k=kindOf(atom.el);
+  const n=(ix.adj.get(atom.id)||[]).filter(({b})=>!b.kind).length, k=kindOf(atom.el);
   if (k==='abbr') return n>1 ? {have:n, max:1, why:`${atom.el} has ${n} bonds (a group label takes one)`} : null;
   if (k!=='element') return null;
   const vals=VAL[atom.el]; if (!vals) return null; // metals: no fixed valence
@@ -227,7 +256,7 @@ function layoutLabel(d, ix, atom){
   const nb=ix.adj.get(atom.id)||[];
   const dirs = nb.map(({o})=>{const q=ix.atom.get(o); return norm(sub(q,atom));});
   const kind=kindOf(atom.el);
-  const visible = atom.el!=='C' || nb.length===0;
+  const visible = atom.el!=='C' || nb.length===0 || !!atom.iso;
   const info={visible, dirs, items:[], box:null, extra:[]};
   const score=dv=>dirs.reduce((s,v)=>s+Math.max(0,dot(v,dv)),0);
   const sr=score(V(1,0)), sl=score(V(-1,0)), sb=score(V(0,1)), sa=score(V(0,-1));
@@ -240,11 +269,12 @@ function layoutLabel(d, ix, atom){
   if (kind==='element' && h>0 && Math.min(sr,sl)>0.45 && Math.min(sb,sa)<Math.min(sr,sl)) side = sb<=sa ? 'below':'above';
   let runs, anchorFirst=true;
   if (kind==='element'){
+    const sym=atomSymbol(atom), iso = atom.iso && sym===atom.el ? [{t:String(atom.iso),sup:true}] : [];
     const hr = h>0 ? [{t:'H',sub:false}].concat(h>1?[{t:String(h),sub:true}]:[]) : [];
-    if (side==='left' && hr.length){ runs=[...hr,{t:atom.el,sub:false,main:true}]; anchorFirst=false; }
-    else runs=[{t:atom.el,sub:false,main:true}].concat(side==='right'?hr:[]);
+    if (side==='left' && hr.length){ runs=[...hr,...iso,{t:sym,sub:false,main:true}]; anchorFirst=false; }
+    else runs=[...iso,{t:sym,sub:false,main:true}].concat(side==='right'?hr:[]);
     if ((side==='below'||side==='above') && hr.length) info.vert=hr;
-    if (side==='left' && !hr.length) { runs=[{t:atom.el,sub:false,main:true}]; }
+    if (side==='left' && !hr.length) { runs=[...iso,{t:sym,sub:false,main:true}]; }
   } else {
     let str=atom.el;
     if (side==='left' && nb.length){ str = (ABBR[atom.el] && ABBR[atom.el].l) || atom.el; anchorFirst=false; }
@@ -252,13 +282,13 @@ function layoutLabel(d, ix, atom){
   }
   // measure runs
   let x=0; const placed=[];
-  for (const r of runs){ const size=r.sub?fs*0.72:fs; const w=tw(r.t,size,fw); placed.push({...r,size,x,w}); x+=w; }
+  for (const r of runs){ const size=r.sub||r.sup?fs*0.72:fs; const w=tw(r.t,size,fw); placed.push({...r,size,x,w}); x+=w; }
   const total=x;
   let anchorC;
-  if (anchorFirst){ const f=placed[0]; const ch = f.main ? f.t : f.t[0]; anchorC = f.x + tw(ch,f.size,fw)/2; }
+  if (anchorFirst){ const f=placed.find(r=>!r.sup); const ch = f.main ? f.t : f.t[0]; anchorC = f.x + tw(ch,f.size,fw)/2; }
   else { let k=placed.length-1; while(k>0 && placed[k].sub) k--; const r=placed[k]; const ch = r.main ? r.t : r.t[r.t.length-1]; const cw=tw(ch,r.size,fw); anchorC = r.x + r.w - cw/2; }
   const shift = atom.x - anchorC, base = atom.y + fs*0.36;
-  for (const p of placed) info.items.push({t:p.t, x:p.x+shift, y: base + (p.sub? fs*0.24:0), size:p.size});
+  for (const p of placed) info.items.push({t:p.t, x:p.x+shift, y: base + (p.sub? fs*0.24 : p.sup? -fs*0.42 : 0), size:p.size});
   const x0=shift, x1=shift+total;
   info.box={x0:x0-m, x1:x1+m, y0:atom.y-fs*0.44-m, y1:atom.y+fs*0.44+m};
   let rowEnd=x1;
@@ -272,7 +302,7 @@ function layoutLabel(d, ix, atom){
   }
   if (atom.charge){
     const ct=chargeText(atom.charge);
-    const ex = side==='left' && kind==='element' ? (atom.x + tw(atom.el,fs,fw)/2) : rowEnd;
+    const ex = side==='left' && kind==='element' ? (atom.x + tw(atomSymbol(atom),fs,fw)/2) : rowEnd;
     info.items.push({t:ct, x:ex+0.5, y:base-fs*0.42, size:fs*0.72});
   }
   return info;
@@ -313,6 +343,10 @@ function renderBond(d, ix, b, labels, out){
   const seg=(off)=>{ const o1=add(A,mul(n,off)), o2=add(B,mul(n,off)); return [clipRay(o1,u,boxA), clipRay(o2,mul(u,-1),boxB)]; };
   const [p,q]=seg(0);
   if (dist(p,q)<0.5) return;
+  if (b.kind==='hbond'){ out.push(strokeLine(p,q,lw,col,'butt',` stroke-dasharray="${f2(lw*2.5)} ${f2(lw*2.5)}"`)); return; }
+  if (b.kind==='dative'){ const hl=Math.min(dist(p,q)*0.4, st.wedge*1.3), hw=st.wedge*0.5, base2=add(q,mul(u,-hl));
+    out.push(strokeLine(p,base2,lw,col,'butt'));
+    out.push(`<path d="M${f2(q.x)} ${f2(q.y)}L${f2(base2.x+n.x*hw)} ${f2(base2.y+n.y*hw)}L${f2(base2.x-n.x*hw)} ${f2(base2.y-n.y*hw)}Z" fill="${col}"/>`); return; }
   if (b.order===1){
     if (b.stereo==='wedge'){
       const w=st.wedge/2;
@@ -567,6 +601,7 @@ function toOCL(d, ix, atomIds, opts={}){
       const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,a.y/L); // OCL's y axis points down, like ours
       if (a.charge && k==='element') mol.setAtomCharge(i,a.charge);
       if (a.rad && k==='element') mol.setAtomRadical(i, M.cAtomRadicalStateD);
+      if (a.iso && k==='element') mol.setAtomMass(i, a.iso);
       map.set(id,i); owner[i]=id;
       if (k!=='element') generic = generic || k==='generic';
     } else if (k==='abbr'){
@@ -577,7 +612,7 @@ function toOCL(d, ix, atomIds, opts={}){
     } else { generic=true; }
   }
   for (const b of d.bonds){
-    if (!set.has(b.a)||!set.has(b.b)) continue;
+    if (!set.has(b.a)||!set.has(b.b) || b.kind) continue;
     if (!map.has(b.a)||!map.has(b.b)) continue;
     let t = b.order===2? M.cBondTypeDouble : b.order===3? M.cBondTypeTriple : M.cBondTypeSingle;
     let i1=map.get(b.a), i2=map.get(b.b);
@@ -599,6 +634,7 @@ function fromOCL(mol, offset){
   for (let i=0;i<n;i++){
     const el=mol.getAtomLabel(i);
     const a={id:0,x:mol.getAtomX(i)*L,y:mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
+    const ms=mol.getAtomMass(i); if (ms) a.iso=ms;
     atoms.push(a); ids.push(a);
   }
   // keep AND/OR stereo groups from V3000 molfiles (ABS is the default and stays unlabelled)

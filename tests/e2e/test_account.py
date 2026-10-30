@@ -38,13 +38,15 @@ class FakeGoogle(BaseHTTPRequestHandler):
         proof = base64.urlsafe_b64encode(hashlib.sha256(form.get("code_verifier", "").encode()).digest()).rstrip(b"=").decode()
         if form.get("client_secret") != CLIENT_SECRET or FakeGoogle.challenges.get(form.get("code")) != proof:
             self.send_response(400); self.end_headers(); return
-        b = lambda o: base64.urlsafe_b64encode(json.dumps(o).encode()).rstrip(b"=").decode()
-        claims = {**USER, "iss": ISSUER, "aud": CLIENT_ID, "exp": int(time.time()) + 3600}
+        # raw UTF-8 like Google sends, not \u escapes, so non-ASCII names exercise the server's decoding
+        b = lambda o: base64.urlsafe_b64encode(json.dumps(o, ensure_ascii=False).encode()).rstrip(b"=").decode()
+        claims = {**FakeGoogle.user, "iss": ISSUER, "aud": CLIENT_ID, "exp": int(time.time()) + 3600}
         body = json.dumps({"id_token": b({"alg": "RS256"}) + "." + b(claims) + ".sig", "access_token": "x"}).encode()
         self.send_response(200); self.send_header("content-type", "application/json"); self.send_header("content-length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
 
 FakeGoogle.refuse = False
+FakeGoogle.user = USER
 
 
 @pytest.fixture(scope="module")
@@ -57,7 +59,7 @@ def server():
     r = w("d1", "migrations", "apply", "lonepair", "--local", "--persist-to", state)
     if r.returncode: pytest.skip("wrangler not usable here (needs Node 22): " + (r.stderr or r.stdout)[-300:])
     binds = {"GOOGLE_CLIENT_ID": CLIENT_ID, "GOOGLE_CLIENT_SECRET": CLIENT_SECRET, "GOOGLE_ISSUER": ISSUER,
-             "GOOGLE_AUTH_URL": f"http://127.0.0.1:{gport}/auth", "GOOGLE_TOKEN_URL": f"http://127.0.0.1:{gport}/token"}
+             "GOOGLE_AUTH_URL": f"http://127.0.0.1:{gport}/auth", "GOOGLE_TOKEN_URL": f"http://127.0.0.1:{gport}/token", "FEEDBACK_LIMIT": "4"}
     # wrangler.toml isn't a Pages config (see its header), so the D1 binding is passed here, using the same local database
     db_id = next(l.split('"')[1] for l in (ROOT / "wrangler.toml").read_text().splitlines() if l.startswith("database_id"))
     args = [*WRANGLER, "pages", "dev", "site", "--port", str(wport), "--ip", "127.0.0.1", "--persist-to", state, "--d1", f"DB={db_id}", "--compatibility-date", "2026-09-01"]
@@ -92,6 +94,9 @@ def test_sign_in_saves_the_account_and_keeps_the_drawing(server, browser):
     pg.click("#bAccount")
     pg.wait_for_url(server["base"] + "/")  # back home, ?signin=ok removed
     pg.wait_for_selector("#bAccount .avatar")
+    for _ in range(100):  # the tab reopens its project from the library once it has loaded
+        if pg.evaluate("window.libReady===true"): break
+        pg.wait_for_timeout(100)
     assert "Ada" in pg.inner_text("#bAccount") and pg.evaluate("doc.atoms.length") == 13
     rows = server["sql"]("SELECT id, email, name, sign_ins FROM users")
     assert rows == [{"id": USER["sub"], "email": USER["email"], "name": USER["name"], "sign_ins": 1}]
@@ -137,3 +142,71 @@ def test_refused_or_forged_sign_ins_are_rejected(server, browser):
     with pytest.raises(urllib.error.HTTPError) as e: urllib.request.urlopen(req)
     assert e.value.code == 403
     ctx.close()
+
+
+def test_non_ascii_names_and_stray_cookies(server, browser):
+    jose = {**USER, "sub": "g-jose", "email": "jose@example.com", "name": "José Müller-Ødegård"}
+    now_ms = int(time.time() * 1000)
+    server["sql"](f"INSERT INTO users (id, email, name, created_at, last_seen_at) VALUES ('g-jose', 'jose@example.com', 'x', {now_ms}, {now_ms})")
+    server["sql"]("INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES ('old-expired', 'g-jose', 0, 1)")
+    FakeGoogle.user = jose
+    try:
+        ctx, pg = open_app(browser, server["base"])
+        pg.click("#bAccount"); pg.wait_for_selector("#bAccount .avatar")
+        assert pg.inner_text("#bAccount .avatar") == "JM" and "José" in pg.inner_text("#bAccount")
+        assert server["sql"]("SELECT name FROM users WHERE id = 'g-jose'")[0]["name"] == jose["name"]
+        # signing in tidies that user's expired sessions
+        assert server["sql"]("SELECT COUNT(*) AS n FROM sessions WHERE id = 'old-expired'")[0]["n"] == 0
+        ctx.close()
+    finally:
+        FakeGoogle.user = USER
+    # a cookie from another app on the domain that isn't valid percent-encoding must not break /api/me
+    req = urllib.request.Request(server["base"] + "/api/me", headers={"cookie": "other=%E0%A4%A; lp_session=nope"})
+    body = json.load(urllib.request.urlopen(req))
+    assert body["available"] is True and body["signedIn"] is False
+
+
+def post_feedback(base, body, origin=True):
+    h = {"content-type": "application/json", **({"origin": base} if origin else {})}
+    req = urllib.request.Request(base + "/api/feedback", data=json.dumps(body).encode(), method="POST", headers=h)
+    try:
+        r = urllib.request.urlopen(req); return r.status, json.load(r)
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+def test_feedback_is_stored_and_removed_with_the_account(server, browser):
+    ctx, pg = open_app(browser, server["base"])
+    if pg.locator("#bAccount .avatar").count():  # start signed out
+        pg.click("#bAccount"); pg.click("#acOut"); pg.wait_for_selector("#bAccount:not(:has(.avatar))")
+    pg.click("#bFeedback"); assert pg.inner_text("#fbGo") == "Send"
+    pg.fill("#fbMsg", "Anonymous: the lasso misses small rings"); pg.fill("#fbEmail", "reply@example.com"); pg.click("#fbGo")
+    pg.wait_for_selector("#toast.show"); assert "Thanks" in pg.inner_text("#toast")
+    row = server["sql"]("SELECT message, email, user_id, context, ip_hash FROM feedback ORDER BY id DESC LIMIT 1")[0]
+    assert (row["message"], row["email"], row["user_id"]) == ("Anonymous: the lasso misses small rings", "reply@example.com", None)
+    assert "browser" in json.loads(row["context"]) and len(row["ip_hash"]) == 64
+    # signed in: tied to the account, and the reply address defaults to the account email
+    pg.click("#bAccount"); pg.wait_for_selector("#bAccount .avatar")
+    pg.click("#bFeedback"); assert pg.input_value("#fbEmail") == USER["email"]
+    pg.fill("#fbMsg", "Please add Fischer projections"); pg.click("#fbGo")
+    pg.wait_for_selector("#modal.open", state="detached")
+    row = server["sql"]("SELECT user_id, email FROM feedback ORDER BY id DESC LIMIT 1")[0]
+    assert row == {"user_id": USER["sub"], "email": USER["email"]}
+    # deleting the account deletes that person's feedback too
+    pg.click("#bAccount"); pg.click("#acDel"); pg.click("#acDelGo"); pg.wait_for_selector("#bAccount:not(:has(.avatar))")
+    assert server["sql"](f"SELECT COUNT(*) AS n FROM feedback WHERE user_id = '{USER['sub']}'")[0]["n"] == 0
+    assert pg.errors == [], pg.errors
+    ctx.close()
+
+
+def test_feedback_api_rejects_bad_requests_and_floods(server):
+    base = server["base"]
+    assert post_feedback(base, {"message": "x"}, origin=False)[0] == 403       # other sites can't post
+    assert post_feedback(base, {"message": "   "})[0] == 400                    # empty
+    assert post_feedback(base, {"message": "x" * 5001})[0] == 400               # too long
+    code, _ = post_feedback(base, {"message": "<script>alert(1)</script>", "email": "bad", "context": {"a b": 1, "ok": {"nested": 1}}})
+    assert code == 200
+    row = server["sql"]("SELECT email, context FROM feedback ORDER BY id DESC LIMIT 1")[0]
+    assert row == {"email": None, "context": None}            # coerced, not trusted
+    codes = [post_feedback(base, {"message": f"flood {i}"})[0] for i in range(6)]
+    assert 429 in codes and codes[-1] == 429                                    # FEEDBACK_LIMIT=4 per 10 minutes per address

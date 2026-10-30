@@ -37,6 +37,17 @@
   </table>
   <p>We ask Google only for your basic profile (name and email). We do not get your password, contacts, files or anything else in your Google account.</p>
 
+  <h2>If you send feedback</h2>
+  <p><b>Send feedback</b> is optional and works whether or not you are signed in. We keep:</p>
+  <table>
+    <tr><th>Data</th><th>Why</th></tr>
+    <tr><td>Your message</td><td>To fix problems and decide what to build next</td></tr>
+    <tr><td>The email address you typed, if any (or your account email if you are signed in)</td><td>To reply to you</td></tr>
+    <tr><td>Your browser, screen and window size and language, only if you leave "Include browser and screen details" ticked</td><td>To reproduce bugs</td></tr>
+    <tr><td>A keyed one-way hash of your IP address (for IPv6, of your network's /64 block)</td><td>To stop one address flooding the form. We never store the address itself, and the hash is deleted after 10 minutes</td></tr>
+  </table>
+  <p>Your drawing is never attached. In downloaded copies of Lone Pair, or when you are offline, Send feedback opens your own email app instead, and the message goes to <a href="mailto:feedback@lonepair.app">feedback@lonepair.app</a> like any other email.</p>
+
   <h2>What we do not do</h2>
   <ul>
     <li>We do not sell or rent your information, and we do not show ads.</li>
@@ -46,16 +57,17 @@
 
   <h2>Features that contact other services</h2>
   <p>A few optional tools send a structure to a public database, only when you click them: <b>Look up name and CAS number</b> and inserting a compound by name (PubChem, US National Library of Medicine), and <b>Find in databases</b> (PubChem, RCSB PDB, ChEMBL, Google). They send only the structure's SMILES or InChIKey, never your account details.</p>
+  <p>The hosted site loads its interface font (Schibsted Grotesk) from Google Fonts, so your browser asks Google's servers for it, which shows them your IP address and browser. Google says it does not use this to build profiles (<a href="https://developers.google.com/fonts/faq/privacy">Google Fonts privacy FAQ</a>). Lone Pair works the same if the font is blocked.</p>
 
   <h2>Visitor statistics</h2>
   <p>We may use Cloudflare Web Analytics to count visits. It does not use cookies or track you across sites.</p>
 
   <h2>Where your data is kept</h2>
-  <p>Lone Pair runs on Cloudflare. Account data is stored in a Cloudflare D1 database. We keep it until you delete your account.</p>
+  <p>Lone Pair runs on Cloudflare. Account data and feedback are stored in a Cloudflare D1 database. We keep account data until you delete your account, and feedback until we have dealt with it. To have a message removed, email us.</p>
 
   <h2>Your choices</h2>
   <ul>
-    <li><b>Delete your account:</b> sign in, click your name in the top bar, then <b>Delete my account</b>. Your name, email and visit records are removed straight away.</li>
+    <li><b>Delete your account:</b> sign in, click your name in the top bar, then <b>Delete my account</b>. Your name, email, visit records and any feedback you sent while signed in are removed straight away.</li>
     <li><b>Sign out</b> at any time from the same menu.</li>
     <li>You can also revoke Lone Pair's access in your Google account settings under "Third-party apps and services".</li>
   </ul>

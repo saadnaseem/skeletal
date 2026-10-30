@@ -11,7 +11,7 @@ The whole app is one HTML file (about 2.4 MB). It needs no server, no install an
 1. Use it at [lonepair.app](https://lonepair.app/), or download [`dist/lonepair.html`](dist/lonepair.html) and open it.
 2. Open it in Chrome, Edge, Firefox or Safari.
 
-That's it. Your work autosaves in the browser. Use **Save project (.html)** to keep a copy you can reopen anywhere.
+That's it. Each tab starts a new project, and your work autosaves in the browser. **Projects** lists everything you've worked on, so you can reopen it with one click. Use **Save project (.html)** to keep a copy you can reopen anywhere.
 
 To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or publish `dist/lonepair.html` on any static file server.
 
@@ -64,6 +64,10 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
   - Up to 8 × 8 sheets for posters.
 
 ### Projects
+- **Projects:** every project you work on is kept in the browser and listed under **Projects** (with previews, search and delete). The Project panel shows the five most recent, and a blank canvas offers them too.
+  - Each browser tab works on its own project: a new tab or window starts blank, and reloading a tab reopens its project.
+  - The same project can't be edited in two tabs at once. Opening it from a second tab (or with Duplicate Tab) gives you a copy.
+  - New project and Open never discard work: the current project stays in Projects. See [docs/PROJECTS_PLAN.md](docs/PROJECTS_PLAN.md).
 - Multiple pages per project, shown as tabs.
 - Named versions stored inside the project, with one-click restore. Restoring first saves your current state as another version.
 - **Save project (.html)** (Ctrl/⌘ + S) writes a complete copy of the editor with your pages and versions inside it. Double-click the file to keep working, or open it again on the website.
@@ -153,10 +157,10 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 105 unit tests (Node test runner)
+npm test             # 136 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 57 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
+npm run test:e2e     # 84 browser tests (Playwright; the 6 sign-in and feedback-server tests need Node 22 for wrangler and a built site/)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
@@ -244,9 +248,11 @@ npx wrangler pages deploy site --project-name lonepair
 
 **Optional sign-in.** On the hosted site, people can choose to **Sign in with Google**. That stores their name, email and visit times in a Cloudflare D1 database (`functions/`, `server/auth.js`, `migrations/`). Drawings are never uploaded. Setup steps are in [docs/DEPLOY.md](docs/DEPLOY.md#6-turn-on-sign-in-with-google-optional-about-20-minutes). Without that setup, or in downloaded copies, the button doesn't appear.
 
+**Send feedback.** The **Feedback** button in the top bar opens a short form: a message, an optional reply address and browser details. On the hosted site it posts to `/api/feedback`, which stores the message in the same D1 database (`migrations/0002_feedback.sql`) and limits each address to 5 messages per 10 minutes. Downloaded copies, plain static hosts and offline use open an email to feedback@lonepair.app instead. The drawing is never attached. To read messages, see [docs/DEPLOY.md](docs/DEPLOY.md#8-read-feedback).
+
 **What visitors can save.** Drawings are never stored on your side:
 
-- **Autosave:** work is kept in each visitor's own browser (`localStorage`, per browser and device).
+- **Autosave and Projects:** work is kept in each visitor's own browser (IndexedDB, or `localStorage` where IndexedDB isn't available), per browser, device and site.
 - **Files:** **Save project (.html)** and every export download to their computer, and they can reopen them on any device.
 - **Network:** the only requests that leave the browser are the ones a visitor starts (name/CAS lookup, Find in databases, inserting a compound by name).
 
@@ -268,7 +274,7 @@ CI runs both the file and the served-site test passes on every push.
 
 - Name and CAS lookup needs an internet connection, and PubChem must be reachable from your network. Everything else works offline.
 - Copying to the clipboard needs a secure context (HTTPS or a local file). When a browser blocks it, Lone Pair shows the image so you can right-click it and choose Copy image.
-- Autosave uses `localStorage`, which is separate for each browser and can be cleared. Save the project as HTML to keep it permanently.
+- Projects are stored per browser and per site (lonepair.app and a downloaded copy have separate lists), and clearing site data removes them. Safari may also clear them after 7 days without a visit. Save the project as HTML to keep it permanently.
 - Labels render in Arial/Helvetica so they match Office and journal fonts.
 
 ## Contributing

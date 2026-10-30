@@ -7,7 +7,9 @@ const FORMATS = (()=>{
 
   /* ---------- tiny XML (works in Node and the browser) ---------- */
   const ENT={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"};
-  const unent = s => s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi,(m,e)=> e[0]==='#' ? String.fromCodePoint(e[1]==='x'||e[1]==='X'? parseInt(e.slice(2),16) : +e.slice(1)) : (ENT[e]!=null?ENT[e]:m));
+  const ENT_OK = e => Object.hasOwn(ENT, e);
+  const cp = n => String.fromCodePoint(n>=1 && n<=0x10ffff && !(n>=0xd800 && n<=0xdfff) ? n : 0xfffd); // bad references become U+FFFD instead of aborting the import
+  const unent = s => s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi,(m,e)=> e[0]==='#' ? cp(e[1]==='x'||e[1]==='X'? parseInt(e.slice(2),16) : +e.slice(1)) : (ENT_OK(e)?ENT[e]:m));
   function xmlParse(s){
     const root={name:'#root',attrs:{},children:[],text:''}, st=[root]; let i=0;
     while (i<s.length){
@@ -15,7 +17,7 @@ const FORMATS = (()=>{
       if (lt<0){ st[st.length-1].text+=unent(s.slice(i)); break; }
       if (lt>i) st[st.length-1].text+=unent(s.slice(i,lt));
       if (s.startsWith('<!--',lt)){ i=s.indexOf('-->',lt)+3; if (i<3) break; continue; }
-      if (s.startsWith('<![CDATA[',lt)){ const e=s.indexOf(']]>',lt); st[st.length-1].text+=s.slice(lt+9,e); i=e+3; continue; }
+      if (s.startsWith('<![CDATA[',lt)){ const e=s.indexOf(']]>',lt); if (e<0) break; st[st.length-1].text+=s.slice(lt+9,e); i=e+3; continue; }
       if (s[lt+1]==='?'||s[lt+1]==='!'){ i=s.indexOf('>',lt)+1; if (!i) break; continue; }
       const gt=s.indexOf('>',lt); if (gt<0) break;
       let tag=s.slice(lt+1,gt); i=gt+1;
@@ -67,7 +69,7 @@ const FORMATS = (()=>{
       const f=placeAbbr(a.el, a, from), ids=f.atoms.map(q=>{ const n={id:nid++,x:q.p.x,y:q.p.y,el:q.el,charge:q.charge,lp:0,rad:0}; out.atoms.push(n); return n.id; });
       f.bonds.forEach(b=>out.bonds.push({id:nid++,a:ids[b.a],b:ids[b.b],order:b.order,stereo:'none'}));
       map.set(a.id, ids[0]); }
-    for (const b of d.bonds) if (map.has(b.a)&&map.has(b.b)) out.bonds.push({...b,id:nid++,a:map.get(b.a),b:map.get(b.b)});
+    for (const b of d.bonds) if (map.has(b.a)&&map.has(b.b)&&!b.kind) out.bonds.push({...b,id:nid++,a:map.get(b.a),b:map.get(b.b)});
     return out;
   }
   const oclOf = (d, ids) => { const ix=buildIndex(d); const r=toOCL(d,ix,ids); r.mol.ensureHelperArrays(OCL.Molecule.cHelperParities); return r.mol; };
@@ -103,11 +105,12 @@ const FORMATS = (()=>{
         if (k==='element'){
           if (a.el!=='C') n.attrs.Element=String(ZOF(a.el));
           if (a.charge) n.attrs.Charge=String(a.charge);
+          if (a.iso) n.attrs.Isotope=String(a.iso);
           if (a.rad) n.attrs.Radical='Doublet';
           if (a.stg){ const m=/^(abs|and|or)(\d*)$/.exec(a.stg); n.attrs.EnhancedStereoType={abs:'Absolute',and:'And',or:'Or'}[m[1]]; if (m[1]!=='abs') n.attrs.EnhancedStereoGroupNum=m[2]||'1'; }
           if (a.color) n.attrs.color=colorIdx(a.color);
           if (lb.visible){ const h=implicitH(a,bondSum(ix,aid)); n.attrs.NumHydrogens=String(h);
-            label(a.el+(h?'H'+(h>1?h:''):'')+(a.charge? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : '')); }
+            label(atomSymbol(a)+(h?'H'+(h>1?h:''):'')+(a.charge? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : '')); }
         } else if (k==='abbr'){
           n.attrs.NodeType='Nickname';
           const nb=(ix.adj.get(aid)||[])[0], from=nb? ix.atom.get(nb.o):null, f=placeAbbr(a.el,a,from);
@@ -119,8 +122,9 @@ const FORMATS = (()=>{
       }
       for (const b of d.bonds){ if (!nodeId.has(b.a)||!nodeId.has(b.b)) continue;
         const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)};
-        if (b.order>1) at.Order=String(b.order);
-        if (b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold'}[b.stereo];
+        if (b.kind) at.Order=b.kind==='hbond'?'hydrogen':'dative';
+        else if (b.order>1) at.Order=String(b.order);
+        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold'}[b.stereo];
         if (b.order===2 && b.dbPos && b.dbPos!=='auto') at.DoublePosition={center:'Center',left:'Left',right:'Right'}[b.dbPos];
         if (b.color) at.color=colorIdx(b.color);
         fr.children.push(E('b',at)); }
@@ -159,7 +163,7 @@ const FORMATS = (()=>{
     if (rr){ const ids=c=>c.map(x=>fragOf.get(x[0])).join(' ');
       page.children.push(E('scheme',{id:id()},[E('step',{id:id(), ReactionStepReactants:ids(rr.reactants), ReactionStepProducts:ids(rr.products), ReactionStepArrows:arrowIds.get(rr.arrow),
         ReactionStepObjectsAboveArrow:rr.above.map(t=>textIds.get(t)).join(' ')||undefined, ReactionStepObjectsBelowArrow:rr.below.map(t=>textIds.get(t)).join(' ')||undefined})])); }
-    const hex=c=>[1,3,5].map(i=>num(parseInt(c.length===4? c[(i+1)/2].repeat(2) : c.slice(i,i+2),16)/255));
+    const hex=c=>[1,3,5].map(i=>String(Math.round(parseInt(c.length===4? c[(i+1)/2].repeat(2) : c.slice(i,i+2),16)/255*1e4)/1e4)); // 4 places: every 8-bit value comes back exactly
     const colortable=E('colortable',{},[E('color',{r:'1',g:'1',b:'1'}),E('color',{r:'0',g:'0',b:'0'}),...colors.map(c=>{ const [r,g,b]=hex(c); return E('color',{r,g,b}); })]);
     const fonttable=E('fonttable',{},[E('font',{id:'3',charset:'iso-8859-1',name:'Arial'}),E('font',{id:'4',charset:'iso-8859-1',name:'Times New Roman'}),E('font',{id:'5',charset:'iso-8859-1',name:'Courier New'})]);
     // colortable index 2 is its first entry; we list white, black, then custom colors (from index 4)
@@ -173,7 +177,7 @@ const FORMATS = (()=>{
   const OBJ={CDXML:0x8000,page:0x8001,group:0x8002,fragment:0x8003,n:0x8004,b:0x8005,t:0x8006,graphic:0x8007,scheme:0x800d,step:0x800e,arrow:0x8027};
   const OBJN=Object.fromEntries(Object.entries(OBJ).map(([k,v])=>[v,k]));
   const P={CreationProgram:[0x3,'str'],Name:[0x8,'str'],p:[0x200,'pt2'],BoundingBox:[0x204,'rect'],Head3D:[0x207,'pt3'],Tail3D:[0x208,'pt3'],Center3D:[0x20d,'pt3'],MajorAxisEnd3D:[0x20e,'pt3'],MinorAxisEnd3D:[0x20f,'pt3'],
-    color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
+    color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Isotope:[0x420,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
     Order:[0x600,'i16'],Display:[0x601,'i16'],DoublePosition:[0x603,'i16'],B:[0x604,'u32'],E:[0x605,'u32'],Justification:[0x701,'i8'],LabelAlignment:[0x705,'i8'],InterpretChemically:[0x708,'bool'],
     BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelJustification:[0x823,'i8'],
     GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
@@ -187,7 +191,7 @@ const FORMATS = (()=>{
     SymbolType:['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Dagger','DoubleDagger','Plus','Minus','Racemic','Absolute','Relative'],
     Radical:['None','Singlet','Doublet','Triplet'], EnhancedStereoType:['Unspecified','None','Absolute','Or','And'], LabelAlignment:['Auto','Left','Center','Right','Above','Below','Best'],
   };
-  const EMAP={ Order:{'1':1,'2':2,'3':4,'1.5':0x80}, DoublePosition:{Center:0x100,Right:0x101,Left:0x102}, LineType:{Solid:0,Dashed:1,Bold:2,Wavy:4},
+  const EMAP={ Order:{'1':1,'2':2,'3':4,'1.5':0x80,dative:0x1000,ionic:0x2000,hydrogen:0x4000}, DoublePosition:{Center:0x100,Right:0x101,Left:0x102}, LineType:{Solid:0,Dashed:1,Bold:2,Wavy:4},
     ArrowheadHead:{Full:2,HalfLeft:3,HalfRight:4}, ArrowheadType:{Solid:1,Hollow:2,Angle:3}, FillType:{None:1,Solid:2,Shaded:4}, NoGo:{None:1,Cross:2,Hash:3},
     Justification:{Right:-1,Left:0,Center:1,Full:2,Above:3,Below:4,Auto:5,Best:6}, ArrowType:{NoHead:0,HalfHead:1,FullHead:2,Resonance:4,Equilibrium:8,Hollow:16,RetroSynthetic:32} };
   EMAP.ArrowheadTail=EMAP.ArrowheadHead; EMAP.LabelJustification=EMAP.Justification;
@@ -252,6 +256,8 @@ const FORMATS = (()=>{
         if (t & 0x8000){ n.children.push(readObj(t)); continue; }
         let len=dv.getUint16(p,true); p+=2; if (len===0xFFFF){ len=dv.getUint32(p,true); p+=4; }
         const o=p; p+=len;
+        if (t===0x300){ const nc=dv.getUint16(o,true), cs=[]; for (let i=0;i<nc && o+2+i*6+6<=o+len;i++){ const q=o+2+i*6; const c=k=>String(Math.round(dv.getUint16(q+k,true)/65535*1e4)/1e4); cs.push(E('color',{r:c(0),g:c(2),b:c(4)})); }
+          n.children.push(E('colortable',{},cs)); continue; }
         if (t===0x700){ const nr=dv.getUint16(o,true), runs=[]; for (let i=0;i<nr;i++){ const q=o+2+i*10; runs.push({at:dv.getUint16(q,true),font:dv.getUint16(q+2,true),face:dv.getUint16(q+4,true),size:dv.getUint16(q+6,true)/20,color:dv.getUint16(q+8,true)}); }
           const txt=dec1252([...bytes.subarray(o+2+nr*10,o+len)]).replace(/\r/g,'\n');
           if (!runs.length) runs.push({at:0,font:3,face:0,size:10,color:3});
@@ -269,7 +275,7 @@ const FORMATS = (()=>{
           case 'pt3': { const a=[]; for (let i=0;i+4<=len;i+=4) a.push(num(fixed(o+i))); v=a.join(' '); break; }
         }
         if (name==='BondSpacing') v=num(v/10); else if (name==='AngularSize') v=num(v/10);
-        else if (name==='Order'){ const m={1:'1',2:'2',4:'3',0x80:'1.5'}; v=m[v]||'1'; }
+        else if (name==='Order'){ const m={1:'1',2:'2',4:'3',0x80:'1.5',0x1000:'dative',0x2000:'ionic',0x4000:'hydrogen'}; v=m[v&0xFFFF]||'1'; }
         else if (EREV[name] && EREV[name][v]!=null) v=EREV[name][v];
         n.attrs[name]=String(v);
       }
@@ -285,7 +291,7 @@ const FORMATS = (()=>{
     const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return;
     const byId=new Map(atoms.map(a=>[a.id,a])), deg=new Map(), other=new Map();
     for (const b of bonds) for (const x of [b.a,b.b]){ deg.set(x,(deg.get(x)||0)+1); if (b.order!==1.5) other.set(x,(other.get(x)||0)+b.order); }
-    const need=id=>{ const a=byId.get(id); const v={C:4,N:3,P:3,B:3,Si:4,As:3}[a.el]; if (!v) return false; return v-(a.charge&&a.el!=='C'? -a.charge:Math.abs(a.charge||0))-(other.get(id)||0)-(ar.filter(b=>b.a===id||b.b===id).length)-(a.h||0)>=1; };
+    const need=id=>{ const a=byId.get(id); const v=({__proto__:null,C:4,N:3,P:3,B:3,Si:4,As:3})[a.el]; if (!v) return false; return v-(a.charge&&a.el!=='C'? -a.charge:Math.abs(a.charge||0))-(other.get(id)||0)-(ar.filter(b=>b.a===id||b.b===id).length)-(a.h||0)>=1; };
     const nodes=[...new Set(ar.flatMap(b=>[b.a,b.b]))].filter(need), mate=new Map(); let budget=20000;
     const adj=id=>ar.filter(b=>(b.a===id||b.b===id)).map(b=>b.a===id?b.b:b.a).filter(x=>nodes.includes(x));
     function solve(i){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
@@ -294,8 +300,30 @@ const FORMATS = (()=>{
     solve(0);
     for (const b of ar) b.order = mate.get(b.a)===b.b ? 2 : 1;
   }
+  // the document's drawing settings -> the closest journal style plus overrides for what differs
+  function styleFrom(root){
+    const A=root.attrs||{}, f=k=>{ const v=parseFloat(A[k]); return Number.isFinite(v)&&v>0? v : null; };
+    const got={bondLength:f('BondLength'), lineWidth:f('LineWidth'), boldWidth:f('BoldWidth'), spacing:f('BondSpacing')!=null? f('BondSpacing')/100 : null, hashSpacing:f('HashSpacing'), margin:f('MarginWidth')}, fs=f('LabelSize');
+    if (got.bondLength==null) return null;
+    let best='acs', bs=Infinity; // weighted: bond length and label size say most about the journal
+    for (const k of Object.keys(PRESETS)){ const P=PRESETS[k]; let sc=fs? 2*Math.abs(fs-P.fontSize)/P.fontSize : 0; for (const q in got) if (got[q]!=null) sc+=(q==='bondLength'?4:1)*Math.abs(got[q]-P[q])/P[q]; if (sc<bs){ bs=sc; best=k; } }
+    const P=PRESETS[best], out={style:best}, ov={};
+    for (const q in got){ const v=got[q]; if (v==null || Math.abs(v-P[q])<=1e-3*P[q]) continue; const [lo,hi]=STYLE_LIMITS[q]; ov[q]=Math.min(hi,Math.max(lo,v)); }
+    if (Object.keys(ov).length) out.styleOv=ov;
+    if (fs && Math.abs(fs-P.fontSize)>0.01) out.labelSize=Math.min(72,Math.max(4,fs));
+    return out;
+  }
+  // ChemDraw objects Lone Pair has no equivalent for: counted so the app can say what was left out
+  const SKIP_NAMES={curve:'shape', tlcplate:'TLC plate', spectrum:'spectrum', embeddedobject:'embedded object', table:'table', geometry:'geometry constraint', constraint:'geometry constraint', altgroup:'alternative group'};
+  const ATOM_SYMBOLS=new Set(['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Minus']); // drawn from the atom's own charge and radical
+  const GRAPHIC_NAMES={Line:'line', Arc:'arc', Rectangle:'shape', Oval:'shape', Orbital:'orbital', Bracket:'bracket', Symbol:'symbol'};
   function treeToDoc(root){
-    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[]; let nid=1;
+    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], skipped={}; let nid=1;
+    const skip=what=>{ skipped[what]=(skipped[what]||0)+1; };
+    // colour indexes: 0 black, 1 white, then the colour table from 2
+    const table=kids(kids(root,'colortable')[0]||{children:[]},'color').map(c=>{ const h=k=>Math.max(0,Math.min(255,Math.round(parseFloat(c.attrs[k])*255)||0)).toString(16).padStart(2,'0'); return '#'+h('r')+h('g')+h('b'); });
+    const colorOf=i=>{ if (i==null) return undefined; const c=table[+i-2]; return c && c!=='#000000' && c!=='#ffffff' ? c : undefined; };
+    const setColor=(o,i)=>{ const c=colorOf(i); if (c) o.color=c; return o; };
     const pt=s=>{ const a=String(s||'0 0').trim().split(/\s+/).map(parseFloat); return V(a[0]||0,a[1]||0); };
     const sText=t=>kids(t,'s').map(s=>{ const f=+(s.attrs.face||0), x=s.text||''; return (f&64)? '^'+x : x; }).join('') || (t.text||'').trim();
     const nodeMap=new Map(), multi=new Map(); // CDX node id -> our atom id; nicknames with several attachment points
@@ -323,9 +351,12 @@ const FORMATS = (()=>{
           else el=label||'R';
         } else {
           const z=+(n.attrs.Element||6); el=ELEMENTS[z-1]||'C';
+          if (label==='D'||label==='T'){ el='H'; if (!n.attrs.Isotope) n.attrs.Isotope=label==='D'?'2':'3'; }
           if (label && z===6 && /^[A-Z]/.test(label) && !/^C(H\d*)?$/.test(label)){ const lb=label.replace(/[+-]\d*$/,''); if (ABBR[lb]) el=lb; else if (!ELEMENTS.includes(lb) && !/^[A-Z][a-z]?(H\d*)?$/.test(lb)) el=lb; }
         }
         const a={id:nid++, x:p.x, y:p.y, el, charge:+(n.attrs.Charge||0)||0, lp:0, rad: n.attrs.Radical==='Doublet'?1:0, h: n.attrs.NumHydrogens!=null? +n.attrs.NumHydrogens : 0};
+        const iso=+n.attrs.Isotope; if (Number.isInteger(iso) && iso>0 && iso<300 && ELEMENTS.includes(el)) a.iso=iso;
+        setColor(a, n.attrs.color ?? (lab && (kids(lab,'s')[0]||{attrs:{}}).attrs.color));
         const est=n.attrs.EnhancedStereoType; if (est==='And'||est==='Or') a.stg=est.toLowerCase()+(+n.attrs.EnhancedStereoGroupNum||1); else if (est==='Absolute' && n.attrs.EnhancedStereoGroupNum) a.stg='abs';
         atoms.push(a); nodeMap.set(n.attrs.id, a.id);
       }
@@ -337,13 +368,17 @@ const FORMATS = (()=>{
         return (m.atts[k]||m.atts[0]).atom; };
       for (const b of kids(fr,'b')){
         const A=end(b.attrs.B, nodeMap.get(b.attrs.E), b.attrs.id), Bb=end(b.attrs.E, nodeMap.get(b.attrs.B), b.attrs.id); if (A==null||Bb==null||A===Bb) continue;
-        const o=String(b.attrs.Order||'1').split(/\s+/)[0]; let order = o==='1.5'? 1.5 : Math.max(1,Math.min(3,Math.round(+o)||1));
+        const o=String(b.attrs.Order||'1').split(/\s+/)[0].toLowerCase();
+        if (o==='ionic'){ skip('ionic bond'); continue; }
+        const kind = o==='hydrogen'? 'hbond' : o==='dative'? 'dative' : undefined;
+        let order = o==='1.5'? 1.5 : kind? 1 : Math.max(1,Math.min(3,Math.round(+o)||1));
         const dsp=b.attrs.Display||'Solid'; let stereo='none', a1=A, a2=Bb;
         if (dsp==='WedgeBegin') stereo='wedge'; else if (dsp==='WedgeEnd'){ stereo='wedge'; a1=Bb; a2=A; }
         else if (dsp==='WedgedHashBegin') stereo='hash'; else if (dsp==='WedgedHashEnd'){ stereo='hash'; a1=Bb; a2=A; }
         else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold';
-        const bd={id:nid++, a:a1, b:a2, order, stereo}; const dp=b.attrs.DoublePosition; if (dp) bd.dbPos={Center:'center',Left:'left',Right:'right'}[dp];
-        bonds.push(bd);
+        const bd={id:nid++, a:a1, b:a2, order, stereo: kind? 'none' : stereo}; const dp=b.attrs.DoublePosition; if (dp) bd.dbPos={Center:'center',Left:'left',Right:'right'}[dp];
+        if (kind) bd.kind=kind;
+        bonds.push(setColor(bd, b.attrs.color));
       }
     }
     const seenArrows=new Set();
@@ -351,17 +386,20 @@ const FORMATS = (()=>{
       for (const c of n.children){
         if (c.name==='fragment' && !inNode) addFragment(c);
         else if (c.name==='t' && !inNode){ const s=sText(c); if (!s) continue; const bb=c.attrs.BoundingBox? String(c.attrs.BoundingBox).split(/\s+/).map(parseFloat) : null;
-          const s0=kids(c,'s')[0]||{attrs:{}}, size=parseFloat(s0.attrs.size||10), f=+(s0.attrs.face||0);
+          const rs=kids(c,'s').filter(r=>(r.text||'').trim()), s0=rs[0]||kids(c,'s')[0]||{attrs:{}}, size=parseFloat(s0.attrs.size||10);
+          const f=rs.length? rs.reduce((m,r)=>m & +(r.attrs.face||0), 3) : +(s0.attrs.face||0); // bold/italic only if the whole text has it
           const p=pt(c.attrs.p), j=c.attrs.Justification;
           const t={id:nid++, x: bb? (bb[0]+bb[2])/2 : p.x, y: bb? (bb[1]+bb[3])/2 : p.y-size*0.35, text:s.replace(/\r/g,'\n')};
           if (Math.abs(size-10)>0.01) t.size=size; if (f&1) t.bold=true; if (f&2) t.italic=true; if (j==='Left'&&bb) t.align='left'; else if (j==='Right'&&bb) t.align='right';
-          texts.push(t); }
+          texts.push(setColor(t, s0.attrs.color ?? c.attrs.color)); }
         else if (c.name==='graphic'){
           const bb=String(c.attrs.BoundingBox||'').split(/\s+/).map(parseFloat);
-          if (c.attrs.GraphicType==='Symbol' && c.attrs.SymbolType==='Plus' && bb.length===4) pluses.push({id:nid++, x:(bb[0]+bb[2])/2, y:(bb[1]+bb[3])/2});
+          if (c.attrs.GraphicType==='Symbol' && c.attrs.SymbolType==='Plus' && bb.length===4) pluses.push(setColor({id:nid++, x:(bb[0]+bb[2])/2, y:(bb[1]+bb[3])/2}, c.attrs.color));
           else if (c.attrs.GraphicType==='Line' && c.attrs.ArrowType && !c.attrs.SupersededBy && bb.length===4){ const at=c.attrs.ArrowType;
-            arrows.push({id:nid++, type: at==='Equilibrium'?'equilibrium': at==='RetroSynthetic'?'retro': at==='Resonance'?'resonance': c.attrs.LineType==='Dashed'?'dashed':'reaction', x1:bb[2], y1:bb[3], x2:bb[0], y2:bb[1]}); }
+            arrows.push(setColor({id:nid++, type: at==='Equilibrium'?'equilibrium': at==='RetroSynthetic'?'retro': at==='Resonance'?'resonance': c.attrs.LineType==='Dashed'?'dashed':'reaction', x1:bb[2], y1:bb[3], x2:bb[0], y2:bb[1]}, c.attrs.color)); }
+          else if (!c.attrs.SupersededBy && !(c.attrs.GraphicType==='Symbol' && ATOM_SYMBOLS.has(c.attrs.SymbolType))) skip(GRAPHIC_NAMES[c.attrs.GraphicType]||'shape');
         }
+        else if (SKIP_NAMES[c.name]) skip(SKIP_NAMES[c.name]);
         else if (c.name==='arrow' && !seenArrows.has(c)){ seenArrows.add(c);
           const h=pt(c.attrs.Head3D), t=pt(c.attrs.Tail3D), A=c.attrs;
           let type='reaction';
@@ -377,7 +415,7 @@ const FORMATS = (()=>{
             const a0=angOf(sub(t,C)); let d=angOf(sub(h,C))-a0; while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
             if (Math.abs(sw)>Math.PI+1e-3) d = d>0? d-2*Math.PI : d+2*Math.PI;
             const M=add(C,mul(fromAng(a0+d/2),R)), ctl=sub(mul(M,2),mul(add(t,h),0.5)); r.cx=ctl.x; r.cy=ctl.y; }
-          arrows.push(r); }
+          arrows.push(setColor(r, A.color)); }
         else if (c.name==='n') continue;
         else visit(c, inNode);
       }
@@ -386,11 +424,14 @@ const FORMATS = (()=>{
     kekulize(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
-    return scaleToL({atoms,bonds,arrows,texts,pluses});
+    const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
+    if (st) Object.assign(d, st);
+    if (Object.keys(skipped).length) d.skipped=skipped;
+    return d;
   }
-  function scaleToL(d){
+  function scaleToL(d, target=L){
     const ls=d.bonds.map(b=>{ const A=d.atoms.find(a=>a.id===b.a), B=d.atoms.find(a=>a.id===b.b); return dist(A,B); }).filter(x=>x>1e-6).sort((a,b)=>a-b);
-    const med=ls.length? ls[ls.length>>1] : L, k=L/med; if (Math.abs(k-1)<1e-3) return d;
+    const med=ls.length? ls[ls.length>>1] : target, k=target/med; if (Math.abs(k-1)<1e-3) return d;
     const sc=o=>{ for (const key of ['x','y','x1','y1','x2','y2','cx','cy']) if (o[key]!=null) o[key]*=k; };
     d.atoms.forEach(sc); d.arrows.forEach(sc); d.texts.forEach(sc); d.pluses.forEach(sc);
     return d;
@@ -443,7 +484,7 @@ const FORMATS = (()=>{
 
   /* ---------- chemfig (LaTeX) ---------- */
   function chemfigWrite(d0){
-    const d=d0, ix=buildIndex(d);
+    const d={...d0, bonds:d0.bonds.filter(b=>!b.kind)}, ix=buildIndex(d); // chemfig has no hydrogen or dative bonds
     const lab=a=>{ const k=kindOf(a.el), lb=layoutLabel(d,ix,a); if (k==='element' && !lb.visible) return '';
       let s = k==='element' ? a.el+(()=>{ const h=implicitH(a,bondSum(ix,a.id)); return h? 'H'+(h>1?'_'+h:'') : ''; })() : (a.el.replace(/(\d+)/g,'_$1'));
       if (a.charge) s+=`^{${Math.abs(a.charge)>1?Math.abs(a.charge):''}${a.charge>0?'+':'-'}}`;

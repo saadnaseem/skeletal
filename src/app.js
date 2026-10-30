@@ -1,5 +1,6 @@
 /* ================= state ================= */
-function newProject(){ return {v:2, uid:Math.random().toString(36).slice(2,10), name:'Untitled project', pages:[{id:1,name:'Page 1',doc:newDoc()}], cur:0, versions:[], nextPage:2, modified:Date.now()}; }
+function newId(){ return Math.random().toString(36).slice(2,10) || 'p'+Date.now().toString(36); } // project, version and file ids
+function newProject(){ return {v:2, uid:newId(), name:'Untitled project', pages:[{id:1,name:'Page 1',doc:newDoc()}], cur:0, versions:[], nextPage:2, modified:Date.now()}; }
 let project = newProject();
 let doc = project.pages[0].doc, ix = buildIndex(doc);
 function setDoc(d){ doc=d; project.pages[project.cur].doc=d; useStyle(d); }
@@ -13,19 +14,128 @@ const cv=document.getElementById('cv'), stage=document.getElementById('stage');
 const $=s=>document.querySelector(s);
 
 function nid(){ return doc.nid++; }
-function pushUndo(){ undoStack.push(JSON.stringify(doc)); if(undoStack.length>200) undoStack.shift(); redoStack=[]; updateUndoButtons(); }
+function pushUndo(){ _edited=true; undoStack.push(JSON.stringify(doc)); if(undoStack.length>200) undoStack.shift(); redoStack=[]; updateUndoButtons(); }
 function undo(){ if(!undoStack.length) return; redoStack.push(JSON.stringify(doc)); setDoc(JSON.parse(undoStack.pop())); sel.clear(); changed(); }
 function redo(){ if(!redoStack.length) return; undoStack.push(JSON.stringify(doc)); setDoc(JSON.parse(redoStack.pop())); sel.clear(); changed(); }
 function updateUndoButtons(){ $('#bUndo').disabled=!undoStack.length; $('#bRedo').disabled=!redoStack.length; }
-function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); syncFileUI(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
+function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); syncStartCard(); syncFileUI(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
 function syncPageUI(){ const e=$('#expArea'); if(!e) return; const has=!!doc.page; e.disabled=!has; if(!has) e.value='crop'; const p=doc.page; $('#pageInfo').textContent = p ? `${(PAGE_PRESETS[p.preset]||{n:'Custom'}).n.split(' (')[0]}, ${p.across} × ${p.down} ${p.across*p.down>1?'sheets':'sheet'} (${inch(p.w*p.across)} × ${inch(p.h*p.down)} in)` : 'Free canvas'; }
 function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[t]; if(!m||!m.has(id)) sel.delete(k);} }
-let _saveT=null;
-let _saveWarned=false;
+let _saveT=null, _savePending=false, _saveWarnAt=0, _savedSig=null, _edited=false; // _edited: an undoable edit not yet autosaved
 const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
-// write the autosave now (before leaving the page, e.g. to sign in)
-function saveNow(){ clearTimeout(_saveT); try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){} }
-function autosave(){ project.modified=Date.now(); clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ try{ localStorage.setItem('skeletal.p.'+project.uid, JSON.stringify(project)); localStorage.setItem('skeletal.last', project.uid); }catch(e){ if (!_saveWarned){ _saveWarned=true; toast('Browser storage is full or blocked. Use Save project to keep your work.'); } } }),400); }
+// what counts as an edit: names, page contents and versions, not which page is showing. Only real edits bump `modified`,
+// which drives the "Unsaved changes" mark and whether a newer autosave wins over a file at startup.
+const projectSig = () => JSON.stringify([project.name, project.pages, project.versions.length, project.versions[0] && project.versions[0].id]);
+
+/* ================= project library =================
+   Every project with content is kept in this browser: IndexedDB, or localStorage where IndexedDB isn't available.
+   Each tab edits its own project. The tab's project id lives in sessionStorage (per tab, survives reload), and a Web
+   Lock named after the project stops two tabs from editing it at once. See docs/PROJECTS_PLAN.md. */
+const TAB_KEY='lonepair.tab', LS_PREFIX='skeletal.p.', PENDING_PREFIX='lonepair.pending.';
+var libReady=false; // var: tests and other scripts read window.libReady
+let _inLibrary=false, _lock=null, _lockUid=null; // _lockUid: the project this tab holds
+const projectStore=(()=>{
+  let dbp=null;
+  const done=t=>new Promise((res,rej)=>{ t.oncomplete=()=>res(); t.onerror=t.onabort=()=>rej(t.error||new Error('transaction failed')); });
+  const result=r=>new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
+  function db(){
+    if (!dbp) dbp=new Promise((res,rej)=>{
+      if (!window.indexedDB) return rej(new Error('IndexedDB is not available'));
+      const o=indexedDB.open('lonepair',1);
+      o.onupgradeneeded=()=>{ o.result.createObjectStore('meta',{keyPath:'uid'}); o.result.createObjectStore('data'); };
+      o.onsuccess=()=>res(o.result); o.onerror=()=>rej(o.error); o.onblocked=()=>rej(new Error('IndexedDB is blocked'));
+    }).catch(e=>{ console.warn('Projects are kept in localStorage:', e && e.message); return null; });
+    return dbp;
+  }
+  const metaOf=(p,thumb)=>({uid:p.uid, name:p.name, modified:+p.modified||0, pages:p.pages.length, versions:p.versions.length, thumb:thumb||''});
+  const lsKeys=()=>{ const k=[]; for (let i=0;i<localStorage.length;i++){ const x=localStorage.key(i); if (x && x.startsWith(LS_PREFIX)) k.push(x); } return k; };
+  const lsGet=uid=>{ try{ const s=localStorage.getItem(LS_PREFIX+uid); return s? JSON.parse(s) : null; }catch(e){ return null; } };
+  return {
+    async list(){
+      const d=await db(); let all;
+      if (d){ const t=d.transaction('meta'); all=await result(t.objectStore('meta').getAll()); }
+      else all=lsKeys().map(k=>lsGet(k.slice(LS_PREFIX.length))).filter(p=>p && p.uid && Array.isArray(p.pages)).map(p=>metaOf(p, p._thumb));
+      return all.sort((a,b)=>b.modified-a.modified);
+    },
+    async get(uid){
+      const d=await db(); if (!d) return lsGet(uid);
+      const s=await result(d.transaction('data').objectStore('data').get(uid)); return s? JSON.parse(s) : null;
+    },
+    async put(p, thumb){
+      const json=JSON.stringify(p), meta=metaOf(p,thumb), d=await db();
+      if (!d){ localStorage.setItem(LS_PREFIX+p.uid, JSON.stringify({...p, _thumb:meta.thumb})); return; }
+      const t=d.transaction(['meta','data'],'readwrite'); t.objectStore('meta').put(meta); t.objectStore('data').put(json, p.uid); await done(t);
+    },
+    async remove(uid){
+      const d=await db(); if (!d){ localStorage.removeItem(LS_PREFIX+uid); return; }
+      const t=d.transaction(['meta','data'],'readwrite'); t.objectStore('meta').delete(uid); t.objectStore('data').delete(uid); await done(t);
+    },
+    usesIndexedDB: async()=>!!(await db()),
+  };
+})();
+
+// tabs tell each other when the library changes, and (without Web Locks) which project each one has open
+const _chan = window.BroadcastChannel ? new BroadcastChannel('lonepair') : null;
+if (_chan) _chan.onmessage=e=>{ const m=e.data||{};
+  if (m.t==='lib') refreshProjectLists();
+  else if (m.t==='who' && m.uid===project.uid) _chan.postMessage({t:'mine', uid:m.uid, ask:m.ask}); };
+function libraryChanged(){ if (_chan) _chan.postMessage({t:'lib'}); refreshProjectLists(); }
+// Try to hold a project for this tab. Resolves to a release function, or null when another tab holds it.
+function claimProject(uid){
+  if (navigator.locks && navigator.locks.request){
+    return new Promise(res=>{ navigator.locks.request('lonepair-project-'+uid, {ifAvailable:true}, lock=>{
+      if (!lock){ res(null); return; } let release; const held=new Promise(r=>{ release=r; }); res(release); return held; }).catch(()=>res(()=>{})); });
+  }
+  if (!_chan) return Promise.resolve(()=>{});
+  return new Promise(res=>{ const ask=newId(); let taken=false;
+    const h=e=>{ const m=e.data||{}; if (m.t==='mine' && m.ask===ask) taken=true; };
+    _chan.addEventListener('message',h); _chan.postMessage({t:'who', uid, ask});
+    setTimeout(()=>{ _chan.removeEventListener('message',h); res(taken? null : ()=>{}); },200); });
+}
+function holdLock(release, uid){ if (_lock) _lock(); _lock=release; _lockUid=uid; }
+// like claimProject, but a project this tab already holds counts as available (its own lock would refuse it)
+async function claimForTab(uid){ return uid===_lockUid ? 'own' : claimProject(uid); }
+function asCopy(p){ const c=JSON.parse(JSON.stringify(p)); c.uid=newId(); c.name=(p.name||'Untitled project').slice(0,190)+' (copy)'; delete c.rev; c.modified=Date.now(); return c; }
+// blank projects (every new tab starts with one) aren't kept, so opening tabs doesn't fill the list
+const projectWorthKeeping=()=>_inLibrary || !projectIsEmpty() || project.name!=='Untitled project';
+function projectThumb(){
+  const pg=project.pages.find(x=>hasContent(x.doc)); if (!pg) return '';
+  try{ const {svg}=exportSVG(pg.doc,{}); return svg.length<150000 ? svg : ''; }catch(e){ return ''; }
+}
+async function persist(){
+  clearTimeout(_saveT); _saveT=null; _savePending=false; _edited=false;
+  const sig=projectSig(); if (sig!==_savedSig){ if (_savedSig!==null) project.modified=Date.now(); _savedSig=sig; syncFileUI(); }
+  if (!projectWorthKeeping()) return;
+  const uid=project.uid;
+  try{ await projectStore.put(project, projectThumb()); _inLibrary=true; try{ localStorage.removeItem(PENDING_PREFIX+uid); }catch(e){} libraryChanged(); requestPersistence(); }
+  catch(e){ // keep telling the user (at most once a minute) while their work isn't being kept; never delete other projects
+    console.warn(e);
+    if (Date.now()-_saveWarnAt>60000){ _saveWarnAt=Date.now(); toast('Browser storage is full or blocked, so this project isn’t being saved in the browser. Use Save project to keep your work.'); } }
+}
+let _persistAsked=false;
+function requestPersistence(){ if (_persistAsked) return; _persistAsked=true; try{ navigator.storage && navigator.storage.persist && navigator.storage.persist().catch(()=>{}); }catch(e){} }
+// write the autosave now (before leaving the page, opening another project, signing in)
+function saveNow(){ return persist().catch(e=>console.warn(e)); }
+function autosave(){ _savePending=true; clearTimeout(_saveT); _saveT=setTimeout(()=>idle(()=>{ if (_savePending) saveNow(); }),400); }
+// Closing or reloading the tab right after an edit must not lose it. An IndexedDB write can be cut off when the page goes
+// away, so a synchronous copy goes to localStorage first; the next start moves it into the library (recoverPending).
+function stashNow(){
+  if (!_savePending) return;
+  const sig=projectSig(); if (sig!==_savedSig){ if (_savedSig!==null) project.modified=Date.now(); _savedSig=sig; }
+  if (!projectWorthKeeping()) return;
+  try{ localStorage.setItem(PENDING_PREFIX+project.uid, JSON.stringify(project)); }catch(e){}
+}
+function leaving(){ if (!_savePending) return; stashNow(); saveNow(); }
+window.addEventListener('pagehide', leaving);
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden') leaving(); });
+async function recoverPending(){
+  const keys=[]; try{ for (let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if (k && k.startsWith(PENDING_PREFIX)) keys.push(k); } }catch(e){ return; }
+  for (const k of keys){
+    try{ const p=normalizeProject(JSON.parse(localStorage.getItem(k))); const lib=await projectStore.get(p.uid);
+      if (!lib || (+p.modified||0) >= (+lib.modified||0)) await projectStore.put(p, '');
+      localStorage.removeItem(k); }catch(e){ console.warn('Could not recover an unsaved change', e); }
+  }
+}
 
 /* ================= model edits ================= */
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
@@ -448,6 +558,7 @@ function endTool(d,p){
     const bt=tool.bond;
     if (!d.moved && h && h.type==='bond'){
       pushUndo(); const b=ix.bond.get(h.id);
+      if (b.kind){ delete b.kind; b.order=bt.order; b.stereo=bt.stereo; return; } // a hydrogen or dative bond becomes the tool's bond
       if (bt.stereo==='none'){
         if (bt.order===1){ if (b.stereo!=='none'){ b.stereo='none'; } else b.order = b.order===1?2 : b.order===2?3 : 1; }
         else if (bt.order===2){ if (b.order!==2){ b.order=2; b.stereo='none'; } else b.dbPos = cycleDb(b); }
@@ -595,6 +706,7 @@ window.addEventListener('keydown', e=>{
   }
   if (hover && hover.type==='bond'){
     const b=ix.bond.get(hover.id); if(!b) return;
+    if ('123wx'.includes(k)) delete b.kind;
     if ('123'.includes(k)){ pushUndo(); b.order=+k; b.stereo='none'; changed(); return; }
     if (k==='w'){ pushUndo(); b.order=1; b.stereo= b.stereo==='wedge'? (()=>{const t=b.a;b.a=b.b;b.b=t;return 'wedge';})() : 'wedge'; changed(); return; }
     if (k==='x'){ pushUndo(); b.order=1; b.stereo='hash'; changed(); return; }
@@ -691,11 +803,15 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
   changed(); fitIfNeeded();
 }
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
+// a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const d=normalizeDoc({...newDoc(), ...r, style:doc.style});
+  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
-  if (hasContent(doc)) pasteDoc(d,0,viewCenter()); else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page, styleOv:doc.styleOv, labelSize:doc.labelSize}); sel.clear(); changed(); fit(); }
-  toast('Opened '+(name||'drawing'));
+  if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
+  else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page}); sel.clear(); changed(); fit(); }
+  const left=Object.entries(skipped||{}).map(([k,n])=>n>1? `${n} ${k}s` : `1 ${k}`);
+  toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
 }
 function tryLoadText(txt, quiet){
   try{
@@ -1253,7 +1369,7 @@ function exportSVG(d, {pxPerPt=null, transparent=true, region=null}={}){
 }
 // raster formats other than PNG: JPEG and WebP from the canvas, GIF with the encoder below; all on white unless GIF is transparent
 async function rasterBlob(d, type, region){
-  const ppp=300/72, transparent = type==='gif' && $('#transp').checked;
+  const transparent = type==='gif' && $('#transp').checked, e0=exportSVG(d,{pxPerPt:1, transparent:false, region}), ppp=capScale(e0.w, e0.h, 300/72, RASTER_SAFE_AREA);
   const e=exportSVG(d,{pxPerPt:ppp, transparent:false, region}); const w=Math.round(e.w*ppp), h=Math.round(e.h*ppp);
   const c=await svgToCanvas(e.svg, w, h, transparent);
   if (type==='gif'){ const g=c.getContext('2d'); return new Blob([gifEncode(g.getImageData(0,0,w,h).data, w, h, transparent)],{type:'image/gif'}); }
@@ -1261,7 +1377,7 @@ async function rasterBlob(d, type, region){
 }
 function svgToCanvas(svgStr, wpx, hpx, transparent){
   return new Promise((res,rej)=>{ const img=new Image();
-    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); res(c); };
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if (!g) return rej(new Error('Image too large for this browser')); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); res(c); };
     img.onerror=()=>rej(new Error('Could not render image')); img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr); });
 }
 // GIF89a with a fixed palette: index 0 transparent/white, 32 greys for antialiased line art, then a 6×6×6 colour cube
@@ -1296,17 +1412,25 @@ function gifEncode(px, w, h, transparent){
 function svgToPngBlob(svgStr, wpx, hpx, transparent){
   return new Promise((res,rej)=>{
     const img=new Image();
-    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); c.toBlob(b=>b?res(b):rej(new Error('PNG encoding failed')),'image/png'); };
+    img.onload=()=>{ const c=document.createElement('canvas'); c.width=wpx; c.height=hpx; const g=c.getContext('2d'); if (!g) return rej(new Error('Image too large for this browser')); if(!transparent){ g.fillStyle='#fff'; g.fillRect(0,0,wpx,hpx);} g.drawImage(img,0,0,wpx,hpx); c.toBlob(b=>b?res(b):rej(new Error('PNG encoding failed')),'image/png'); };
     img.onerror=()=>rej(new Error('Could not render image'));
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgStr);
   });
 }
 function exportRegion(){ return (doc.page && $('#expArea').value==='doc') ? pageBounds(doc) : null; }
 function exportTarget(){ const d=subDoc(exportRegion()? null : (sel.size?sel:null)); if(!hasContent(d)) return null; return d; }
+// browsers refuse canvases past a size limit (desktop about 120-268 megapixels, iOS Safari 16.7): stay under the
+// desktop limit, and if drawing still fails, try once more under the iOS one
+const RASTER_MAX_SIDE=14000, RASTER_MAX_AREA=1.2e8, RASTER_SAFE_AREA=1.6e7;
+function capScale(w, h, ppp, area=RASTER_MAX_AREA){ return Math.min(ppp, RASTER_MAX_SIDE/Math.max(w,h,1e-9), Math.sqrt(area/Math.max(w*h,1e-9))); }
 async function makePng(d, pxPerPt, transparent, region){
-  if (region){ const w=region.x1-region.x0, h=region.y1-region.y0; const maxPpp=Math.min(14000/Math.max(w,h), Math.sqrt(1.2e8/(w*h))); if (pxPerPt>maxPpp){ pxPerPt=maxPpp; makePng.reduced=Math.round(pxPerPt*72); } else makePng.reduced=0; } else makePng.reduced=0;
-  const e=exportSVG(d,{pxPerPt,transparent,region});
-  const blob=await svgToPngBlob(e.svg, Math.round(e.w*pxPerPt), Math.round(e.h*pxPerPt), transparent);
+  const size=exportSVG(d,{pxPerPt:1,transparent,region}); let ppp=capScale(size.w, size.h, pxPerPt), e, blob;
+  for (const area of [RASTER_MAX_AREA, RASTER_SAFE_AREA]){
+    ppp=capScale(size.w, size.h, ppp, area); e=exportSVG(d,{pxPerPt:ppp,transparent,region});
+    try{ blob=await (makePng.draw||svgToPngBlob)(e.svg, Math.round(e.w*ppp), Math.round(e.h*ppp), transparent); break; }
+    catch(err){ if (area===RASTER_SAFE_AREA || ppp<=capScale(size.w, size.h, ppp, RASTER_SAFE_AREA)) throw err; }
+  }
+  makePng.reduced = ppp < pxPerPt*0.999 ? Math.round(ppp*72) : 0;
   return {blob, e};
 }
 async function copyImage(){
@@ -1355,9 +1479,12 @@ async function saveFile(filename, data){
 }
 async function downloadPng(){
   const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; }
-  const dpi=600, ppp=dpi/72; const {blob}=await makePng(d,ppp,$('#transp').checked,exportRegion());
-  const used=makePng.reduced||dpi; if (makePng.reduced) toast(`Large document: saved at ${used} dpi`);
-  saveFile(fileBase()+'.png', await pngWithMeta(blob,used,JSON.stringify(d)));
+  const dpi=600, ppp=dpi/72; let blob;
+  try{ ({blob}=await makePng(d,ppp,$('#transp').checked,exportRegion())); }
+  catch(e){ console.warn(e); toast('This drawing is too large for a PNG in this browser. Save it as SVG or PDF instead.', 6000); return; }
+  const used=makePng.reduced||dpi;
+  await saveFile(fileBase()+'.png', await pngWithMeta(blob,used,JSON.stringify(d)));
+  if (makePng.reduced) toast(`Large drawing: saved at ${used} dpi`, 4000);
 }
 function downloadSvg(){ const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; } const {svg}=exportSVG(d,{transparent:$('#transp').checked, region:exportRegion()}); saveFile(fileBase()+'.svg', '<?xml version="1.0" encoding="UTF-8"?>\n'+svg); }
 /* ================= Save as: every export format in one place ================= */
@@ -1401,7 +1528,7 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
   const mol=()=>{ if (!ids.length) throw new Error('There are no structures to export'); const {mol,generic}=toOCL(d,dix,ids); if (generic) toast('Generic labels (R, X) are written as unknown atoms'); return mol; };
   switch (id){
     case 'jpeg': case 'webp': case 'gif': return {data:await rasterBlob(exportTarget(), id, exportRegion())};
-    case 'eps': { const {svg}=exportSVG(exportTarget(),{transparent:true, region:exportRegion()}); return {data:PDF.eps(svg), mime:'application/postscript'}; }
+    case 'eps': { const {svg}=exportSVG(exportTarget(),{transparent:true, region:exportRegion()}); PDF.takeMissing(); return {data:PDF.eps(svg), mime:'application/postscript'}; }
     case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
     case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
     case 'json': return {data:JSON.stringify(project)};
@@ -1419,7 +1546,9 @@ async function exportAs(id, copy){
   try{
     const {data}=await exportData(id);
     if (copy){ copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); return; }
-    saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+    const lost = id==='eps' ? PDF.takeMissing() : [];
+    await saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+    warnMissingChars('EPS', lost);
   }catch(err){ toast(err.message||'Export failed'); }
 }
 function openSaveAs(){
@@ -1433,7 +1562,7 @@ function openSaveAs(){
   dialog.classList.add('wide');
   dialog.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>exportAs(b.dataset.x, !!b.dataset.copyX));
 }
-function saveDrawing(){ saveFile(fileBase()+'.json', JSON.stringify(project)); }
+function saveDrawing(){ stampFileRev(); saveFile(fileBase()+'.json', JSON.stringify(project)); }
 $('#fileIn').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if (f) openFile(f, null); });
 async function openFile(f, handle){
   try{
@@ -1549,7 +1678,7 @@ function closeDialog(){ modal.classList.remove('open'); dialog.innerHTML=''; dia
 modal.addEventListener('pointerdown', e=>{ if (e.target===modal) closeDialog(); });
 dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
 let _toastT=null;
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),2200); }
+function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),ms); }
 
 function openSmilesDialog(){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
@@ -1659,15 +1788,10 @@ $('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
 $('#bAccount').onclick=()=>openAccountMenu();
 $('#nudgeIn').onclick=()=>{ $('#signinNudge').hidden=true; signIn(); }; $('#nudgeNo').onclick=()=>{ $('#signinNudge').hidden=true; };
-initAccount(); $('#bSaveNew').onclick=()=>saveProject(true);
+initAccount(); $('#bSaveNew').onclick=()=>saveProject(true); $('#bFeedback').onclick=()=>openFeedback();
 $('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
 $('#bZoomIn').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,1.25); $('#bZoomOut').onclick=()=>zoomAt(cv.clientWidth/2,cv.clientHeight/2,0.8); $('#zoomval').onclick=fit;
-$('#bNew').onclick=()=>{
-  const go=()=>{ closeDialog(); loadProject(newProject()); linkFile(null); toast('New project started'); };
-  if (projectIsEmpty()) { go(); return; }
-  openDialog(`<h3>Start a new project?</h3><p>You won’t be able to reopen “${esc(project.name)}” from here afterwards. Save it as an HTML file first if you want to keep it.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="npSave">Save current first</button><button class="tb primary" id="npGo">New project</button></div>`);
-  $('#npGo').onclick=go; $('#npSave').onclick=()=>saveHtml();
-};
+$('#bNew').onclick=()=>startNewProject(); $('#bProjects').onclick=()=>openProjectsDialog(); $('#bProjects2').onclick=()=>openProjectsDialog();
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
 $('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=st; delete pg.doc.labelSize; delete pg.doc.styleOv; }); useStyle(doc); changed(); toast(`${PRESETS[st].name} applied to every page`); };
@@ -1677,17 +1801,15 @@ window.addEventListener('resize', ()=>{ render(); positionTed(); });
 
 /* ================= projects, pages, versions ================= */
 function normalizeProject(p){
-  const n={...newProject(), ...p};
-  n.pages=(p.pages&&p.pages.length? p.pages : [{id:1,name:'Page 1',doc:newDoc()}]).map((pg,i)=>({id:pg.id||i+1, name:pg.name||('Page '+(i+1)), doc:normalizeDoc(pg.doc||{})}));
-  n.cur=Math.min(Math.max(0,p.cur|0), n.pages.length-1);
-  n.versions=Array.isArray(p.versions)? p.versions : [];
-  n.nextPage=Math.max(n.nextPage||1, ...n.pages.map(pg=>pg.id+1));
+  const n=sanitizeProject(p); // every load path (files, autosave, saved .html) comes through here
+  for (const pg of n.pages) pg.doc=normalizeDoc(pg.doc||{});
   return n;
 }
-function loadProject(p, quiet){
-  project=normalizeProject(p); pageState.clear();
+function loadProject(p, quiet, inLibrary=false){
+  project=normalizeProject(p); pageState.clear(); _inLibrary=inLibrary;
+  try{ sessionStorage.setItem(TAB_KEY, project.uid); }catch(e){}
   doc=project.pages[project.cur].doc; undoStack=[]; redoStack=[]; sel.clear();
-  $('#projName').value=project.name;
+  $('#projName').value=project.name; _savedSig=projectSig(); _edited=false;
   if (!quiet){ changed(); fit(); renderPages(); renderVersions(); }
 }
 function fileBase(){ return (project.name||'Untitled project').replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80) || 'lonepair'; }
@@ -1739,7 +1861,7 @@ function pageMenu(i){
 function snapshotPages(){ return JSON.stringify(project.pages.map(p=>({id:p.id,name:p.name,doc:p.doc}))); }
 function saveVersion(name){
   const now=new Date();
-  project.versions.unshift({id:Math.random().toString(36).slice(2,9), name:name||('Version '+(project.versions.length+1)), time:now.toISOString(), pages:snapshotPages()});
+  project.versions.unshift({id:newId(), name:name||('Version '+(project.versions.length+1)), time:now.toISOString(), pages:snapshotPages()});
   renderVersions(); autosave();
 }
 function saveVersionDialog(){
@@ -1751,12 +1873,12 @@ function renderVersions(){
   const ul=$('#vlist');
   if (!project.versions.length){ ul.innerHTML=`<li style="justify-content:center;color:var(--ink-2);font-size:12.5px;background:transparent;border-style:dashed">No versions yet</li>`; return; }
   ul.innerHTML=project.versions.map(v=>{ const d=new Date(v.time); let n=0; try{ n=JSON.parse(v.pages).length; }catch(e){}
-    return `<li><div class="vn"><b title="${esc(v.name)}">${esc(v.name)}</b><small>${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}, ${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${n} page${n===1?'':'s'}</small></div><button class="mini" data-vr="${v.id}">Restore</button><button class="mini" data-vd="${v.id}" aria-label="Delete version">✕</button></li>`; }).join('');
+    return `<li><div class="vn"><b title="${esc(v.name)}">${esc(v.name)}</b><small>${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}, ${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})} · ${n} page${n===1?'':'s'}</small></div><button class="mini" data-vr="${esc(v.id)}">Restore</button><button class="mini" data-vd="${esc(v.id)}" aria-label="Delete version">✕</button></li>`; }).join('');
   ul.onclick=e=>{
     const r=e.target.closest('[data-vr]'), d=e.target.closest('[data-vd]');
     if (r){ const v=project.versions.find(x=>x.id===r.dataset.vr); if(!v) return;
       openDialog(`<h3>Restore “${esc(v.name)}”?</h3><p>Your current pages are saved as a new version first, so nothing is lost.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="vrGo">Restore</button></div>`);
-      $('#vrGo').onclick=()=>{ saveVersion('Before restoring '+v.name); const pages=JSON.parse(v.pages); project.pages=pages.map(p=>({...p, doc:normalizeDoc(p.doc)})); project.cur=0; pageState.clear(); doc=project.pages[0].doc; undoStack=[]; redoStack=[]; sel.clear(); closeDialog(); changed(); fit(); renderPages(); renderVersions(); toast('Version restored'); }; }
+      $('#vrGo').onclick=()=>{ saveVersion('Before restoring '+v.name); let pages; try{ pages=JSON.parse(v.pages); }catch(e){ closeDialog(); toast('This version is damaged and can\u2019t be restored'); return; } const n=normalizeProject({pages}); project.pages=n.pages; project.nextPage=Math.max(project.nextPage, n.nextPage); project.cur=0; pageState.clear(); doc=project.pages[0].doc; undoStack=[]; redoStack=[]; sel.clear(); closeDialog(); changed(); fit(); renderPages(); renderVersions(); toast('Version restored'); }; }
     if (d){ const v=project.versions.find(x=>x.id===d.dataset.vd); if(!v) return;
       openDialog(`<h3>Delete “${esc(v.name)}”?</h3><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="vdGo">Delete version</button></div>`);
       $('#vdGo').onclick=()=>{ project.versions=project.versions.filter(x=>x!==v); closeDialog(); renderVersions(); autosave(); }; }
@@ -1771,10 +1893,9 @@ function buildProjectHtml(){
   [...dp.body.attributes].forEach(a=>dp.body.removeAttribute(a.name));
   [...dp.body.children].forEach(c=>{ if (!(['app','modal','toast'].includes(c.id) || c.hasAttribute('data-sk'))) c.remove(); });
   const slot=dp.getElementById('sk-project');
-  const data={...project, modified:Date.now()};
-  slot.textContent=JSON.stringify(data).replace(/</g,'\\u003c');
+  stampFileRev();
+  slot.textContent=JSON.stringify(project).replace(/</g,'\\u003c');
   const t=dp.querySelector('title'); if (t) t.textContent=project.name+' – Lone Pair';
-  project.modified=data.modified;
   return '<!doctype html>\n'+dp.documentElement.outerHTML;
 }
 function saveHtml(){
@@ -1785,12 +1906,13 @@ function saveHtml(){
 /* ================= optional Google sign-in (hosted site only) =================
    The server (functions/, server/auth.js) answers /api/me only on lonepair.app; saved copies and plain static hosts
    get no answer, so the Sign in button never appears there. Signing in is never required to use the editor. */
-let account=null, accountAvailable=false;
+let account=null, accountAvailable=false, feedbackApi=false;
 const NUDGE_KEY='skeletal.signinNudge';
 async function initAccount(){
   // only the Cloudflare build (npm run build:pages) carries this marker; downloaded and saved copies never call the server
   if (!/^https?:$/.test(location.protocol) || !document.querySelector('meta[name="lp-api"]')) return;
   let j=null; try{ const r=await fetch('/api/me',{credentials:'same-origin', headers:{accept:'application/json'}}); if (r.ok && (r.headers.get('content-type')||'').includes('json')) j=await r.json(); }catch(e){}
+  feedbackApi=!!(j && j.feedback);
   if (!j || !j.available) return;
   accountAvailable=true; account=j.signedIn? j.user : null; syncAccountUI();
   const q=new URLSearchParams(location.search), st=q.get('signin');
@@ -1798,7 +1920,7 @@ async function initAccount(){
     const msg={ok: account? `Signed in as ${account.name}` : 'Signed in', cancelled:'Sign-in cancelled', failed:'Sign-in didn\u2019t work. Please try again.', unavailable:'Sign-in isn\u2019t available right now'}[st]; if (msg) toast(msg); }
   if (!account) setTimeout(maybeNudge, 4*60*1000);
 }
-function signIn(){ saveNow(); location.href='/api/auth/google'; }
+async function signIn(){ stashNow(); await saveNow(); location.href='/api/auth/google'; } // the drawing is in the library before leaving
 function syncAccountUI(){
   const b=$('#bAccount'); b.hidden=!accountAvailable;
   if (!accountAvailable) return;
@@ -1816,6 +1938,46 @@ function openAccountMenu(){
     $('#acDelGo').onclick=async()=>{ let ok=false; try{ ok=(await fetch('/api/account/delete',{method:'POST', credentials:'same-origin'})).ok; }catch(e){}
       closeDialog(); if (ok){ account=null; syncAccountUI(); toast('Your account was deleted'); } else toast('Couldn\u2019t delete the account. Please try again.'); }; };
 }
+/* ================= Send feedback =================
+   On the hosted site the message goes to /api/feedback (stored in D1). Downloaded copies, plain static hosts and offline
+   use fall back to an email. The drawing is never attached; browser details only when the box is ticked. */
+const FEEDBACK_EMAIL='feedback@lonepair.app', FEEDBACK_MAX=5000;
+function feedbackContext(){
+  return { browser:navigator.userAgent, screen:`${screen.width}x${screen.height}`, window:`${innerWidth}x${innerHeight}`, language:navigator.language,
+    copy: /^https?:$/.test(location.protocol) ? location.host : 'downloaded file', pages:project.pages.length };
+}
+function feedbackMailto(message, ctx){
+  const lines=ctx ? [message, '', '—', ...Object.entries(ctx).map(([k,v])=>`${k}: ${v}`)] : [message];
+  const body=lines.join('\n').slice(0,1800); // long mailto links are cut off by some mail apps
+  return `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Lone Pair feedback')}&body=${encodeURIComponent(body)}`;
+}
+function openMail(url){ location.href=url; }
+function openFeedback(){
+  const online=feedbackApi && navigator.onLine!==false;
+  openDialog(`<h3>Send feedback</h3>
+    <textarea id="fbMsg" class="prose" maxlength="${FEEDBACK_MAX}" placeholder="What happened, or what would help? For a bug, the steps to see it are the most useful part."></textarea>
+    <input type="email" id="fbEmail" placeholder="Your email, if you'd like a reply (optional)" value="${esc((account && account.email)||'')}" style="margin-top:8px">
+    <label class="fb-row"><input type="checkbox" id="fbCtx" checked> Include browser and screen details</label>
+    <p class="note">${online? 'Your drawing is not sent.' : 'This opens your email app with the message filled in. Your drawing is not sent.'}</p>
+    <div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="fbGo">${online? 'Send' : 'Open email'}</button></div>`);
+  const email=()=>{ const e=$('#fbEmail'); return e && e.value.trim() && e.checkValidity() ? e.value.trim() : ''; };
+  $('#fbGo').onclick=async()=>{
+    const message=$('#fbMsg').value.trim();
+    if (!message){ toast('Write a message first'); $('#fbMsg').focus(); return; }
+    if ($('#fbEmail').value.trim() && !email()){ toast('That email address doesn\u2019t look right'); $('#fbEmail').focus(); return; }
+    const ctx=$('#fbCtx').checked ? feedbackContext() : null;
+    const mail=()=>openMail(feedbackMailto(message, ctx));
+    if (!online){ closeDialog(); mail(); return; }
+    const go=$('#fbGo'); go.disabled=true; go.textContent='Sending\u2026';
+    let r=null; try{ r=await fetch('/api/feedback',{method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body:JSON.stringify({message, email:email(), context:ctx})}); }catch(e){}
+    if (r && r.ok){ closeDialog(); toast('Thanks! Your feedback was sent.'); return; }
+    let err=''; try{ err=(await r.json()).error||''; }catch(e){}
+    if (r && r.status===429){ go.disabled=false; go.textContent='Send'; toast(err); return; }
+    // the server couldn't take it: offer email instead, keeping what they wrote
+    go.disabled=false; go.textContent='Send by email instead'; go.onclick=()=>{ closeDialog(); mail(); };
+    toast('Couldn\u2019t send it just now. You can send it by email instead.');
+  };
+}
 // one gentle, dismissible invitation after a few minutes of use; never blocks the editor
 function maybeNudge(){
   if (account || !accountAvailable || $('#modal').classList.contains('open')) return;
@@ -1827,11 +1989,13 @@ function maybeNudge(){
    Chrome and Edge let a page keep a handle to a file, so Save writes back to the file the user saved or opened.
    Other browsers (and sandboxed frames) fall back to downloading a copy and the ordinary file chooser. */
 let projHandle=null, savedAt=0, _fallbackNoted=false;
+// each write to a file gets a new rev, and the autosave carries it, so at startup a newer autosave only replaces a file it was saved from
+function stampFileRev(){ saveNow(); project.rev=newId(); project.modified=Date.now(); saveNow(); }
 const PROJECT_TYPES=[{description:'Lone Pair project', accept:{'text/html':['.html','.htm']}}, {description:'Lone Pair project (JSON)', accept:{'application/json':['.json']}}];
 const OPEN_TYPES=[{description:'Lone Pair projects, images and chemistry files', accept:{'text/html':['.html','.htm'], 'application/json':['.json'], 'image/png':['.png'], 'image/svg+xml':['.svg'],
   'chemical/x-mdl-molfile':['.mol','.sdf'], 'chemical/x-cdxml':['.cdxml','.cdx'], 'chemical/x-cml':['.cml','.mrv'], 'text/plain':['.smi','.txt','.inchi']}}];
 function linkFile(h){ projHandle=h; savedAt=project.modified; syncFileUI(); }
-const fileDirty=()=>!!projHandle && project.modified>savedAt;
+const fileDirty=()=>!!projHandle && (project.modified>savedAt || _edited);
 function syncFileUI(){
   const b=$('#bSaveHtml'), note=$('#fileLink'); if (!b || !note) return;
   b.textContent = projHandle ? `Save to ${projHandle.name}` : 'Save project (.html)';
@@ -1842,7 +2006,7 @@ function syncFileUI(){
 }
 async function writeProject(h){
   if (editingText) commitText();
-  const json=/\.json$/i.test(h.name), data = json ? JSON.stringify(project) : buildProjectHtml();
+  const json=/\.json$/i.test(h.name); if (json) stampFileRev(); const data = json ? JSON.stringify(project) : buildProjectHtml();
   if (h.queryPermission && (await h.queryPermission({mode:'readwrite'}))!=='granted' && (await h.requestPermission({mode:'readwrite'}))!=='granted') throw new Error('Permission to write the file was not given');
   const w=await h.createWritable(); await w.write(new Blob([data],{type: json?'application/json':'text/html'})); await w.close();
   linkFile(h);
@@ -1850,6 +2014,11 @@ async function writeProject(h){
 async function saveProject(asNew){
   if (window.showSaveFilePicker){
     try{ const h = (!asNew && projHandle) || await window.showSaveFilePicker({suggestedName:fileBase()+'.html', types:PROJECT_TYPES});
+      // a new file is a new project: its own uid, so its autosave never mixes with the original's
+      // a new file is a new project with its own id. The original's library entry goes: it holds edits that now live in
+      // the new file, and keeping it would 'restore' them when the original file is reopened.
+      if (asNew){ const old=project.uid; project.uid=newId(); holdLock((await claimProject(project.uid)) || (()=>{}), project.uid); _inLibrary=false;
+        try{ sessionStorage.setItem(TAB_KEY, project.uid); }catch(e){} projectStore.remove(old).then(libraryChanged).catch(()=>{}); }
       await writeProject(h); toast('Saved to '+h.name); return; }
     catch(e){ if (e && e.name==='AbortError') return; console.warn(e); } // e.g. blocked in a sandboxed frame: download instead
   }
@@ -1873,11 +2042,127 @@ function extractProject(html){
   try{ return JSON.parse(m[1]); }catch(e){ return null; }
 }
 function projectIsEmpty(){ return project.pages.every(p=>!hasContent(p.doc)) && !project.versions.length; }
-function confirmOpenProject(p, handle){
-  const go=()=>{ closeDialog(); loadProject(p); linkFile(handle||null); toast(`Opened ${project.name}`); };
-  if (projectIsEmpty()) { go(); return; }
-  openDialog(`<h3>Open “${esc(p.name||'project')}”?</h3><p>This replaces the project you have open now. Save it first if you want to keep a copy.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="opSave">Save current first</button><button class="tb primary" id="opGo">Open</button></div>`);
-  $('#opGo').onclick=go; $('#opSave').onclick=async()=>{ await saveProject(); };
+/* ================= opening projects ================= */
+// Open a project in this tab. The current project is saved to the library first, so nothing is lost.
+// If another tab holds the project, a copy opens here instead (Duplicate Tab, or the same file opened twice).
+async function openProject(p, {fromLibrary=false, handle=null, note=null}={}){
+  if (editingText) commitText();
+  await saveNow();
+  p=normalizeProject(p);
+  let release=await claimForTab(p.uid);
+  if (!release){ p=asCopy(p); release=await claimProject(p.uid); handle=null; fromLibrary=false; note='This project is open in another tab, so a copy opened here'; }
+  if (release!=='own') holdLock(release || (()=>{}), p.uid);
+  closeDialog(); loadProject(p, false, fromLibrary); linkFile(handle);
+  if (note) toast(note);
+  if (!fromLibrary) await saveNow(); // a project from a file joins the library straight away
+  refreshProjectLists();
+}
+async function startNewProject(){ await openProject(newProject()); toast('New project started'); }
+// A project from a file: if this browser holds newer edits of that same saved file, use them. If it holds newer edits
+// that grew out of a different save, open the file as a copy so neither one is overwritten.
+async function withLibraryEdits(p){
+  p=normalizeProject(p);
+  let lib=null; try{ lib=await projectStore.get(p.uid); }catch(e){}
+  if (!lib || !((+lib.modified||0) > (+p.modified||0))) return {p};
+  if (lib.rev===p.rev) return {p:lib, fromLibrary:true, note:'Restored your unsaved changes'};
+  return {p:asCopy(p), note:'This browser has newer changes to this project, so the file opened as a copy'};
+}
+async function confirmOpenProject(p, handle){
+  const r=await withLibraryEdits(p);
+  await openProject(r.p, {fromLibrary:!!r.fromLibrary, handle: r.p.uid===normalizeProject(p).uid ? handle : null, note: r.note || `Opened ${r.p.name}`});
+}
+async function openFromLibrary(uid){
+  if (uid===project.uid){ closeDialog(); return; }
+  const release=await claimForTab(uid);
+  if (!release){
+    const m=(await projectStore.list()).find(x=>x.uid===uid);
+    openDialog(`<h3>“${esc(m? m.name : 'This project')}” is open in another tab</h3><p>Editing it in two tabs would make them overwrite each other. Switch to that tab, or open a copy here.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="plCopy">Open a copy</button></div>`);
+    $('#plCopy').onclick=async()=>{ const p=await projectStore.get(uid); if (p) await openProject(asCopy(p)); };
+    return;
+  }
+  if (release!=='own') release(); // openProject claims it again
+  const p=await projectStore.get(uid);
+  if (!p){ toast('That project is no longer in this browser'); refreshProjectLists(); return; }
+  await openProject(p, {fromLibrary:true});
+}
+
+/* ================= project lists: Projects dialog, Recent in the panel, the start card on a blank canvas ================= */
+let _recent=[];
+const fmtWhen=t=>{ const d=new Date(t), now=new Date(); return d.toDateString()===now.toDateString() ? d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}) : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year: d.getFullYear()===now.getFullYear()? undefined : 'numeric'}); };
+// thumbnails are the app's own SVG, shown through <img>, where SVG can't run script
+const thumbImg=m=> m.thumb ? `<img class="pthumb" alt="" src="data:image/svg+xml,${esc(encodeURIComponent(m.thumb))}">` : '<span class="pthumb"></span>';
+function projectRow(m, actions){
+  const cur=m.uid===project.uid;
+  return `<li data-uid="${esc(m.uid)}"${cur?' class="current"':''}>${thumbImg(m)}<div class="vn"><b class="pn" title="${esc(m.name)}">${esc(m.name)}</b><small>${cur?'Open here · ':''}${esc(fmtWhen(m.modified))} · ${m.pages} page${m.pages===1?'':'s'}</small></div>`+
+    (actions && !cur ? `<button class="mini" data-open>Open</button><button class="mini" data-del aria-label="Delete ${esc(m.name)}">✕</button>` : '')+'</li>';
+}
+async function refreshProjectLists(){
+  try{ _recent=await projectStore.list(); }catch(e){ _recent=[]; }
+  const r=$('#recent');
+  if (r){ r.innerHTML=_recent.length ? _recent.slice(0,5).map(m=>projectRow(m,false)).join('') : '<li class="empty">Projects you work on appear here.</li>'; }
+  const c=$('#scList'); if (c) c.innerHTML=_recent.filter(m=>m.uid!==project.uid).slice(0,4).map(m=>projectRow(m,false)).join('');
+  syncStartCard(); renderProjectList();
+}
+function syncStartCard(){ const c=$('#startCard'); if (c) c.hidden=!(libReady && projectIsEmpty() && _recent.some(m=>m.uid!==project.uid)); }
+function renderProjectList(){
+  const ul=$('#plist'); if (!ul) return;
+  const q=(($('#plSearch')||{}).value||'').trim().toLowerCase();
+  const rows=_recent.filter(m=>!q || m.name.toLowerCase().includes(q));
+  ul.innerHTML=rows.length ? rows.map(m=>projectRow(m,true)).join('') : `<li class="empty">${q? 'No projects match.' : 'No projects yet. Anything you draw is kept here automatically.'}</li>`;
+}
+async function openProjectsDialog(){
+  openDialog(`<h3>Projects</h3><input type="text" id="plSearch" placeholder="Search projects" aria-label="Search projects">
+    <ul class="vlist plist" id="plist"></ul>
+    <p class="note">Projects are kept in this browser on this device, and each tab works on its own project. To keep a copy you can open anywhere, use Save project (.html).</p>
+    <div class="actions"><button class="tb" id="plNew">New project</button><button class="tb primary" data-close>Done</button></div>`);
+  $('#plSearch').oninput=renderProjectList;
+  $('#plNew').onclick=()=>startNewProject();
+  $('#plist').onclick=e=>{ const li=e.target.closest('li[data-uid]'); if (!li) return;
+    if (e.target.closest('[data-del]')) deleteFromLibrary(li.dataset.uid, li.querySelector('.pn').textContent);
+    else if (e.target.closest('[data-open]')) openFromLibrary(li.dataset.uid); };
+  renderProjectList(); await refreshProjectLists();
+}
+function deleteFromLibrary(uid, name){
+  openDialog(`<h3>Delete “${esc(name)}”?</h3><p>It is removed from this browser. Project files you saved (.html) aren’t affected.</p><div class="actions"><button class="tb" id="plDelNo">Cancel</button><button class="tb primary" id="plDelGo">Delete</button></div>`);
+  $('#plDelNo').onclick=openProjectsDialog;
+  $('#plDelGo').onclick=async()=>{
+    const rel=await claimForTab(uid);
+    if (!rel){ toast('That project is open in another tab. Close it there first.'); openProjectsDialog(); return; }
+    try{ await projectStore.remove(uid); }catch(e){ toast('Couldn’t delete it'); } finally{ if (rel!=='own') rel(); }
+    libraryChanged(); openProjectsDialog();
+  };
+}
+for (const id of ['recent','scList']) $('#'+id).addEventListener('click', e=>{ const li=e.target.closest('li[data-uid]'); if (li) openFromLibrary(li.dataset.uid); });
+$('#scAll').onclick=()=>openProjectsDialog();
+
+// Older versions kept autosaves in localStorage under skeletal.p.<uid>, and every tab opened skeletal.last. Move them into
+// the library; the last one opens in this tab once, so nothing looks lost after the update.
+async function migrateOldAutosaves(){
+  let last=null;
+  try{ last=localStorage.getItem('skeletal.last'); localStorage.removeItem('skeletal.last'); }catch(e){ return null; }
+  try{ const old=localStorage.getItem('skeletal.doc'); // the very first format: one drawing
+    if (old){ const p=newProject(); p.pages[0].doc=JSON.parse(old); await projectStore.put(normalizeProject(p),''); localStorage.removeItem('skeletal.doc'); last=last||p.uid; } }catch(e){}
+  if (!(await projectStore.usesIndexedDB())) return last; // without IndexedDB those keys are the library
+  for (let i=localStorage.length-1;i>=0;i--){
+    const k=localStorage.key(i); if (!k || !k.startsWith(LS_PREFIX)) continue;
+    try{ const p=normalizeProject(JSON.parse(localStorage.getItem(k)));
+      if (p.pages.some(pg=>hasContent(pg.doc)) || p.versions.length) await projectStore.put(p,'');
+      localStorage.removeItem(k); }catch(e){ console.warn('Could not move an old autosave', e); }
+  }
+  return last;
+}
+// which project this tab shows at startup: a project file being opened, the tab's own project (reload), or a blank one
+async function startProjects(){
+  let p=null, opts={}, last=null;
+  try{ last=await migrateOldAutosaves(); }catch(e){ console.warn(e); }
+  try{ await recoverPending(); }catch(e){ console.warn(e); }
+  let fileProject=null; try{ const el=document.getElementById('sk-project'), raw=el && el.textContent.trim(); if (raw) fileProject=JSON.parse(raw); }catch(e){}
+  if (fileProject){ const r=await withLibraryEdits(fileProject); p=r.p; opts={fromLibrary:!!r.fromLibrary, note:r.note}; }
+  else { let uid=last; if (!uid) try{ uid=sessionStorage.getItem(TAB_KEY); }catch(e){}
+    if (uid){ try{ p=await projectStore.get(uid); }catch(e){} if (p) opts={fromLibrary:true}; } }
+  if (p) await openProject(p, opts);
+  else { holdLock((await claimProject(project.uid)) || (()=>{}), project.uid); try{ sessionStorage.setItem(TAB_KEY, project.uid); }catch(e){} }
+  libReady=true; await refreshProjectLists();
 }
 /* ================= text formatting ================= */
 const TSIZES=[6,7,8,9,10,11,12,14,16,18,20,24,28,32,36,48,60,72];
@@ -1927,8 +2212,14 @@ function exportPdf(which, mode='crop'){
   else if (mode!=='crop' && doc.page){ svgs.push(...pageExportSVG(doc, mode)); }
   else { const d=subDoc(sel.size?sel:null); if (hasContent(d)) svgs.push(...pageExportSVG(d,'crop')); }
   if (!svgs.length){ toast('Nothing to export yet'); return; }
-  try{ const bytes=PDF.build(svgs); saveFile(fileBase()+(which==='all'?'':' - '+project.pages[project.cur].name)+'.pdf', new Blob([bytes],{type:'application/pdf'})); }
+  try{ PDF.takeMissing(); const bytes=PDF.build(svgs), lost=PDF.takeMissing();
+    saveFile(fileBase()+(which==='all'?'':' - '+project.pages[project.cur].name)+'.pdf', new Blob([bytes],{type:'application/pdf'})).then(()=>warnMissingChars('PDF', lost)); }
   catch(e){ console.warn(e); toast('Could not create the PDF'); }
+}
+// PDF and EPS use the standard fonts, which lack some characters (CJK, rare symbols); say which, after the save message
+function warnMissingChars(kind, lost){
+  if (!lost.length) return;
+  toast(`Saved, but ${lost.slice(0,6).join(' ')}${lost.length>6?' …':''} can’t be shown in ${kind} with the built-in fonts and appear as “?”. SVG and PNG keep them.`, 8000);
 }
 function exportPdfDialog(){
   const n=project.pages.filter(p=>hasContent(p.doc)).length;
@@ -2281,6 +2572,7 @@ const PAGE_PRESETS = {
   acs1:{w:240,h:648,n:'ACS single column (3.33 in wide)'}, acs2:{w:504,h:648,n:'ACS double column (7 in wide)'},
   slide169:{w:960,h:540,n:'Slide 16:9 (13.33 × 7.5 in)'}, slide43:{w:720,h:540,n:'Slide 4:3 (10 × 7.5 in)'},
 };
+Object.setPrototypeOf(PAGE_PRESETS, null); // doc.page.preset comes from files
 const inch=v=>Math.round(v/72*100)/100;
 function pageBounds(d){ const p=d.page; if(!p) return null; return {x0:p.x, y0:p.y, x1:p.x+p.w*p.across, y1:p.y+p.h*p.down}; }
 function renderPageBackdrop(){
@@ -2483,19 +2775,9 @@ function bdeAt(kind, id, screen){
 
 function init(){
   renderTools(); renderSwatches(); renderTemplates(); initTextUI(); initLabelSize();
-  let loaded=null, note=null;
-  try{
-    const el=document.getElementById('sk-project'); const raw=el && el.textContent.trim();
-    if (raw){ loaded=JSON.parse(raw);
-      try{ const local=localStorage.getItem('skeletal.p.'+loaded.uid); if (local){ const l=JSON.parse(local); if ((l.modified||0)>(loaded.modified||0)){ loaded=l; note='Restored your unsaved changes'; } } }catch(e){}
-    }
-  }catch(e){ loaded=null; }
-  if (!loaded){
-    try{ const last=localStorage.getItem('skeletal.last'); const s=last && localStorage.getItem('skeletal.p.'+last); if (s) loaded=JSON.parse(s);
-      else { const old=localStorage.getItem('skeletal.doc'); if (old){ loaded=newProject(); loaded.pages[0].doc=JSON.parse(old); } } }catch(e){}
-  }
-  if (loaded) loadProject(loaded,true);
+  _savedSig=projectSig();
   ix=buildIndex(doc); setTool('bond',{bond:{order:1,stereo:'none'}});
-  requestAnimationFrame(()=>{ fit(); scheduleAnalysis(); updateUndoButtons(); syncStyleUI(); renderPages(); renderVersions(); if(note) toast(note); });
+  requestAnimationFrame(()=>{ fit(); scheduleAnalysis(); updateUndoButtons(); syncStyleUI(); renderPages(); renderVersions(); });
+  startProjects().catch(e=>{ console.warn(e); libReady=true; });
 }
 init();

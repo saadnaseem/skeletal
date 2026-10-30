@@ -1,9 +1,11 @@
 // Optional "Sign in with Google" for the hosted site (Cloudflare Pages Functions + D1). The editor works without it.
-// Routes: GET /api/me, GET /api/auth/google, GET /api/auth/google/callback, POST /api/auth/logout, POST /api/account/delete
+// Routes: GET /api/me, GET /api/auth/google, GET /api/auth/google/callback, POST /api/auth/logout, POST /api/account/delete,
+// POST /api/feedback (works with just the D1 binding, without Google sign-in)
 // Stores only the Google account id, name, email and visit times; drawings never reach the server.
 
 const SESSION_COOKIE = 'lp_session', FLOW_COOKIE = 'lp_oauth';
 const SESSION_DAYS = 30, FLOW_MINUTES = 10, TOUCH_EVERY_MS = 60 * 60 * 1000;
+const FEEDBACK_MAX = 5000, FEEDBACK_WINDOW_MS = 10 * 60 * 1000, FEEDBACK_GLOBAL_WINDOW_MS = 60 * 60 * 1000;
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth', GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
@@ -16,7 +18,9 @@ const hex = bytes => [...bytes].map(b => b.toString(16).padStart(2, '0')).join('
 function cookies(request) {
   const out = {};
   for (const part of (request.headers.get('cookie') || '').split(';')) {
-    const i = part.indexOf('='); if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const i = part.indexOf('='); if (i <= 0) continue;
+    // another app on the domain may set a cookie that isn't valid percent-encoding; skip it rather than fail the request
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); } catch { /* not ours */ }
   }
   return out;
 }
@@ -40,11 +44,12 @@ async function currentSession(request, env) {
 }
 
 async function me(request, env) {
-  if (!configured(env)) return json({ available: false, signedIn: false });
+  const feedback = !!env.DB; // the app shows its feedback form only when this server can store the message
+  if (!configured(env)) return json({ available: false, signedIn: false, feedback });
   const s = await currentSession(request, env);
-  if (!s) return json({ available: true, signedIn: false });
+  if (!s) return json({ available: true, signedIn: false, feedback });
   if (Date.now() - (s.last_seen_at || 0) > TOUCH_EVERY_MS) await env.DB.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').bind(Date.now(), s.user_id).run();
-  return json({ available: true, signedIn: true, user: { name: s.name, email: s.email } });
+  return json({ available: true, signedIn: true, feedback, user: { name: s.name, email: s.email } });
 }
 
 async function start(request, env, url) {
@@ -62,7 +67,9 @@ async function start(request, env, url) {
 // Core 3.1.3.7 TLS validation stands in for checking its signature; issuer, audience, expiry and email are still checked.
 function claims(idToken, env) {
   const part = (idToken || '').split('.')[1]; if (!part) throw new Error('no ID token');
-  const c = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+  // the payload is base64url-encoded UTF-8: decode the bytes as UTF-8 so names like "José" survive (atob alone gives Latin-1)
+  const bin = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+  const c = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0))));
   const issuers = env.GOOGLE_ISSUER ? [env.GOOGLE_ISSUER] : GOOGLE_ISSUERS;
   if (!issuers.includes(c.iss)) throw new Error('wrong issuer');
   if (c.aud !== env.GOOGLE_CLIENT_ID) throw new Error('wrong audience');
@@ -94,6 +101,7 @@ async function callback(request, env, url) {
     ON CONFLICT(id) DO UPDATE SET email = excluded.email, name = excluded.name, last_seen_at = excluded.last_seen_at, sign_ins = users.sign_ins + 1`)
     .bind(c.sub, c.email, c.name || c.email, now, now).run();
   const token = randomToken();
+  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND expires_at < ?').bind(c.sub, now).run(); // tidy this user's expired sessions
   await env.DB.prepare('INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
     .bind(hex(await sha256(token)), c.sub, now, now + SESSION_DAYS * 864e5).run();
   return redirect('/?signin=ok', [clearFlow, setCookie(url, SESSION_COOKIE, token, SESSION_DAYS * 86400)]);
@@ -110,8 +118,57 @@ async function deleteAccount(request, env, url) {
   if (!sameOrigin(request, url)) return json({ error: 'forbidden' }, 403);
   if (!configured(env)) return json({ error: 'Sign-in is not set up on this server' }, 503);
   const s = await currentSession(request, env); if (!s) return json({ error: 'not signed in' }, 401);
-  await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(s.user_id), env.DB.prepare('DELETE FROM users WHERE id = ?').bind(s.user_id)]);
+  await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(s.user_id), env.DB.prepare('DELETE FROM feedback WHERE user_id = ?').bind(s.user_id),
+    env.DB.prepare('DELETE FROM users WHERE id = ?').bind(s.user_id)]);
   return json({ ok: true }, 200, { 'set-cookie': setCookie(url, SESSION_COOKIE, '', 0) });
+}
+
+// "Send feedback": anyone may send, signed in or not. Limited per IP address (stored only as a hash).
+async function feedback(request, env, url) {
+  if (!sameOrigin(request, url)) return json({ error: 'forbidden' }, 403);
+  if (!env.DB) return json({ error: 'Feedback is not set up on this server' }, 503);
+  if (!(request.headers.get('content-type') || '').includes('application/json')) return json({ error: 'expected JSON' }, 415);
+  const raw = await request.text(); if (raw.length > 20000) return json({ error: 'too long' }, 413);
+  let b; try { b = JSON.parse(raw); } catch { return json({ error: 'bad JSON' }, 400); }
+  if (!b || typeof b !== 'object') return json({ error: 'bad request' }, 400);
+  const message = typeof b.message === 'string' ? b.message.trim() : '';
+  if (!message || message.length > FEEDBACK_MAX) return json({ error: `Write a message of up to ${FEEDBACK_MAX} characters` }, 400);
+  const email = typeof b.email === 'string' && /^[^\s@<>]{1,64}@[^\s@<>]{1,190}\.[^\s@<>]{2,}$/.test(b.email.trim()) ? b.email.trim() : null;
+  // only short strings from the context the sender agreed to include
+  let context = null;
+  if (b.context && typeof b.context === 'object') {
+    const c = {}; for (const [k, v] of Object.entries(b.context).slice(0, 12)) if (/^\w{1,24}$/.test(k) && ['string', 'number', 'boolean'].includes(typeof v)) c[k] = String(v).slice(0, 300);
+    if (Object.keys(c).length) context = JSON.stringify(c);
+  }
+  const now = Date.now(), limit = +env.FEEDBACK_LIMIT || 5, globalLimit = +env.FEEDBACK_GLOBAL_LIMIT || 100;
+  const ipHash = await senderKey(request, env);
+  const s = configured(env) ? await currentSession(request, env) : null;
+  // one statement, so parallel requests can't all pass the count before any of them is stored
+  const r = await env.DB.prepare(`INSERT INTO feedback (created_at, message, email, user_id, context, ip_hash)
+      SELECT ?, ?, ?, ?, ?, ?
+      WHERE (SELECT COUNT(*) FROM feedback WHERE ip_hash = ? AND created_at > ?) < ?
+        AND (SELECT COUNT(*) FROM feedback WHERE created_at > ?) < ?`)
+    .bind(now, message, email || (s && s.email) || null, s ? s.user_id : null, context, ipHash,
+      ipHash, now - FEEDBACK_WINDOW_MS, limit, now - FEEDBACK_GLOBAL_WINDOW_MS, globalLimit).run();
+  // the address key is only needed for the rate limit: clear it once the window has passed
+  await env.DB.prepare('UPDATE feedback SET ip_hash = NULL WHERE ip_hash IS NOT NULL AND created_at <= ?').bind(now - FEEDBACK_WINDOW_MS).run();
+  if (!(r && r.meta && r.meta.changes)) return json({ error: 'Too many messages. Please try again in a few minutes.' }, 429);
+  return json({ ok: true });
+}
+// rate-limit key for the sender: IPv6 addresses by their /64 (one household or server gets a whole /64), keyed with
+// a server secret when one is set, so the stored value can't be reversed by hashing every IPv4 address
+function addressBlock(ip) {
+  const v4 = /(\d{1,3}(\.\d{1,3}){3})$/.exec(ip);
+  if (!ip.includes(':') || v4) return v4 ? v4[1] : ip;
+  const [h, t = ''] = ip.split('::'), a = h ? h.split(':') : [], b = t ? t.split(':') : [];
+  const full = [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return full.slice(0, 4).map(x => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
+}
+async function senderKey(request, env) {
+  const block = addressBlock((request.headers.get('cf-connecting-ip') || 'unknown').trim().toLowerCase());
+  if (!env.FEEDBACK_SECRET) return hex(await sha256('lp-feedback:' + block));
+  const key = await crypto.subtle.importKey('raw', enc.encode(env.FEEDBACK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return hex(new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(block))));
 }
 
 export async function handle(request, env) {
@@ -122,6 +179,7 @@ export async function handle(request, env) {
     if (p === '/api/auth/google/callback' && m === 'GET') return await callback(request, env, url);
     if (p === '/api/auth/logout' && m === 'POST') return await logout(request, env, url);
     if (p === '/api/account/delete' && m === 'POST') return await deleteAccount(request, env, url);
+    if (p === '/api/feedback' && m === 'POST') return await feedback(request, env, url);
     return json({ error: 'not found' }, 404);
   } catch (e) {
     console.error(e);

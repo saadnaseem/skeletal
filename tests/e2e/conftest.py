@@ -34,7 +34,7 @@ def _open(browser, viewport, **kw):
     page.on("console", lambda m: page.errors.append(m.text) if m.type == "error" and "ERR_FAILED" not in m.text else None)
     page.route("**/fonts.googleapis.com/**", lambda r: r.abort())  # keep tests offline
     page.goto(URL or DIST.as_uri())
-    _wait(page, "typeof OCL !== 'undefined' && document.querySelectorAll('#tools .tool').length > 0")
+    _wait(page, "typeof OCL !== 'undefined' && document.querySelectorAll('#tools .tool').length > 0 && window.libReady === true")
     return page
 
 
@@ -62,7 +62,7 @@ def open_page(browser):
         pg = ctx.new_page(); pg.errors = []
         pg.on("pageerror", lambda e: pg.errors.append(str(e)))
         pg.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-        pg.goto(url); _wait(pg, "typeof OCL !== 'undefined'")
+        pg.goto(url); _wait(pg, "typeof OCL !== 'undefined' && window.libReady === true")
         made.append(ctx); return pg
     yield make
     for c in made: c.close()

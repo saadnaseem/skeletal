@@ -171,12 +171,12 @@ def test_mobile_layout_fits_and_panel_opens(mobile):
     assert mobile.locator("#panel").evaluate("el=>el.classList.contains('open')")
 
 
-def test_new_project_asks_before_replacing_work(page):
-    page.evaluate("tryLoadText('CCO')")
-    page.click("#bNew")
-    assert "New project" in page.inner_text("#dialog")
-    page.click("#npGo")
-    assert page.evaluate("doc.atoms.length") == 0 and page.evaluate("project.pages.length") == 1
+def test_new_project_keeps_the_old_one_in_projects(page):
+    page.evaluate("(async()=>{ tryLoadText('CCO'); await saveNow(); })()")
+    page.click("#bNew")  # no warning: the old project stays in the library
+    wait_until(page, "doc.atoms.length===0")
+    assert page.evaluate("project.pages.length") == 1 and not page.is_visible("#modal.open")
+    assert page.evaluate("projectStore.list().then(l=>l.length)") == 1
 
 
 def test_align_menu_scheme_row_aligns_middles_and_spaces_evenly(page):
@@ -574,7 +574,7 @@ def test_renamed_to_lone_pair_and_old_saves_still_load(browser):
     # an autosave written by the app under its old name (same storage keys) is restored on reload
     pg.evaluate("""(()=>{ const p=newProject(); p.name='Old Skeletal work'; p.pages[0].doc.atoms=[{id:1,x:0,y:0,el:'O',charge:0,lp:0,rad:0}]; p.pages[0].doc.nid=2;
       localStorage.setItem('skeletal.p.'+p.uid, JSON.stringify(p)); localStorage.setItem('skeletal.last', p.uid); })()""")
-    pg.reload(); pg.wait_for_timeout(600)
+    pg.reload(); wait_until(pg, "window.libReady===true")
     assert pg.evaluate("project.name") == "Old Skeletal work" and pg.evaluate("doc.atoms[0].el") == "O"
     pg.context.close()
 
@@ -639,7 +639,7 @@ def test_ctrl_o_opens_a_project_and_saves_back_to_it(page):
     page.evaluate("tryLoadText('CCO')"); page.keyboard.press("Control+s")
     wait_until(page, "window._writes.length===1")
     assert page.evaluate("window._picks") == 0 and page.evaluate("window._openTarget.content.includes('Acetic')")
-    page.click("#bOpenTop"); wait_until(page, "document.querySelector('#dialog h3') && document.querySelector('#dialog h3').innerText.startsWith('Open')")  # header button; asks before replacing work
+    page.click("#bOpenTop"); wait_until(page, "window._writes.length===1 && project.name==='Acetic'")  # header button opens too; no "replace?" prompt, work is kept in Projects
 
 
 def test_save_without_file_access_downloads_a_copy(page):
@@ -648,3 +648,87 @@ def test_save_without_file_access_downloads_a_copy(page):
         page.keyboard.press("Control+s")
     assert dl.value.suggested_filename.endswith(".html")
     assert page.is_hidden("#bSaveNew")
+
+
+def test_malicious_version_id_does_not_inject_markup(page):
+    bad = {"v": 2, "uid": "evil1", "name": "Shared", "pages": [{"id": 1, "name": "P", "doc": {}}],
+           "versions": [{"id": "\"><img src=x onerror=\"window.__pwned=1\">", "name": "<b>x</b>", "time": "2026-10-01T00:00:00Z", "pages": "[]"},
+                        {"id": "okv1", "name": "<img src=x onerror=window.__pwned=2>", "time": "2026-10-01T00:00:00Z", "pages": "[]"}]}
+    page.evaluate("(p)=>loadProject(p)", bad)
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__pwned") is None
+    assert page.locator("#vlist img").count() == 0
+    assert page.evaluate("project.versions.map(v=>v.id)") == ["okv1"]
+
+
+def test_odd_atom_labels_do_not_break_analysis(page):
+    page.evaluate("tryLoadText('CCO'); doc.atoms[0].el='constructor'; changed()")
+    page.wait_for_timeout(200)
+    assert page.evaluate("typeof analysisFor(doc.atoms.map(a=>a.id)).smiles") == "string"
+    page.evaluate("doc.page={preset:'constructor', w:612, h:792, across:1, down:1, x:0, y:0}; changed()")  # unknown preset shows as Custom
+    assert "Custom" in page.inner_text("#pageInfo")
+
+
+def test_switching_pages_is_not_an_edit(page):
+    page.evaluate(FAKE_FS)
+    page.evaluate("tryLoadText('CCO'); addPage(); tryLoadText('c1ccccc1')")
+    page.keyboard.press("Control+s"); wait_until(page, "window._writes.length===1")
+    page.evaluate("switchPage(0)"); page.wait_for_timeout(2600)  # past the autosave delay
+    assert "All changes saved" in page.inner_text("#fileLink")
+    page.evaluate("tryLoadText('C')")
+    assert "Unsaved changes" in page.inner_text("#fileLink")
+
+
+def test_autosave_is_written_when_the_tab_is_hidden(page):
+    page.evaluate("tryLoadText('CCO')")
+    page.evaluate("window.dispatchEvent(new Event('pagehide'))")  # no waiting for the idle callback
+    wait_until(page, "projectStore.get(project.uid).then(p=>!!p && p.pages[0].doc.atoms.length===3)")
+
+
+def test_save_as_new_file_is_a_separate_project(page):
+    page.evaluate(FAKE_FS)
+    page.evaluate("tryLoadText('CCO')"); page.keyboard.press("Control+s"); wait_until(page, "window._writes.length===1")
+    first = page.evaluate("project.uid")
+    page.evaluate("window._saveTarget=window._mk('copy.html','')"); page.click("#bSaveNew"); wait_until(page, "window._writes.length===2")
+    assert page.evaluate("project.uid") != first
+    wait_until(page, f"projectStore.get('{first}').then(p=>p===null||p===undefined)")  # its edits now live in the new file
+
+
+def test_startup_restores_only_autosaves_of_the_same_file(page, open_page, tmp_path):
+    html = page.evaluate("(()=>{ tryLoadText('CCO'); project.name='Original'; return buildProjectHtml(); })()")
+    f = tmp_path / "orig.html"; f.write_text(html, encoding="utf-8")
+    p2 = open_page(f.as_uri())
+    # an autosave of the same project, edited after a *different* save of the file: must not replace it
+    p2.evaluate("(async()=>{ const l=JSON.parse(JSON.stringify(project)); l.rev='otherrev'; l.modified=Date.now()+1e6; l.name='Other copy'; await projectStore.put(l); })()")
+    p2.reload(); wait_until(p2, "window.libReady===true")
+    assert p2.evaluate("project.name") == "Original (copy)"  # the file opens as a copy; the other edits stay in Projects
+    assert "Other copy" in p2.evaluate("projectStore.list().then(l=>l.map(m=>m.name))")
+    # edits that grew out of this exact saved file win, with a note
+    p2.evaluate("(async()=>{ const l=JSON.parse(document.getElementById('sk-project').textContent); l.modified=Date.now()+2e6; l.name='Edited'; await projectStore.put(l); })()")
+    p2.reload(); wait_until(p2, "window.libReady===true")
+    assert p2.evaluate("project.name") == "Edited"
+
+
+def test_feedback_falls_back_to_email_without_a_server(page):
+    page.evaluate("(()=>{ window._mails=[]; openMail=u=>{ window._mails.push(u); }; })()")
+    page.click("#bFeedback")
+    assert page.inner_text("#fbGo") == "Open email"  # no /api here (file or plain static host)
+    page.click("#fbGo"); assert "Write a message first" in page.inner_text("#toast")
+    page.fill("#fbEmail", "not an email"); page.fill("#fbMsg", "Ring fusion & stuff\nsecond line")
+    page.click("#fbGo"); assert "doesn" in page.inner_text("#toast")
+    page.fill("#fbEmail", "")
+    assert page.locator("#dialog [data-kind]").count() == 0  # no Bug / Idea / Other picker
+    page.click("#fbGo")
+    mails = page.evaluate("window._mails")
+    assert len(mails) == 1 and mails[0].startswith("mailto:feedback@lonepair.app?subject=")
+    import urllib.parse
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(mails[0]).query)
+    assert q["subject"] == ["Lone Pair feedback"]
+    assert q["body"][0].startswith("Ring fusion & stuff\nsecond line") and "Kind" not in q["body"][0] and "browser:" in q["body"][0]
+    assert page.is_hidden("#modal.open")
+
+
+def test_feedback_without_browser_details(page):
+    page.evaluate("(()=>{ window._mails=[]; openMail=u=>{ window._mails.push(u); }; })()")
+    page.click("#bFeedback"); page.fill("#fbMsg", "hi"); page.uncheck("#fbCtx"); page.click("#fbGo")
+    assert "browser" not in page.evaluate("decodeURIComponent(window._mails[0])")
