@@ -1978,7 +1978,7 @@ function syncAccountUI(){
 function openAccountMenu(){
   if (!account){ signIn(); return; }
   openDialog(`<h3>${esc(account.name)}</h3><p>${esc(account.email)}</p>
-    <p class="note">Lone Pair keeps your name, email and when you visit. Your drawings stay on your computer. <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a></p>
+    <p class="note">Lone Pair keeps your name, email and when you visit. Your drawings stay on your computer. <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
     <div class="actions" style="justify-content:space-between"><button class="tb" id="acDel">Delete my account</button><span><button class="tb" id="acOut">Sign out</button> <button class="tb primary" data-close>Done</button></span></div>`);
   $('#acOut').onclick=async()=>{ try{ await fetch('/api/auth/logout',{method:'POST', credentials:'same-origin'}); }catch(e){} account=null; closeDialog(); syncAccountUI(); toast('Signed out'); };
   $('#acDel').onclick=()=>{ openDialog(`<h3>Delete your account?</h3><p>This removes your name and email from Lone Pair. Your drawings aren\u2019t affected: they\u2019re on your computer.</p><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="acDelGo">Delete account</button></div>`);

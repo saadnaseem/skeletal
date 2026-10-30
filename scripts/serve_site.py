@@ -18,6 +18,10 @@ def matches(pattern, path):
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k): super().__init__(*a, directory=str(SITE), **k)
+    def translate_path(self, path):
+        # like Cloudflare: /about serves about.html
+        p = super().translate_path(path)
+        return p + ".html" if not pathlib.Path(p).exists() and pathlib.Path(p + ".html").is_file() else p
     def do_GET(self):
         # stand-in for the Pages Functions when sign-in isn't configured (no Google secrets): same answer as server/auth.js
         if self.path.split("?")[0] == "/api/me":

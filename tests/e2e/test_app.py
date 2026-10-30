@@ -626,7 +626,7 @@ def test_nmr_solving_guide(page):
 def test_renamed_to_lone_pair_and_old_saves_still_load(browser):
     from conftest import _open
     pg = _open(browser, {"width": 1200, "height": 800})
-    assert pg.title() == "Lone Pair" and "Lone Pair" in pg.inner_text(".brand")
+    assert pg.title().startswith("Lone Pair: ") and "Lone Pair" in pg.inner_text(".brand")
     assert pg.evaluate("buildProjectHtml()").count("– Lone Pair</title>") == 1
     assert "/Producer (Lone Pair)" in pg.evaluate("new TextDecoder().decode(PDF.build([exportSVG(subDoc(null),{}).svg]))")
     # an autosave written by the app under its old name (same storage keys) is restored on reload
