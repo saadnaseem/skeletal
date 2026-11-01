@@ -19,7 +19,7 @@ function redo(){ if(!redoStack.length) return; undoStack.push(JSON.stringify(doc
 function updateUndoButtons(){ $('#bUndo').disabled=!undoStack.length; $('#bRedo').disabled=!redoStack.length; }
 function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); syncFileUI(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
 function syncPageUI(){ const e=$('#expArea'); if(!e) return; const has=!!doc.page; e.disabled=!has; if(!has) e.value='crop'; const p=doc.page; $('#pageInfo').textContent = p ? `${(PAGE_PRESETS[p.preset]||{n:'Custom'}).n.split(' (')[0]}, ${p.across} × ${p.down} ${p.across*p.down>1?'sheets':'sheet'} (${inch(p.w*p.across)} × ${inch(p.h*p.down)} in)` : 'Free canvas'; }
-function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[t]; if(!m||!m.has(id)) sel.delete(k);} }
+function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate,k:ix.bracket}[t]; if(!m||!m.has(id)) sel.delete(k);} }
 let _saveT=null;
 let _saveWarned=false;
 const idle = window.requestIdleCallback ? f=>requestIdleCallback(f,{timeout:2000}) : f=>setTimeout(f,0);
@@ -230,10 +230,18 @@ function hitTest(p, ptype){
   for (const b of doc.bonds){ const d=segDist(p,ix.atom.get(b.a),ix.atom.get(b.b)); if (d<bd){bd=d;best={type:'bond',id:b.id};} }
   if (best) return best;
   for (const r of doc.arrows){ const pts=arrowSamples(r); for (let i=0;i<pts.length-1;i++) if (segDist(p,pts[i],pts[i+1])<Math.max(rB,4)) return {type:'arrow',id:r.id}; }
+  for (const q of doc.brackets){ if (onBracket(q,p,Math.max(rB,4))) return {type:'bracket',id:q.id}; }
   return null;
 }
+// the brackets themselves and their labels, not the space they enclose
+function onBracket(q,p,r){ const g=bracketGeom(doc,q), b=bracketBBox(doc,q);
+  if (p.y<b.y0-r || p.y>b.y1+r || p.x<b.x0-r || p.x>b.x1+r) return false;
+  return p.x<=g.x0+g.lip+r || p.x>=g.x1-g.lip-r; }
+function selectedBracketSingle(){ const ks=[...sel]; if (ks.length===1 && ks[0][0]==='k') return ix.bracket.get(+ks[0].slice(1)); return null; }
 function selectedArrowSingle(){ const ks=[...sel]; if (ks.length===1 && ks[0][0]==='r') return ix.arrow.get(+ks[0].slice(1)); return null; }
 function handleHit(p, r){
+  const bk=selectedBracketSingle();
+  if (bk){ for (const [h,sx,sy] of [['tl',-1,-1],['br',1,1]]) if (dist(p,V(bk.x+sx*bk.w/2,bk.y+sy*bk.h/2))<r) return {type:'handle',h,id:bk.id,bracket:true}; }
   const ar=selectedArrowSingle();
   if (ar){
     if (dist(p,V(ar.x2,ar.y2))<r) return {type:'handle',h:'end',id:ar.id};
@@ -243,7 +251,7 @@ function handleHit(p, r){
   const bb=selBBox(); if (bb && sel.size>0 && !ar){ const hp=V((bb.x0+bb.x1)/2, bb.y0-22/view.z); if (dist(p,hp)<r) return {type:'handle',h:'rotate'}; }
   return null;
 }
-function keyOf(h){ if(!h) return null; if (h.type==='atom') return 'a'+h.id; if (h.type==='arrow') return 'r'+h.id; if (h.type==='text') return 't'+h.id; if (h.type==='plus') return 'p'+h.id; if (h.type==='plate') return 'l'+h.id; return null; }
+function keyOf(h){ if(!h) return null; if (h.type==='atom') return 'a'+h.id; if (h.type==='arrow') return 'r'+h.id; if (h.type==='text') return 't'+h.id; if (h.type==='plus') return 'p'+h.id; if (h.type==='plate') return 'l'+h.id; if (h.type==='bracket') return 'k'+h.id; return null; }
 function fragmentKeys(atomId){ const c=components(doc,ix).find(c=>c.includes(atomId)); return (c||[atomId]).map(id=>'a'+id); }
 function selAtoms(){ return [...sel].filter(k=>k[0]==='a').map(k=>+k.slice(1)); }
 function selPoints(){
@@ -253,7 +261,8 @@ function selPoints(){
     else if (t==='r'){ const r=ix.arrow.get(id); if(r){ pts.push(...arrowSamples(r)); } }
     else if (t==='t'){ const x=ix.text.get(id); if(x){ const m=textMetrics(doc,x); pts.push(V(x.x-m.w/2,x.y-m.h/2),V(x.x+m.w/2,x.y+m.h/2)); } }
     else if (t==='p'){ const q=ix.plus.get(id); if(q) pts.push(V(q.x-4,q.y-4),V(q.x+4,q.y+4)); }
-    else if (t==='l'){ const q=ix.plate.get(id); if(q){ const b=plateBBox(doc,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); } } }
+    else if (t==='l'){ const q=ix.plate.get(id); if(q){ const b=plateBBox(doc,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); } }
+    else if (t==='k'){ const q=ix.bracket.get(id); if(q){ const b=bracketBBox(doc,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); } } }
   return pts;
 }
 function selBBox(){ const pts=selPoints(); if(!pts.length) return null; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);} const pad=6; return {x0:x0-pad,y0:y0-pad,x1:x1+pad,y1:y1+pad}; }
@@ -263,7 +272,8 @@ function moveSel(dx,dy){
     else if (t==='r'){ const r=ix.arrow.get(id); r.x1+=dx;r.y1+=dy;r.x2+=dx;r.y2+=dy; if(r.cx!=null){r.cx+=dx;r.cy+=dy;} }
     else if (t==='t'){ const x=ix.text.get(id); x.x+=dx; x.y+=dy; }
     else if (t==='p'){ const q=ix.plus.get(id); q.x+=dx; q.y+=dy; }
-    else if (t==='l'){ const q=ix.plate.get(id); q.x+=dx; q.y+=dy; } }
+    else if (t==='l'){ const q=ix.plate.get(id); q.x+=dx; q.y+=dy; }
+    else if (t==='k'){ const q=ix.bracket.get(id); q.x+=dx; q.y+=dy; } }
 }
 function transformSel(fn){ // fn maps point->point
   for (const k of sel){ const t=k[0], id=+k.slice(1);
@@ -271,7 +281,8 @@ function transformSel(fn){ // fn maps point->point
     else if (t==='r'){ const r=ix.arrow.get(id); const c=CURVED.has(r.type)?arrowControl(r):null; const p1=fn(V(r.x1,r.y1)), p2=fn(V(r.x2,r.y2)); r.x1=p1.x;r.y1=p1.y;r.x2=p2.x;r.y2=p2.y; if(c){const q=fn(c); r.cx=q.x; r.cy=q.y;} }
     else if (t==='t'){ const x=ix.text.get(id); const q=fn(x); x.x=q.x; x.y=q.y; }
     else if (t==='p'){ const p=ix.plus.get(id); const q=fn(p); p.x=q.x; p.y=q.y; }
-    else if (t==='l'){ const p=ix.plate.get(id); const q=fn(p); p.x=q.x; p.y=q.y; } }
+    else if (t==='l'){ const p=ix.plate.get(id); const q=fn(p); p.x=q.x; p.y=q.y; }
+    else if (t==='k'){ const p=ix.bracket.get(id); const q=fn(p); p.x=q.x; p.y=q.y; } }
 }
 
 /* ================= rendering ================= */
@@ -294,7 +305,8 @@ function renderNow(){
     if (t==='r'){ const pts=arrowSamples(ix.arrow.get(id)); ov.push(`<polyline points="${pts.map(p=>f2(p.x)+','+f2(p.y)).join(' ')}" fill="none" stroke="${SELC}" stroke-opacity=".22" stroke-width="${f2(L*0.34)}" stroke-linecap="round"/>`); }
     if (t==='t'){ const x=ix.text.get(id); const m=textMetrics(doc,x); ov.push(`<rect x="${f2(x.x-m.w/2-2)}" y="${f2(x.y-m.h/2-2)}" width="${f2(m.w+4)}" height="${f2(m.h+4)}" fill="${SELC}" fill-opacity=".14" stroke="${SELC}" stroke-width="1" vector-effect="non-scaling-stroke"/>`); }
     if (t==='p'){ const q=ix.plus.get(id); ov.push(`<circle cx="${q.x}" cy="${q.y}" r="6" fill="${SELC}" fill-opacity=".2"/>`); }
-    if (t==='l'){ const b=plateBBox(doc,ix.plate.get(id)); ov.push(`<rect x="${f2(b.x0-2)}" y="${f2(b.y0-2)}" width="${f2(b.x1-b.x0+4)}" height="${f2(b.y1-b.y0+4)}" fill="${SELC}" fill-opacity=".08" stroke="${SELC}" stroke-width="1" vector-effect="non-scaling-stroke"/>`); } }
+    if (t==='l'){ const b=plateBBox(doc,ix.plate.get(id)); ov.push(`<rect x="${f2(b.x0-2)}" y="${f2(b.y0-2)}" width="${f2(b.x1-b.x0+4)}" height="${f2(b.y1-b.y0+4)}" fill="${SELC}" fill-opacity=".08" stroke="${SELC}" stroke-width="1" vector-effect="non-scaling-stroke"/>`); }
+    if (t==='k'){ const o=[]; renderBracket(doc,ix.bracket.get(id),o,SELC); ov.push(`<g opacity=".45">${o.join('')}</g>`); } }
   if (hover && !drag){
     if (hover.type==='atom'){ const a=ix.atom.get(hover.id); if(a) ov.push(`<circle cx="${a.x}" cy="${a.y}" r="${f2(L*0.26)}" fill="none" stroke="${SELC}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`); }
     if (hover.type==='bond'){ const b=ix.bond.get(hover.id); if(b){ const A=ix.atom.get(b.a),B=ix.atom.get(b.b); ov.push(`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="${SELC}" stroke-opacity=".3" stroke-width="${f2(L*0.3)}" stroke-linecap="round"/>`);} }
@@ -314,6 +326,8 @@ function renderNow(){
       const hs=[V(ar.x1,ar.y1),V(ar.x2,ar.y2)]; if (CURVED.has(ar.type)) hs.push(quadPt(V(ar.x1,ar.y1),arrowControl(ar),V(ar.x2,ar.y2),0.5));
       hs.forEach((h,i)=>ov.push(`<circle cx="${f2(h.x)}" cy="${f2(h.y)}" r="${f2(5/z)}" fill="#fff" stroke="${SELC}" stroke-width="1.5" vector-effect="non-scaling-stroke"${i===2?' stroke-dasharray="2 1.5"':''}/>`));
     } else {
+      const bk=selectedBracketSingle();
+      if (bk) for (const [sx,sy] of [[-1,-1],[1,1]]){ const hx=bk.x+sx*bk.w/2, hy=bk.y+sy*bk.h/2, r=4.5/z; ov.push(`<rect x="${f2(hx-r)}" y="${f2(hy-r)}" width="${f2(2*r)}" height="${f2(2*r)}" fill="#fff" stroke="${SELC}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`); }
       const bb=selBBox();
       if (bb){ const hx=(bb.x0+bb.x1)/2, hy=bb.y0-22/z;
         ov.push(`<rect x="${f2(bb.x0)}" y="${f2(bb.y0)}" width="${f2(bb.x1-bb.x0)}" height="${f2(bb.y1-bb.y0)}" fill="none" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
@@ -327,6 +341,7 @@ function renderNow(){
     if (preview.rect){ const r=preview.rect, c=preview.erase? '#e03131' : SELC; ov.push(`<rect x="${f2(Math.min(r.x0,r.x1))}" y="${f2(Math.min(r.y0,r.y1))}" width="${f2(Math.abs(r.x1-r.x0))}" height="${f2(Math.abs(r.y1-r.y0))}" fill="${c}" fill-opacity=".07" stroke="${c}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
       if (preview.hits) for (const k of preview.hits) if (k[0]==='a'){ const a=ix.atom.get(+k.slice(1)); if (a) ov.push(`<circle cx="${f2(a.x)}" cy="${f2(a.y)}" r="${f2(L*0.22)}" fill="#e03131" fill-opacity=".25"/>`); } }
     if (preview.arrow){ const o=[]; renderArrow(doc,preview.arrow,o,SELC); ov.push(o.join('')); }
+    if (preview.bracket){ const o=[]; renderBracket(doc,preview.bracket,o,SELC); ov.push(o.join('')); }
     if (preview.poly){ ov.push(`<path d="M${preview.poly.map(q=>f2(q.x)+' '+f2(q.y)).join('L')}Z" fill="${SELC}" fill-opacity=".07" stroke="${SELC}" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`); }
     if (preview.guides) for (const [a,b] of preview.guides) ov.push(`<line x1="${f2(a.x)}" y1="${f2(a.y)}" x2="${f2(b.x)}" y2="${f2(b.y)}" stroke="#d6336c" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`);
     if (preview.label) ov.push(`<text x="${f2(preview.label.x)}" y="${f2(preview.label.y)}" font-size="${f2(11/z)}" fill="${SELC}" font-family="${esc(FONT)}">${esc(preview.label.t)}</text>`);
@@ -356,10 +371,10 @@ cv.addEventListener('pointerdown', e=>{
   if (e.pointerType==='mouse'){ const now=performance.now(), lp=lastPress; lastPress={t:now,x:e.clientX,y:e.clientY};
     if (lp && now-lp.t<450 && Math.hypot(e.clientX-lp.x,e.clientY-lp.y)<6 && doubleAt(p)){ lastPress=null; return; } }
   drag={mode:'tool', start:p, last:p, sx:e.clientX, sy:e.clientY, hit:h, moved:false, shift:e.shiftKey, alt:e.altKey, ptype:e.pointerType};
-  if (e.pointerType==='touch' && h && (h.type==='atom'||h.type==='text')){
+  if (e.pointerType==='touch' && h && (h.type==='atom'||h.type==='text'||h.type==='bracket')){
     const d0=drag; clearTimeout(longPressT);
     longPressT=setTimeout(()=>{ if (drag!==d0 || d0.moved) return; if (d0.undoPushed){ setDoc(JSON.parse(undoStack.pop())); } drag=null; preview=null; changed();
-      if (h.type==='text') startTextEdit(ix.text.get(h.id)); else openLabelDialog(h.id); }, 550);
+      if (h.type==='text') startTextEdit(ix.text.get(h.id)); else if (h.type==='bracket') openBracketDialog(h.id); else openLabelDialog(h.id); }, 550);
   }
   beginTool(drag);
 });
@@ -403,6 +418,7 @@ function zoomAt(sx,sy,f){ const nz=Math.min(20,Math.max(0.15,view.z*f)); const w
 function doubleAt(p){
   const h=hitTest(p,'mouse');
   if (h && h.type==='plate'){ openTlcDialog(h.id); return true; }
+  if (h && h.type==='bracket'){ openBracketDialog(h.id); return true; }
   if (h && h.type==='text'){ startTextEdit(ix.text.get(h.id)); return true; }
   if (h && h.type==='atom' && tool.id==='select'){ openLabelDialog(h.id); return true; }
   return false;
@@ -431,6 +447,7 @@ function eraseAt(h){
   else if (h.type==='text') doc.texts=doc.texts.filter(r=>r.id!==h.id);
   else if (h.type==='plus') doc.pluses=doc.pluses.filter(r=>r.id!==h.id);
   else if (h.type==='plate') doc.plates=doc.plates.filter(r=>r.id!==h.id);
+  else if (h.type==='bracket') doc.brackets=doc.brackets.filter(r=>r.id!==h.id);
   ix=buildIndex(doc);
 }
 function bondTarget(d,p){
@@ -468,6 +485,9 @@ function moveTool(d,p){
         const dt=t-d.prevAng; d.prevAng=t; transformSel(q=>rotAround(q,d.rc,dt));
         render(); return;
       }
+      if (h.bracket){ const q=ix.bracket.get(h.id), s=h.h==='tl'?-1:1, min=L*0.4;
+        const fx=q.x-s*q.w/2, fy=q.y-s*q.h/2, w=Math.max(min,s*(p.x-fx)), hh=Math.max(min,s*(p.y-fy));
+        q.w=w; q.h=hh; q.x=fx+s*w/2; q.y=fy+s*hh/2; render(); return; }
       const r=ix.arrow.get(h.id);
       if (h.h==='bend'){ const m=mul(add(V(r.x1,r.y1),V(r.x2,r.y2)),0.5); const c=sub(mul(p,2),m); r.cx=c.x; r.cy=c.y; }
       else {
@@ -498,6 +518,7 @@ function moveTool(d,p){
     const r={type:tool.arrow,x1:d.start.x,y1:d.start.y,x2:e.x,y2:e.y}; if (curved) bendArrow(r, curlyCCW(d));
     preview={arrow:r}; render(); return;
   }
+  if (id==='bracket'){ preview={bracket:bracketFromBox(d.start,p)}; render(); return; }
   if (id==='ring' || id==='text' || id==='plus' || id==='charge'){ if (id==='plus'||id==='text'){ /* nothing */ } return; }
 }
 // curved arrows bend clockwise or counter-clockwise (as seen going from tail to head); Shift while drawing flips it
@@ -517,6 +538,7 @@ function endTool(d,p){
       for (const t of doc.texts) if (inP(t)) sel.add('t'+t.id);
       for (const q of doc.pluses) if (inP(q)) sel.add('p'+q.id);
       for (const q of doc.plates) if (inP(q)) sel.add('l'+q.id);
+      for (const q of doc.brackets) if (inP(q)) sel.add('k'+q.id);
       return;
     }
     if (!d.moved){
@@ -609,6 +631,10 @@ function endTool(d,p){
     pushUndo(); const t={id:nid(),x:d.start.x,y:d.start.y,text:'',...tool.textStyle}; doc.texts.push(t); ix=buildIndex(doc); startTextEdit(t,true); return;
   }
   if (id==='plus'){ pushUndo(); doc.pluses.push({id:nid(),x:d.start.x,y:d.start.y}); return; }
+  if (id==='bracket'){
+    if (!d.moved){ if (h && h.type==='bracket') openBracketDialog(h.id); else toast('Drag across a structure to bracket it, or select the structure and click a bracket tool'); return; }
+    const q=bracketFromBox(d.start,p); if (q.w<L*0.4 || q.h<L*0.4){ toast('Drag a larger box for the brackets'); return; }
+    pushUndo(); q.id=nid(); doc.brackets.push(q); sel=new Set(['k'+q.id]); return; }
   if (id==='pka' || id==='bde'){
     const r=cv.getBoundingClientRect(); const scr={x:d.sx-r.left, y:d.sy-r.top};
     if (!h){ closeInfo(); return; }
@@ -705,13 +731,13 @@ window.addEventListener('keydown', e=>{
   else if (k==='a') setTool('arrow',{arrow:'reaction'});
 });
 window.addEventListener('keyup', e=>{ if (e.key===' '){ spaceDown=false; cv.classList.remove('pan'); } });
-function selectAll(){ sel.clear(); doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); if(tool.id!=='select') setTool('select'); render(); scheduleAnalysis(); }
+function selectAll(){ sel.clear(); doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); doc.brackets.forEach(q=>sel.add('k'+q.id)); if(tool.id!=='select') setTool('select'); render(); scheduleAnalysis(); }
 function deleteSel(){
   if (!sel.size) return; pushUndo(); deleteKeys(sel); sel.clear(); changed();
 }
 function deleteKeys(keys){ // keys like 'a12' (atom), 'r3' (arrow); bonds go with their atoms
   doc.atoms=doc.atoms.filter(a=>!keys.has('a'+a.id));
-  doc.arrows=doc.arrows.filter(r=>!keys.has('r'+r.id)); doc.texts=doc.texts.filter(t=>!keys.has('t'+t.id)); doc.pluses=doc.pluses.filter(p=>!keys.has('p'+p.id)); doc.plates=doc.plates.filter(q=>!keys.has('l'+q.id));
+  doc.arrows=doc.arrows.filter(r=>!keys.has('r'+r.id)); doc.texts=doc.texts.filter(t=>!keys.has('t'+t.id)); doc.pluses=doc.pluses.filter(p=>!keys.has('p'+p.id)); doc.plates=doc.plates.filter(q=>!keys.has('l'+q.id)); doc.brackets=doc.brackets.filter(q=>!keys.has('k'+q.id));
   ix=buildIndex(doc);
 }
 function keysInRect(r){
@@ -721,12 +747,13 @@ function keysInRect(r){
   for (const t of doc.texts) if (inR(t)) out.add('t'+t.id);
   for (const q of doc.pluses) if (inR(q)) out.add('p'+q.id);
   for (const q of doc.plates) if (inR(q)) out.add('l'+q.id);
+  for (const q of doc.brackets) if (inR(q)) out.add('k'+q.id);
   return out;
 }
 // Clear: wipe the page in one undoable step
 function clearPage(){
   if (!hasContent(doc)){ toast('The page is already empty'); return; }
-  pushUndo(); doc.atoms=[]; doc.bonds=[]; doc.arrows=[]; doc.texts=[]; doc.pluses=[]; doc.plates=[]; sel.clear(); hover=null; changed();
+  pushUndo(); doc.atoms=[]; doc.bonds=[]; doc.arrows=[]; doc.texts=[]; doc.pluses=[]; doc.plates=[]; doc.brackets=[]; sel.clear(); hover=null; changed();
   toast(project.pages.length>1 ? 'Cleared this page (other pages are untouched). Ctrl+Z brings it back.' : 'Cleared. Ctrl+Z brings it back.');
 }
 
@@ -741,10 +768,11 @@ function subDoc(keys){
   d.texts=doc.texts.filter(t=>all||keys.has('t'+t.id)).map(t=>({...t}));
   d.pluses=doc.pluses.filter(p=>all||keys.has('p'+p.id)).map(p=>({...p}));
   d.plates=doc.plates.filter(q=>all||keys.has('l'+q.id)).map(q=>JSON.parse(JSON.stringify(q)));
+  d.brackets=doc.brackets.filter(q=>all||keys.has('k'+q.id)).map(q=>({...q}));
   return d;
 }
 function contentBBox(d){
-  const pts=[]; d.atoms.forEach(a=>pts.push(a)); d.arrows.forEach(r=>pts.push(...arrowSamples(r))); d.texts.forEach(t=>{const m=textMetrics(d,t); pts.push(V(t.x-m.w/2,t.y-m.h/2),V(t.x+m.w/2,t.y+m.h/2));}); d.pluses.forEach(p=>pts.push(p)); (d.plates||[]).forEach(q=>{ const b=plateBBox(d,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); });
+  const pts=[]; d.atoms.forEach(a=>pts.push(a)); d.arrows.forEach(r=>pts.push(...arrowSamples(r))); d.texts.forEach(t=>{const m=textMetrics(d,t); pts.push(V(t.x-m.w/2,t.y-m.h/2),V(t.x+m.w/2,t.y+m.h/2));}); d.pluses.forEach(p=>pts.push(p)); (d.plates||[]).forEach(q=>{ const b=plateBBox(d,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); }); (d.brackets||[]).forEach(q=>{ const b=bracketBBox(d,q); pts.push(V(b.x0,b.y0),V(b.x1,b.y1)); });
   if (!pts.length) return null; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);} return {x0,y0,x1,y1};
 }
 function pasteDoc(src, offset, at){
@@ -760,6 +788,7 @@ function pasteDoc(src, offset, at){
   for (const t of src.texts){ const n=G({...t,id:nid(),x:t.x+dx,y:t.y+dy}); doc.texts.push(n); sel.add('t'+n.id); }
   for (const p of src.pluses){ const n=G({...p,id:nid(),x:p.x+dx,y:p.y+dy}); doc.pluses.push(n); sel.add('p'+n.id); }
   for (const q of src.plates||[]){ const n=G({...JSON.parse(JSON.stringify(q)),id:nid(),x:q.x+dx,y:q.y+dy}); doc.plates.push(n); sel.add('l'+n.id); }
+  for (const q of src.brackets||[]){ const n=G({...q,id:nid(),x:q.x+dx,y:q.y+dy}); doc.brackets.push(n); sel.add('k'+n.id); }
   if (tool.id!=='select') setTool('select');
   changed();
 }
@@ -845,7 +874,7 @@ function tryLoadText(txt, quiet){
   }catch(err){ if(!quiet) console.warn(err); return false; }
 }
 function viewCenter(){ return V((cv.clientWidth/2-view.ox)/view.z,(cv.clientHeight/2-view.oy)/view.z); }
-function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
+function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; n.brackets=d.brackets||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates','brackets']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
 
 /* ================= clean, flip ================= */
 function cleanUp(){
@@ -903,8 +932,13 @@ function layoutUnits(keys){
     if (t==='r'){ const r=ix.arrow.get(id); if (CURVED.has(r.type)) riders.push({key:k, at:quadPt(V(r.x1,r.y1),arrowControl(r),V(r.x2,r.y2),0.5)}); else units.push({keys:[k], bb:bboxOf(arrowSamples(r)), kind:'arrow'}); }
     else if (t==='p'){ const q=ix.plus.get(id); units.push({keys:[k], bb:{x0:q.x-4,y0:q.y-4,x1:q.x+4,y1:q.y+4}, kind:'plus'}); }
     else if (t==='l'){ units.push({keys:[k], bb:plateBBox(doc,ix.plate.get(id)), kind:'plate'}); }
+    else if (t==='k'){ units.push({keys:[k], bb:bracketBBox(doc,ix.bracket.get(id)), kind:'bracket'}); }
     else if (t==='t'){ const x=ix.text.get(id), m=textMetrics(doc,x); riders.push({key:k, at:V(x.x,x.y), bb:{x0:x.x-m.w/2,y0:x.y-m.h/2,x1:x.x+m.w/2,y1:x.y+m.h/2}}); }
   }
+  // a bracket takes in the pieces it encloses
+  for (const u of units.filter(u=>u.kind==='bracket')){ const q=ix.bracket.get(+u.keys[0].slice(1));
+    for (let i=units.length-1;i>=0;i--){ const v=units[i]; if (v===u || v.kind==='bracket') continue; const cx=(v.bb.x0+v.bb.x1)/2, cy=(v.bb.y0+v.bb.y1)/2;
+      if (Math.abs(cx-q.x)<q.w/2 && Math.abs(cy-q.y)<q.h/2){ u.keys.push(...v.keys); u.kind='frag'; units.splice(i,1); } } }
   // pieces in one group become one unit
   const gOf=keys=>{ for (const k of keys){ const o=objOf(k); if (o && o.g) return o.g; } return 0; };
   const byG=new Map();
@@ -929,7 +963,7 @@ function layoutUnits(keys){
 /* smart guides: while dragging, snap the selection's edges and centers to other pieces (Alt turns it off) */
 function guideSetup(){
   const mine=layoutUnits(sel); if (!mine.length) return null;
-  const rest=new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id),...doc.plates.map(q=>'l'+q.id)].filter(k=>!sel.has(k)));
+  const rest=new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id),...doc.plates.map(q=>'l'+q.id),...doc.brackets.map(q=>'k'+q.id)].filter(k=>!sel.has(k)));
   const others=rest.size ? layoutUnits(rest).map(u=>u.bb).slice(0,400) : [];
   return others.length ? {mov:bboxOf(mine.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)])), others} : null;
 }
@@ -952,14 +986,14 @@ function snapToGuides(g, off){
 }
 
 /* groups: objects sharing a g id select, move and align together */
-function objOf(k){ const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate}[k[0]]; return m && m.get(+k.slice(1)); }
-function allObjects(){ return [...doc.atoms,...doc.arrows,...doc.texts,...doc.pluses,...doc.plates]; }
+function objOf(k){ const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate,k:ix.bracket}[k[0]]; return m && m.get(+k.slice(1)); }
+function allObjects(){ return [...doc.atoms,...doc.arrows,...doc.texts,...doc.pluses,...doc.plates,...doc.brackets]; }
 function maxGroup(){ let m=0; for (const o of allObjects()) if (o.g>m) m=o.g; return m; }
 function withGroups(keys){
   const gs=new Set(); for (const k of keys){ const o=objOf(k); if (o && o.g) gs.add(o.g); }
   if (!gs.size) return keys;
   const out=new Set(keys);
-  for (const [t,arr] of [['a',doc.atoms],['r',doc.arrows],['t',doc.texts],['p',doc.pluses],['l',doc.plates]]) for (const o of arr) if (gs.has(o.g)) out.add(t+o.id);
+  for (const [t,arr] of [['a',doc.atoms],['r',doc.arrows],['t',doc.texts],['p',doc.pluses],['l',doc.plates],['k',doc.brackets]]) for (const o of arr) if (gs.has(o.g)) out.add(t+o.id);
   return [...out];
 }
 function groupSel(){
@@ -976,7 +1010,7 @@ function moveKeys(keys,dx,dy){ const s=sel; sel=new Set(keys); moveSel(dx,dy); s
 let alignGap=0; try{ alignGap=+localStorage.getItem('skeletal.alignGap')||0; }catch(e){} // fixed gap in bond lengths; 0 keeps the outer pieces in place
 // mode: left | center | right | top | middle | bottom | hspace | vspace | row (middle, then hspace)
 function arrange(mode){
-  const all=!sel.size; const keys = all ? new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id),...doc.plates.map(q=>'l'+q.id)]) : sel;
+  const all=!sel.size; const keys = all ? new Set([...doc.atoms.map(a=>'a'+a.id),...doc.arrows.map(r=>'r'+r.id),...doc.texts.map(t=>'t'+t.id),...doc.pluses.map(p=>'p'+p.id),...doc.plates.map(q=>'l'+q.id),...doc.brackets.map(q=>'k'+q.id)]) : sel;
   const units=layoutUnits(keys);
   if (units.length<2){ toast(all ? 'Draw at least two structures to align' : 'Select two or more structures to align'); return; }
   pushUndo();
@@ -1003,7 +1037,7 @@ function arrangeUnits(units,mode){
   }
 }
 
-function selectAllSilent(){ doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); }
+function selectAllSilent(){ doc.atoms.forEach(a=>sel.add('a'+a.id)); doc.arrows.forEach(r=>sel.add('r'+r.id)); doc.texts.forEach(t=>sel.add('t'+t.id)); doc.pluses.forEach(p=>sel.add('p'+p.id)); doc.plates.forEach(q=>sel.add('l'+q.id)); doc.brackets.forEach(q=>sel.add('k'+q.id)); }
 
 /* ================= SMILES copy, online lookup (PubChem) ================= */
 // The only network use in the app. It runs only when the user asks, and sends just the SMILES or the typed name.
@@ -1133,6 +1167,55 @@ function openTlcDialog(editId){
     closeDialog(); changed(); if (!old) fitIfNeeded(); };
 }
 
+/* ================= brackets ================= */
+const bracketFromBox=(a,b)=>({type:tool.btype||'square', x:(a.x+b.x)/2, y:(a.y+b.y)/2, w:Math.abs(b.x-a.x), h:Math.abs(b.y-a.y)});
+// put brackets around the selection, clear of its atom labels, with room for the hooks
+function encloseSel(type){
+  const units=layoutUnits(sel); if (!units.length){ toast('Select a structure to bracket'); return; }
+  const bb=bboxOf(units.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)])), padX=L*0.42, padY=L*0.3;
+  const q={id:nid(), type, x:(bb.x0+bb.x1)/2, y:(bb.y0+bb.y1)/2, w:bb.x1-bb.x0+2*padX, h:Math.max(L, bb.y1-bb.y0+2*padY)};
+  pushUndo(); doc.brackets.push(q); sel=new Set(['k'+q.id]); if (tool.id!=='select') setTool('select'); changed();
+  toast('Brackets added. Double-click (or long-press) them to add a charge, ‡ or n');
+}
+// a bracket tool clicked with a selection: selected brackets change type, anything else gets enclosed
+function bracketTool(type){
+  const ks=[...sel]; if (!ks.every(k=>k[0]==='k')){ encloseSel(type); return; }
+  pushUndo(); for (const k of ks) ix.bracket.get(+k.slice(1)).type=type; changed(); }
+const BRACKET_SUP=['‡','+','-','2+','2-','3+','3-'], BRACKET_SUB=['n','x','2','3'];
+function openBracketDialog(id){
+  const q=ix.bracket.get(id); if (!q) return;
+  const w={type:q.type, sup:q.sup||'', sub:q.sub||''};
+  const preview=()=>{ const d={...newDoc(), style:doc.style, styleOv:doc.styleOv, labelSize:doc.labelSize, brackets:[{id:1, ...w, x:0, y:0, w:L*3, h:L*2.4}]};
+    const {svg}=renderDoc(d, buildIndex(d)); useStyle(doc); const b=bracketBBox(d,d.brackets[0]), pad=6;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${f2(b.x0-pad)} ${f2(b.y0-pad)} ${f2(b.x1-b.x0+2*pad)} ${f2(b.y1-b.y0+2*pad)}" style="width:100%;max-height:160px">${svg}</svg>`; };
+  const on='background:var(--accent);color:var(--accent-ink);border-color:transparent';
+  const chips=(list,key)=>list.map(v=>`<button class="mini" data-${key}="${esc(v)}">${esc(bracketText(v))}</button>`).join(' ');
+  openDialog(`<div class="dialog-inner"><h3>Brackets</h3>
+    <div class="nmrgrid"><div>
+      <div style="display:flex;gap:6px;margin-bottom:10px" id="bkType">${BRACKETS.map(t=>`<button class="mini" data-t="${t}" style="min-width:48px">${{square:'[ ]',curly:'{ }',round:'( )'}[t]}</button>`).join('')}</div>
+      <label for="bkSup" style="font-size:13px">Top right: charge or ‡</label>
+      <input id="bkSup" maxlength="20" style="width:100%" value="${esc(w.sup)}" placeholder="none">
+      <div style="margin:6px 0 12px">${chips(BRACKET_SUP,'sup')}</div>
+      <label for="bkSub" style="font-size:13px">Bottom right: n or a count</label>
+      <input id="bkSub" maxlength="20" style="width:100%" value="${esc(w.sub)}" placeholder="none">
+      <div style="margin-top:6px">${chips(BRACKET_SUB,'sub')}</div>
+    </div><div class="nmrbox" id="bkPrev">${preview()}</div></div>
+    <p class="note">As IUPAC recommends, a charge goes at the top right and a repeat count at the bottom right. Drag a corner of the selected brackets to resize them.</p>
+    <div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="bkGo">Apply</button></div></div>`);
+  dialog.classList.add('wide');
+  const sync=()=>{ dialog.querySelectorAll('#bkType [data-t]').forEach(b=>b.style.cssText='min-width:48px;'+(b.dataset.t===w.type?on:'')); $('#bkPrev').innerHTML=preview(); };
+  const read=()=>{ w.sup=$('#bkSup').value.trim(); w.sub=$('#bkSub').value.trim(); sync(); };
+  dialog.querySelectorAll('#bkSup,#bkSub').forEach(el=>el.addEventListener('input',read));
+  dialog.firstElementChild.addEventListener('click', e=>{ const b=e.target.closest('[data-t],[data-sup],[data-sub]'); if (!b) return;
+    if (b.dataset.t) w.type=b.dataset.t;
+    else { const inp=$(b.dataset.sup!=null?'#bkSup':'#bkSub'), v=b.dataset.sup ?? b.dataset.sub; inp.value = inp.value===v ? '' : v; read(); return; }
+    sync(); });
+  $('#bkGo').onclick=()=>{ read(); pushUndo(); q.type=w.type;
+    for (const k of ['sup','sub']){ if (w[k]) q[k]=w[k].slice(0,20); else delete q[k]; }
+    closeDialog(); changed(); };
+  sync();
+}
+
 /* ================= enhanced stereochemistry ================= */
 // stereocentres (doc atom ids) among the given atoms, found by OpenChemLib on each whole structure
 function stereoCentres(ids){
@@ -1196,11 +1279,11 @@ async function openFindDb(){
 /* ================= context menu ================= */
 const ctxMenu=$('#ctxMenu');
 function closeCtx(){ ctxMenu.hidden=true; }
-let ctxAtom=null, ctxPlate=null;
+let ctxAtom=null, ctxPlate=null, ctxBracket=null;
 cv.addEventListener('contextmenu', e=>{
   e.preventDefault(); if (editingText) commitText();
-  const p=toDoc(e), h=hitTest(p,'mouse'); ctxAtom = h && h.type==='atom' ? h.id : null; ctxPlate = h && h.type==='plate' ? h.id : null;
-  ctxMenu.querySelector('[data-cmd=tlc]').hidden = ctxPlate==null;
+  const p=toDoc(e), h=hitTest(p,'mouse'); ctxAtom = h && h.type==='atom' ? h.id : null; ctxPlate = h && h.type==='plate' ? h.id : null; ctxBracket = h && h.type==='bracket' ? h.id : null;
+  ctxMenu.querySelector('[data-cmd=tlc]').hidden = ctxPlate==null; ctxMenu.querySelector('[data-cmd=bracket]').hidden = ctxBracket==null;
   if (h && (h.type==='atom'||h.type==='bond')){ const id = h.type==='atom'? h.id : ix.bond.get(h.id).a; if (!sel.has('a'+id)){ sel=new Set(withGroups(fragmentKeys(id))); render(); scheduleAnalysis(); } }
   else if (h && keyOf(h)){ if (!sel.has(keyOf(h))){ sel=new Set(withGroups([keyOf(h)])); render(); } }
   const hasAtoms = selAtoms().length>0 || (!sel.size && doc.atoms.length>0);
@@ -1218,6 +1301,8 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   else if (c==='analysis') openAnalysisDialog();
   else if (c==='stereo') openStereoGroups();
   else if (c==='tlc') openTlcDialog(ctxPlate);
+  else if (c==='bracket') openBracketDialog(ctxBracket);
+  else if (c==='enclose') encloseSel('square');
   else if (c==='nmr') openNmr(); else if (c==='ms') openMs(); else if (c==='finddb') openFindDb(); else if (c==='3d') open3d();
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
@@ -1635,6 +1720,11 @@ const TOOLS = [
     {id:'pka', t:'pKa: click an atom to estimate its acidity (or basicity)', txt:'pKa'},
     {id:'bde', t:'BDE: click a bond, or an atom for its X–H bond', txt:'BDE'},
   ]},
+  {g:'brackets', items:[
+    {id:'bracket', o:{btype:'square'}, t:'Square brackets [ ]: select a structure and click, or drag across it. Double-click a bracket to add a charge, \u2021 or n', i:ic('<path d="M9 4H5v16h4M15 4h4v16h-4"/>')},
+    {id:'bracket', o:{btype:'curly'}, t:'Curly braces { }: select a structure and click, or drag across it', i:ic('<path d="M9 4C7 4 6.5 5 6.5 7v2.6C6.5 11 5.6 12 4 12c1.6 0 2.5 1 2.5 2.4V17c0 2 .5 3 2.5 3M15 4c2 0 2.5 1 2.5 3v2.6c0 1.4.9 2.4 2.5 2.4-1.6 0-2.5 1-2.5 2.4V17c0 2-.5 3-2.5 3"/>')},
+    {id:'bracket', o:{btype:'round'}, t:'Round brackets ( ): select a structure and click, or drag across it', i:ic('<path d="M9 4C5.5 7 5.5 17 9 20M15 4c3.5 3 3.5 13 0 16"/>')},
+  ]},
   {g:'arrows', items:[
     {id:'arrow', o:{arrow:'reaction'}, t:'Reaction arrow (A)', i:ic('<path d="M3 12h14"/><path d="M21 12l-6-3.5v7z" fill="currentColor"/>')},
     {id:'arrow', o:{arrow:'equilibrium'}, t:'Equilibrium arrow', i:ic('<path d="M3 9.5h17l-5-3.5M21 14.5H4l5 3.5"/>')},
@@ -1652,7 +1742,7 @@ function renderTools(){
   const nav=$('#tools'); nav.innerHTML='';
   TOOLS.forEach(g=>{ const div=document.createElement('div'); div.className='tgroup';
     g.items.forEach(it=>{ const b=document.createElement('button'); b.className='tool'+(it.txt?' el':'')+(it.txt&&it.txt.length>2?' small':''); b.title=it.t; b.setAttribute('aria-label',it.t); b.innerHTML=it.i||esc(it.txt);
-      b.onclick=()=>{ if (it.other){ openElementDialog(); return; } setTool(it.id, it.o||{}); };
+      b.onclick=()=>{ if (it.other){ openElementDialog(); return; } if (it.id==='bracket' && sel.size){ bracketTool(it.o.btype); return; } setTool(it.id, it.o||{}); };
       b._it=it; div.appendChild(b); });
     nav.appendChild(div); });
   syncTools();
@@ -1713,7 +1803,7 @@ const SWATCHES=['#000000','#2f4fd6','#d1231f','#1f8f3a','#7a2fb5','#d06a00','#80
 function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`<button class="sw" style="background:${c}" data-c="${c}" title="${c==='#000000'?'Black (default)':c}" aria-label="Color ${c}"></button>`).join('');
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
-    for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; changed(); }; }
+    for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; for (const q of doc.brackets) if (sel.has('k'+q.id)) q.color=c; changed(); }; }
 function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
 // changing the style or bond length rescales the drawing so bonds keep the style's length
 function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
@@ -2092,7 +2182,7 @@ function pageExportSVG(d, mode){
   if (mode==='tiles' && d.page){ const p=d.page, out=[]; for (let j=0;j<p.down;j++) for (let i=0;i<p.across;i++){ out.push(exportSVG(d,{transparent:t, region:{x0:p.x+i*p.w,y0:p.y+j*p.h,x1:p.x+(i+1)*p.w,y1:p.y+(j+1)*p.h}}).svg); } return out; }
   return [exportSVG(d,{transparent:t}).svg];
 }
-function hasContent(d){ return d.atoms.length||d.arrows.length||d.texts.length||d.pluses.length||(d.plates&&d.plates.length); }
+function hasContent(d){ return d.atoms.length||d.arrows.length||d.texts.length||d.pluses.length||(d.plates&&d.plates.length)||(d.brackets&&d.brackets.length); }
 function exportPdf(which, mode='crop'){
   let svgs=[];
   if (which==='all'){ for (const p of project.pages) if (hasContent(p.doc)) svgs.push(...pageExportSVG(p.doc, mode)); useStyle(doc); }

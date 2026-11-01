@@ -104,9 +104,9 @@ test('mixed text styles: italic only when the whole text is italic', () => {
   assert.equal(t('<s face="3">bold </s><s face="1">text</s>').bold, true);
 });
 
-test('shapes, brackets and other objects with no equivalent are counted, not silently lost', () => {
+test('shapes, single brackets and other objects with no equivalent are counted, not silently lost', () => {
   const x = cdxml(`<page><fragment><n id="1" p="0 0"/><n id="2" p="14.4 0"/><b id="3" B="1" E="2"/></fragment>
-    <graphic id="4" BoundingBox="0 0 10 10" GraphicType="Bracket"/><graphic id="5" BoundingBox="20 0 10 10" GraphicType="Bracket"/>
+    <graphic id="4" BoundingBox="0 0 10 10" GraphicType="Bracket" BracketType="Square"/><graphic id="5" BoundingBox="20 0 10 10" GraphicType="Bracket" BracketType="Curly"/>
     <graphic id="6" BoundingBox="0 0 30 30" GraphicType="Oval"/><graphic id="7" BoundingBox="0 0 30 30" GraphicType="Orbital"/>
     <graphic id="8" BoundingBox="0 0 3 3" GraphicType="Symbol" SymbolType="CirclePlus"/>
     <graphic id="9" BoundingBox="0 0 40 0" GraphicType="Line" ArrowType="FullHead" SupersededBy="10"/>

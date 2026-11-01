@@ -32,6 +32,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
 - **Enhanced stereochemistry:** right-click a stereocenter to label it abs, &1 (racemic) or or1 (relative), as in ChemDraw. The labels are saved in V3000 molfiles and ChemDraw files.
 - **TLC plates:** draw lanes, spots and streaks with Rf values and the eluent. They're drawn in the page style and can be edited by double-clicking.
+- **Brackets:** square, curly and round pairs. Select a structure and click a bracket tool, or drag across it; double-click to add a charge or ‡ (top right) or n (bottom right). They open and save in ChemDraw files.
 - **Groups** (Ctrl+G): a structure and its label select, move and align as one.
 - **Smart guides**: while you drag, the selection snaps to the centers and edges of other structures. Hold Alt to drag freely.
 - Right-click a structure to copy its SMILES or molfile, or to look up its name and CAS number.
@@ -153,7 +154,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 125 unit tests (Node test runner)
+npm test             # 131 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)

@@ -19,7 +19,7 @@ def smiles(page):
 
 
 def test_loads_cleanly(page):
-    assert page.locator("#tools .tool").count() == 46
+    assert page.locator("#tools .tool").count() == 49
     assert page.locator("#empty").is_visible()
 
 
