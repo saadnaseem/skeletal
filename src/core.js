@@ -113,6 +113,8 @@ function sanitizeDoc(d){
     lanes:arr(q.lanes).slice(0,20).map(l=>({label:str(l.label,40), spots:arr(l.spots).slice(0,20).map(sp=>pick({rf:clamp(sp.rf,0,1,0.5), to:sp.to!=null?clamp(sp.to,0,1,0.5):undefined,
       style:['fill','outline','faint'].includes(sp.style)?sp.style:'fill', color:col(sp.color)},['rf','to','style','color']))}))},
     ['id','x','y','w','h','g','origin','front','solvent','showRf','color','lanes']));
+  out.brackets=arr(d.brackets).slice(0,500).map(q=>pick({id:int(q.id), x:num(q.x), y:num(q.y), w:clamp(q.w,2,5000,40), h:clamp(q.h,4,5000,40), type:BRACKETS.includes(q.type)?q.type:'square',
+    sup:str(q.sup,20)||undefined, sub:str(q.sub,20)||undefined, color:col(q.color), g:grp(q.g)},['id','x','y','w','h','type','sup','sub','color','g']));
   if (d.page && typeof d.page==='object'){ const p=d.page; const w=num(p.w), h=num(p.h);
     if (w>=36 && h>=36 && w<=20000 && h<=20000) out.page={preset:str(p.preset,20)||'custom', w, h, across:Math.max(1,Math.min(8,int(p.across,1))), down:Math.max(1,Math.min(8,int(p.down,1))), x:num(p.x), y:num(p.y)}; }
   return out;
@@ -140,23 +142,24 @@ function sanitizeProject(p){
   if (typeof p.rev==='string' && PROJECT_ID_RE.test(p.rev)) out.rev=p.rev;
   return out;
 }
-function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], plates:[], nid:1, style:'acs', colorAtoms:false}; }
+function newDoc(){ return {v:1, atoms:[], bonds:[], arrows:[], texts:[], pluses:[], plates:[], brackets:[], nid:1, style:'acs', colorAtoms:false}; }
 const _sCache=new Map();
 function useStyle(d){ L = S(d).bondLength || 14.4; return L; }
 // scale a drawing's geometry about its centre (used when the bond length changes; text sizes stay in pt)
 function rescaleDoc(d, f){
   if (!(f>0) || Math.abs(f-1)<1e-9) return;
-  const pts=[...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[])]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
+  const pts=[...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[]), ...(d.brackets||[])]; for (const r of d.arrows) pts.push({x:r.x1,y:r.y1},{x:r.x2,y:r.y2});
   if (!pts.length) return; let cx=0, cy=0; for (const p of pts){ cx+=p.x; cy+=p.y; } cx/=pts.length; cy/=pts.length;
   const sx=v=>cx+(v-cx)*f, sy=v=>cy+(v-cy)*f;
-  for (const o of [...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[])]){ o.x=sx(o.x); o.y=sy(o.y); }
+  for (const o of [...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[]), ...(d.brackets||[])]){ o.x=sx(o.x); o.y=sy(o.y); }
+  for (const q of d.brackets||[]){ q.w*=f; q.h*=f; }
   for (const r of d.arrows){ r.x1=sx(r.x1); r.y1=sy(r.y1); r.x2=sx(r.x2); r.y2=sy(r.y2); if (r.cx!=null){ r.cx=sx(r.cx); r.cy=sy(r.cy); } }
 }
 function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
   if(!s){ s={...(PRESETS[d.style]||PRESETS.acs), ...(d.styleOv||{})}; if (d.labelSize) s.fontSize=+d.labelSize; _sCache.set(k,s); } return s; }
 function buildIndex(d){
-  const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),plate:new Map(),adj:new Map()};
-  if (!d.plates) d.plates=[];
+  const ix={atom:new Map(),bond:new Map(),arrow:new Map(),text:new Map(),plus:new Map(),plate:new Map(),bracket:new Map(),adj:new Map()};
+  if (!d.plates) d.plates=[]; if (!d.brackets) d.brackets=[];
   for (const a of d.atoms){ ix.atom.set(a.id,a); ix.adj.set(a.id,[]); }
   d.bonds = d.bonds.filter(b=>ix.atom.has(b.a)&&ix.atom.has(b.b)&&b.a!==b.b);
   for (const b of d.bonds){ ix.bond.set(b.id,b); ix.adj.get(b.a).push({b,o:b.b}); ix.adj.get(b.b).push({b,o:b.a}); }
@@ -164,6 +167,7 @@ function buildIndex(d){
   for (const t of d.texts) ix.text.set(t.id,t);
   for (const p of d.pluses) ix.plus.set(p.id,p);
   for (const q of d.plates) ix.plate.set(q.id,q);
+  for (const q of d.brackets) ix.bracket.set(q.id,q);
   return ix;
 }
 function bondSum(ix,id){ let s=0; for(const {b} of ix.adj.get(id)||[]) if (!b.kind) s+=b.order; return s; }
@@ -545,6 +549,36 @@ function renderText(d,t,out){
 function renderPlus(d,p,out){ const st=S(d), s=3.8*st.head, col=p.color||'#000';
   out.push(strokeLine(V(p.x-s,p.y),V(p.x+s,p.y),st.lineWidth*1.1,col,'butt')); out.push(strokeLine(V(p.x,p.y-s),V(p.x,p.y+s),st.lineWidth*1.1,col,'butt')); }
 
+/* ================= brackets ================= */
+// a pair of brackets around a box (x, y centre; w, h), drawn at the bond line width; the labels follow IUPAC:
+// sup at the top right (a charge, ‡), sub at the bottom right (n, a count)
+const BRACKETS=['square','curly','round'];
+const bracketText=s=>String(s||'').replace(/-/g,'−'); // a typed hyphen is a minus sign
+function bracketGeom(d,q){
+  const st=S(d), fs=st.fontSize*0.75, x0=q.x-q.w/2, x1=q.x+q.w/2, y0=q.y-q.h/2, y1=q.y+q.h/2;
+  const lip=Math.min(st.bondLength*(q.type==='square'?0.22:0.3), q.h*(q.type==='curly'?0.38:0.3), q.w*0.45);
+  return {x0, x1, y0, y1, lip, fs, lx:x1+fs*0.25, supY:y0+fs*0.55, subY:y1+fs*0.35};
+}
+function bracketBBox(d,q){ const g=bracketGeom(d,q), lw=S(d).lineWidth;
+  const lab=Math.max(q.sup? tw(bracketText(q.sup),g.fs) : 0, q.sub? tw(bracketText(q.sub),g.fs) : 0);
+  return {x0:g.x0-lw, y0:g.y0-lw-(q.sup?g.fs*0.3:0), x1: lab? g.lx+lab : g.x1+lw, y1:g.y1+lw+(q.sub?g.fs*0.45:0)}; }
+// one bracket: xe is its outer edge, dir +1 for the left bracket (opening right), -1 for the right one
+function bracketPath(type, xe, y0, y1, w, dir){
+  const X=f=>f2(xe+dir*f*w), Y=f2, h=y1-y0, ym=(y0+y1)/2;
+  if (type==='round') return `M${X(1)} ${Y(y0)}C${X(-0.05)} ${Y(y0+h*0.2)} ${X(-0.05)} ${Y(y1-h*0.2)} ${X(1)} ${Y(y1)}`;
+  if (type==='curly'){ const k=w*0.62, xs=X(0.5);
+    return `M${X(1)} ${Y(y0)}C${X(0.62)} ${Y(y0)} ${xs} ${Y(y0+k*0.25)} ${xs} ${Y(y0+k)}L${xs} ${Y(ym-k)}C${xs} ${Y(ym-k*0.25)} ${X(0.32)} ${Y(ym)} ${X(0)} ${Y(ym)}`+
+      `C${X(0.32)} ${Y(ym)} ${xs} ${Y(ym+k*0.25)} ${xs} ${Y(ym+k)}L${xs} ${Y(y1-k)}C${xs} ${Y(y1-k*0.25)} ${X(0.62)} ${Y(y1)} ${X(1)} ${Y(y1)}`; }
+  return `M${X(1)} ${Y(y0)}L${X(0)} ${Y(y0)}L${X(0)} ${Y(y1)}L${X(1)} ${Y(y1)}`;
+}
+function renderBracket(d,q,out,color){
+  const st=S(d), g=bracketGeom(d,q), col=color||q.color||'#000', sq=q.type==='square';
+  const path=bracketPath(q.type,g.x0,g.y0,g.y1,g.lip,1)+bracketPath(q.type,g.x1,g.y0,g.y1,g.lip,-1);
+  out.push(`<path d="${path}" fill="none" stroke="${col}" stroke-width="${f2(st.lineWidth)}" stroke-linejoin="${sq?'miter':'round'}" stroke-linecap="${sq?'butt':'round'}"/>`);
+  if (q.sup) out.push(`<text x="${f2(g.lx)}" y="${f2(g.supY)}" font-size="${f2(g.fs)}" fill="${col}">${esc(bracketText(q.sup))}</text>`);
+  if (q.sub) out.push(`<text x="${f2(g.lx)}" y="${f2(g.subY)}" font-size="${f2(g.fs)}" fill="${col}">${esc(bracketText(q.sub))}</text>`);
+}
+
 /* ================= TLC plates ================= */
 // geometry of a plate: lane x positions, origin and front y, spot y for an Rf
 function plateGeom(d,q){
@@ -583,6 +617,7 @@ function renderDoc(d, ix){
   for (const t of d.texts) renderText(d,t,out);
   for (const p of d.pluses) renderPlus(d,p,out);
   for (const q of d.plates||[]) renderPlate(d,q,out);
+  for (const q of d.brackets||[]) renderBracket(d,q,out);
   out.push('</g>');
   return {svg:out.join(''), labels};
 }

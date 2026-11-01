@@ -137,6 +137,11 @@ const FORMATS = (()=>{
       const el=E('t',{id:id(), p:`${num(x)} ${num(y)}`, BoundingBox:`${num(t.x-m.w/2)} ${num(t.y-m.h/2)} ${num(t.x+m.w/2)} ${num(t.y+m.h/2)}`, Justification:{left:'Left',right:'Right',center:'Center'}[al], InterpretChemically:'no'}, runs);
       textIds.set(t, el.attrs.id); objs.push(el); }
     for (const q of d.pluses) objs.push(E('graphic',{id:id(), BoundingBox:`${num(q.x)} ${num(q.y+3.75)} ${num(q.x)} ${num(q.y-3.75)}`, GraphicType:'Symbol', SymbolType:'Plus', color:colorIdx(q.color)}));
+    for (const q of d.brackets||[]){ const g=bracketGeom(d,q);
+      objs.push(E('graphic',{id:id(), BoundingBox:`${num(g.x0)} ${num(g.y0)} ${num(g.x1)} ${num(g.y1)}`, GraphicType:'Bracket', BracketType:BRACKET_CDX[q.type], color:colorIdx(q.color)}));
+      for (const [txt,y] of [[q.sup,g.supY],[q.sub,g.subY]]) if (txt){ const s=bracketText(txt), w=tw(s,g.fs);
+        objs.push(E('t',{id:id(), p:`${num(g.lx)} ${num(y)}`, BoundingBox:`${num(g.lx)} ${num(y-g.fs*0.75)} ${num(g.lx+w)} ${num(y+g.fs*0.2)}`, InterpretChemically:'no'},
+          [E('s',{font:'3',size:num(g.fs),face:'0',color:colorIdx(q.color)},[],s)])); } }
     const arrowIds=new Map();
     for (const r of d.arrows){ const pts=arrowSamples(r); let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for (const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y);}
       const at={id:id(), BoundingBox:`${num(x0)} ${num(y0)} ${num(x1)} ${num(y1)}`, FillType:'None', ArrowheadHead:'Full', ArrowheadType:'Solid', HeadSize:'1000', ArrowheadCenterSize:'875', ArrowheadWidth:'250',
@@ -180,7 +185,7 @@ const FORMATS = (()=>{
     color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Isotope:[0x420,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
     Order:[0x600,'i16'],Display:[0x601,'i16'],DoublePosition:[0x603,'i16'],B:[0x604,'u32'],E:[0x605,'u32'],Justification:[0x701,'i8'],LabelAlignment:[0x705,'i8'],InterpretChemically:[0x708,'bool'],
     BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelJustification:[0x823,'i8'],
-    GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
+    GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],BracketType:[0xa06,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
     ArrowheadWidth:[0xa31,'u16'],ArrowShaftSpacing:[0xa33,'u16'],ArrowheadHead:[0xa35,'i16'],ArrowheadTail:[0xa36,'i16'],FillType:[0xa37,'i16'],NoGo:[0xa3b,'i8'],
     ReactionStepReactants:[0xc01,'ids'],ReactionStepProducts:[0xc02,'ids'],ReactionStepArrows:[0xc04,'ids'],ReactionStepObjectsAboveArrow:[0xc05,'ids'],ReactionStepObjectsBelowArrow:[0xc06,'ids'],SupersededBy:[0x12,'u32']};
   const PN=Object.fromEntries(Object.entries(P).map(([k,v])=>[v[0],k]));
@@ -188,6 +193,7 @@ const FORMATS = (()=>{
     NodeType:['Unspecified','Element','ElementList','ElementListNickname','Nickname','Fragment','Formula','GenericNickname','AnonymousAlternativeGroup','NamedAlternativeGroup','MultiAttachment','VariableAttachment','ExternalConnectionPoint','LinkNode'],
     Display:['Solid','Dash','Hash','WedgedHashBegin','WedgedHashEnd','Bold','WedgeBegin','WedgeEnd','Wavy','HollowWedgeBegin','HollowWedgeEnd','WavyWedgeBegin','WavyWedgeEnd','Dot','DashDot'],
     GraphicType:['Undefined','Line','Arc','Rectangle','Oval','Orbital','Bracket','Symbol'],
+    BracketType:['RoundPair','SquarePair','CurlyPair','Square','Curly','Round'],
     SymbolType:['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Dagger','DoubleDagger','Plus','Minus','Racemic','Absolute','Relative'],
     Radical:['None','Singlet','Doublet','Triplet'], EnhancedStereoType:['Unspecified','None','Absolute','Or','And'], LabelAlignment:['Auto','Left','Center','Right','Above','Below','Best'],
   };
@@ -317,8 +323,10 @@ const FORMATS = (()=>{
   const SKIP_NAMES={curve:'shape', tlcplate:'TLC plate', spectrum:'spectrum', embeddedobject:'embedded object', table:'table', geometry:'geometry constraint', constraint:'geometry constraint', altgroup:'alternative group'};
   const ATOM_SYMBOLS=new Set(['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Minus']); // drawn from the atom's own charge and radical
   const GRAPHIC_NAMES={Line:'line', Arc:'arc', Rectangle:'shape', Oval:'shape', Orbital:'orbital', Bracket:'bracket', Symbol:'symbol'};
+  // bracket pairs; ChemDraw's single brackets have no equivalent here. A bracket with no BracketType is a pair of parentheses
+  const BRACKET_CDX={square:'SquarePair', curly:'CurlyPair', round:'RoundPair'}, BRACKET_OF={SquarePair:'square', CurlyPair:'curly', RoundPair:'round'};
   function treeToDoc(root){
-    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], skipped={}; let nid=1;
+    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], brackets=[], skipped={}; let nid=1;
     const skip=what=>{ skipped[what]=(skipped[what]||0)+1; };
     // colour indexes: 0 black, 1 white, then the colour table from 2
     const table=kids(kids(root,'colortable')[0]||{children:[]},'color').map(c=>{ const h=k=>Math.max(0,Math.min(255,Math.round(parseFloat(c.attrs[k])*255)||0)).toString(16).padStart(2,'0'); return '#'+h('r')+h('g')+h('b'); });
@@ -395,6 +403,9 @@ const FORMATS = (()=>{
         else if (c.name==='graphic'){
           const bb=String(c.attrs.BoundingBox||'').split(/\s+/).map(parseFloat);
           if (c.attrs.GraphicType==='Symbol' && c.attrs.SymbolType==='Plus' && bb.length===4) pluses.push(setColor({id:nid++, x:(bb[0]+bb[2])/2, y:(bb[1]+bb[3])/2}, c.attrs.color));
+          else if (c.attrs.GraphicType==='Bracket' && BRACKET_OF[c.attrs.BracketType||'RoundPair'] && bb.length===4 && bb.every(Number.isFinite)){
+            const w=Math.abs(bb[2]-bb[0]), h=Math.abs(bb[3]-bb[1]);
+            if (w>0.5 && h>0.5) brackets.push(setColor({id:nid++, type:BRACKET_OF[c.attrs.BracketType||'RoundPair'], x:(bb[0]+bb[2])/2, y:(bb[1]+bb[3])/2, w, h}, c.attrs.color)); else skip('bracket'); }
           else if (c.attrs.GraphicType==='Line' && c.attrs.ArrowType && !c.attrs.SupersededBy && bb.length===4){ const at=c.attrs.ArrowType;
             arrows.push(setColor({id:nid++, type: at==='Equilibrium'?'equilibrium': at==='RetroSynthetic'?'retro': at==='Resonance'?'resonance': c.attrs.LineType==='Dashed'?'dashed':'reaction', x1:bb[2], y1:bb[3], x2:bb[0], y2:bb[1]}, c.attrs.color)); }
           else if (!c.attrs.SupersededBy && !(c.attrs.GraphicType==='Symbol' && ATOM_SYMBOLS.has(c.attrs.SymbolType))) skip(GRAPHIC_NAMES[c.attrs.GraphicType]||'shape');
@@ -421,10 +432,17 @@ const FORMATS = (()=>{
       }
     }
     visit(root,false);
+    // a short text at a bracket's top-right or bottom-right corner is its charge or repeat count (the nearest corner wins)
+    for (let i=texts.length-1;i>=0;i--){ const t=texts[i], fs=t.size||10; if (t.text.length>8 || t.text.includes('\n')) continue;
+      let best=null, bd=Infinity;
+      for (const q of brackets) for (const [key,yc] of [['sup',q.y-q.h/2],['sub',q.y+q.h/2]]){ const dx=t.x-(q.x+q.w/2);
+        if (q[key]!=null || dx<=-fs*0.3 || dx>=fs*2.5 || Math.abs(t.y-yc)>fs*1.2) continue;
+        const dd=Math.hypot(dx, t.y-yc); if (dd<bd){ bd=dd; best=[q,key]; } }
+      if (best){ best[0][best[1]]=t.text.replace(/\^/g,'').replace(/\u2212/g,'-'); texts.splice(i,1); } }
     kekulize(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
-    const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
+    const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses,brackets}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
     if (st) Object.assign(d, st);
     if (Object.keys(skipped).length) d.skipped=skipped;
     return d;
@@ -434,6 +452,7 @@ const FORMATS = (()=>{
     const med=ls.length? ls[ls.length>>1] : target, k=target/med; if (Math.abs(k-1)<1e-3) return d;
     const sc=o=>{ for (const key of ['x','y','x1','y1','x2','y2','cx','cy']) if (o[key]!=null) o[key]*=k; };
     d.atoms.forEach(sc); d.arrows.forEach(sc); d.texts.forEach(sc); d.pluses.forEach(sc);
+    for (const q of d.brackets||[]){ q.x*=k; q.y*=k; q.w*=k; q.h*=k; }
     return d;
   }
 
