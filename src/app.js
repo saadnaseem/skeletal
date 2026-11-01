@@ -632,9 +632,9 @@ function endTool(d,p){
   }
   if (id==='plus'){ pushUndo(); doc.pluses.push({id:nid(),x:d.start.x,y:d.start.y}); return; }
   if (id==='bracket'){
-    if (!d.moved){ if (h && h.type==='bracket') openBracketDialog(h.id); else toast('Drag across a structure to bracket it, or select the structure and click a bracket tool'); return; }
+    if (!d.moved){ if (h && h.type==='bracket'){ openBracketDialog(h.id); return; } sel.clear(); toast('Drag across a structure to bracket it, or select the structure and click a bracket tool'); return; }
     const q=bracketFromBox(d.start,p); if (q.w<L*0.4 || q.h<L*0.4){ toast('Drag a larger box for the brackets'); return; }
-    pushUndo(); q.id=nid(); doc.brackets.push(q); sel=new Set(['k'+q.id]); return; }
+    pushUndo(); q.id=nid(); doc.brackets.push(q); sel.clear(); return; }
   if (id==='pka' || id==='bde'){
     const r=cv.getBoundingClientRect(); const scr={x:d.sx-r.left, y:d.sy-r.top};
     if (!h){ closeInfo(); return; }
@@ -1174,10 +1174,11 @@ function encloseSel(type){
   const units=layoutUnits(sel); if (!units.length){ toast('Select a structure to bracket'); return; }
   const bb=bboxOf(units.flatMap(u=>[V(u.bb.x0,u.bb.y0),V(u.bb.x1,u.bb.y1)])), padX=L*0.42, padY=L*0.3;
   const q={id:nid(), type, x:(bb.x0+bb.x1)/2, y:(bb.y0+bb.y1)/2, w:bb.x1-bb.x0+2*padX, h:Math.max(L, bb.y1-bb.y0+2*padY)};
-  pushUndo(); doc.brackets.push(q); sel=new Set(['k'+q.id]); if (tool.id!=='select') setTool('select'); changed();
+  pushUndo(); doc.brackets.push(q); sel.clear(); if (tool.id!=='select') setTool('select'); changed();
   toast('Brackets added. Double-click (or long-press) them to add a charge, ‡ or n');
 }
-// a bracket tool clicked with a selection: selected brackets change type, anything else gets enclosed
+// a bracket tool clicked with a selection: brackets the user selected change type, anything else gets enclosed
+// (new brackets are never left selected, so picking the next tool after drawing one starts a new pair)
 function bracketTool(type){
   const ks=[...sel]; if (!ks.every(k=>k[0]==='k')){ encloseSel(type); return; }
   pushUndo(); for (const k of ks) ix.bracket.get(+k.slice(1)).type=type; changed(); }
