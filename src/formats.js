@@ -110,7 +110,7 @@ const FORMATS = (()=>{
           if (a.rad) n.attrs.Radical='Doublet';
           if (a.stg){ const m=/^(abs|and|or)(\d*)$/.exec(a.stg); n.attrs.EnhancedStereoType={abs:'Absolute',and:'And',or:'Or'}[m[1]]; if (m[1]!=='abs') n.attrs.EnhancedStereoGroupNum=m[2]||'1'; }
           if (a.color) n.attrs.color=colorIdx(a.color);
-          if (lb.visible){ const h=implicitH(a,bondSum(ix,aid)); n.attrs.NumHydrogens=String(h);
+          if (lb.visible){ const h=labelH(a,ix); n.attrs.NumHydrogens=String(implicitH(a,bondSum(ix,aid))); // the label as drawn; the count ChemDraw computes with, from the bonds
             label(atomSymbol(a)+(h?'H'+(h>1?h:''):'')+(a.charge? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : '')); }
         } else if (k==='abbr'){
           n.attrs.NodeType='Nickname';
@@ -340,6 +340,7 @@ const FORMATS = (()=>{
     const sText=t=>charsToMarkup(sChars(t)) || (t.text||'').trim();
     const sPlain=t=>sChars(t).map(x=>x.c).join('') || (t.text||'').trim();
     const nodeMap=new Map(), multi=new Map(); // CDX node id -> our atom id; nicknames with several attachment points
+    const CLABEL=/^(C(H\d*)?|H\d*C)(\d*[+-])?$/; // a carbon's own label: C, CH3, H3C (read leftward), with a charge
     function addFragment(fr){
       for (const n of kids(fr,'n')){
         const ty=n.attrs.NodeType||'Element', p=pt(n.attrs.p), lab=kids(n,'t')[0];
@@ -365,10 +366,11 @@ const FORMATS = (()=>{
         } else {
           const z=+(n.attrs.Element||6); el=ELEMENTS[z-1]||'C';
           if (label==='D'||label==='T'){ el='H'; if (!n.attrs.Isotope) n.attrs.Isotope=label==='D'?'2':'3'; }
-          if (label && z===6 && /^[A-Z]/.test(label) && !/^C(H\d*)?$/.test(label)){ const lb=label.replace(/[+-]\d*$/,''); if (ABBR[lb]) el=lb; else if (!ELEMENTS.includes(lb) && !/^[A-Z][a-z]?(H\d*)?$/.test(lb)) el=lb; }
+          if (label && z===6 && /^[A-Z]/.test(label) && !CLABEL.test(label)){ const lb=label.replace(/[+-]\d*$/,''); if (ABBR[lb]) el=lb; else if (!ELEMENTS.includes(lb) && !/^[A-Z][a-z]?(H\d*)?$/.test(lb)) el=lb; }
         }
         const a={id:nid++, x:p.x, y:p.y, el, charge:+(n.attrs.Charge||0)||0, lp:0, rad: n.attrs.Radical==='Doublet'?1:0, h: n.attrs.NumHydrogens!=null? +n.attrs.NumHydrogens : 0};
         const iso=+n.attrs.Isotope; if (Number.isInteger(iso) && iso>0 && iso<300 && ELEMENTS.includes(el)) a.iso=iso;
+        if (el==='C' && CLABEL.test(label)) a.hs=true; // a carbon ChemDraw shows with its label (CH3, H3C, CH2+) keeps it
         setColor(a, n.attrs.color ?? (lab && (kids(lab,'s')[0]||{attrs:{}}).attrs.color));
         const est=n.attrs.EnhancedStereoType; if (est==='And'||est==='Or') a.stg=est.toLowerCase()+(+n.attrs.EnhancedStereoGroupNum||1); else if (est==='Absolute' && n.attrs.EnhancedStereoGroupNum) a.stg='abs';
         atoms.push(a); nodeMap.set(n.attrs.id, a.id);
@@ -510,7 +512,7 @@ const FORMATS = (()=>{
   function chemfigWrite(d0){
     const d={...d0, bonds:d0.bonds.filter(b=>!b.kind)}, ix=buildIndex(d); // chemfig has no hydrogen or dative bonds
     const lab=a=>{ const k=kindOf(a.el), lb=layoutLabel(d,ix,a); if (k==='element' && !lb.visible) return '';
-      let s = k==='element' ? a.el+(()=>{ const h=implicitH(a,bondSum(ix,a.id)); return h? 'H'+(h>1?'_'+h:'') : ''; })()
+      let s = k==='element' ? a.el+(()=>{ const h=labelH(a,ix); return h? 'H'+(h>1?'_'+h:'') : ''; })()
         : /[\\^_]/.test(a.el) ? textRuns(a.el).map(r=>{ const x=r.t.replace(/[{}\\^_&%$#~]/g,''); return r.m==='sub'?`_{${x}}`:r.m==='sup'?`^{${x}}`:x; }).join('') : (a.el.replace(/(\d+)/g,'_$1'));
       if (a.charge) s+=`^{${Math.abs(a.charge)>1?Math.abs(a.charge):''}${a.charge>0?'+':'-'}}`;
       if (a.rad) s+='^{\\bullet}'; return /[_^\\]/.test(s)||s.length>1? `{${s}}` : s; };

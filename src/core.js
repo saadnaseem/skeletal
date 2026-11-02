@@ -103,11 +103,13 @@ function sanitizeDoc(d){
   const pick=(o,keys)=>{ const r={}; for (const k of keys) if (o[k]!==undefined) r[k]=o[k]; return r; };
   const out={ v:1, style: Object.hasOwn(PRESETS, d.style) ? d.style : 'acs', colorAtoms:!!d.colorAtoms, nid:int(d.nid,1) };
   if (d.labelSize!=null && Number.isFinite(+d.labelSize)) out.labelSize=Math.min(72,Math.max(4,+d.labelSize));
+  if (d.showCH==='end' || d.showCH==='all') out.showCH=d.showCH;
   if (d.styleOv && typeof d.styleOv==='object'){ const o={};
     for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined,
+    hs: a.hs ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','hs','hl']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
@@ -216,6 +218,14 @@ function implicitH(atom, bsum){
   }
   return 0;
 }
+// Hydrogens shown on an atom. A label typed with a count the bonds don't allow (CH3 on a carbon with two bonds) is kept as typed:
+// hl holds it, and only while its element is the atom's, so changing the atom drops it. hs shows a carbon's label with its hydrogens (CH2).
+function typedH(a){ const m=a.hl && /^([A-Z][a-z]?)H(\d*)$/.exec(a.hl); return m && m[1]===a.el ? (m[2]===''? 1 : +m[2]) : null; }
+function labelH(a, ix){ const t=typedH(a); return t!=null ? t : implicitH(a, bondSum(ix,a.id)); }
+// once the bonds make a typed count right (a bond was added or removed), the label follows the bonds from then on
+function settleTypedH(d, ix){ for (const a of d.atoms) if (a.hl && (typedH(a)==null || typedH(a)===implicitH(a, bondSum(ix,a.id)))){ if (typedH(a)!=null && a.el==='C') a.hs=true; delete a.hl; } }
+// a carbon is drawn as a bare vertex unless it stands alone, has a mass number, is set to show its hydrogens, or the drawing shows them (doc.showCH: 'end' or 'all')
+function carbonShown(d, a, deg){ return deg===0 || !!a.iso || !!a.hs || typedH(a)!=null || (d && d.showCH==='all') || (d && d.showCH==='end' && deg===1); }
 // halogens go past one bond only towards electronegative partners: ClO4-, BrF5, ICl3, PhI(OAc)2, IBX, Togni reagents
 const HYPER_LIG=new Set(['N','O','F','Cl']);
 // atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
@@ -227,7 +237,9 @@ function valenceError(atom, ix){
   const vals=VAL[atom.el]; if (!vals) return null; // metals: no fixed valence
   const g=GROUP[atom.el], ch=atom.charge||0;
   let max=-1; for (const v0 of vals){ let v=v0; if (g==='c') v=v0-Math.abs(ch); else if (g==='n'||g==='o'||g==='x') v=v0+ch; else if (g==='b') v=v0-ch; else if (g==='h') v=v0-Math.abs(ch); max=Math.max(max,v, v0>vals[0]? v0+Math.abs(ch) : -1); } // hypervalent states take a charge as an extra bond (PF6-, IF6-)
-  const bs=bondSum(ix,atom.id), have=bs+(atom.rad?1:0);
+  const bs=bondSum(ix,atom.id), have=bs+(atom.rad?1:0), th=typedH(atom);
+  if (th!=null && th!==implicitH(atom,bs)){ const can=implicitH(atom,bs);
+    return {have:bs+th, max:bs+can, why:`${atom.hl} was typed, but with ${bs} bond${bs===1?'':'s'} this ${atom.el} takes ${can} H (${atom.el}${can?'H'+(can>1?can:''):''})`}; }
   if (g==='x' && have>vals[0]+ch && have<=max && !(ix.adj.get(atom.id)||[]).some(({o})=>{ const e=ix.atom.get(o)?.el; return e!==atom.el && HYPER_LIG.has(e); })){
     const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
     return {have, max:vals[0]+ch, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; a halogen takes more than ${vals[0]+ch} only with O, N or F partners (e.g. ClO4\u2212, BrF5, PhI(OAc)2)`};
@@ -293,7 +305,7 @@ function layoutLabel(d, ix, atom){
   const nb=ix.adj.get(atom.id)||[];
   const dirs = nb.map(({o})=>{const q=ix.atom.get(o); return norm(sub(q,atom));});
   const kind=kindOf(atom.el);
-  const visible = atom.el!=='C' || nb.length===0 || !!atom.iso;
+  const visible = atom.el!=='C' || carbonShown(d, atom, nb.length);
   const info={visible, dirs, items:[], box:null, extra:[]};
   const score=dv=>dirs.reduce((s,v)=>s+Math.max(0,dot(v,dv)),0);
   const sr=score(V(1,0)), sl=score(V(-1,0)), sb=score(V(0,1)), sa=score(V(0,-1));
@@ -302,7 +314,7 @@ function layoutLabel(d, ix, atom){
     info.hDir=null;
     return info;
   }
-  const h = kind==='element' ? implicitH(atom, bondSum(ix,atom.id)) : 0;
+  const h = kind==='element' ? labelH(atom, ix) : 0;
   if (kind==='element' && h>0 && Math.min(sr,sl)>0.45 && Math.min(sb,sa)<Math.min(sr,sl)) side = sb<=sa ? 'below':'above';
   let runs, anchorFirst=true;
   if (kind==='element'){
