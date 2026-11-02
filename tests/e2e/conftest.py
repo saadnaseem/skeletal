@@ -6,6 +6,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 DIST = ROOT / "dist" / "lonepair.html"
 # LONEPAIR_URL runs the suite against a served copy instead (e.g. scripts/serve_site.py, which applies the Pages headers)
 URL = os.environ.get("LONEPAIR_URL")
+# LONEPAIR_BROWSER=webkit or firefox runs it in another engine (Safari's, Firefox's)
+ENGINE = os.environ.get("LONEPAIR_BROWSER", "chromium")
 
 
 @pytest.fixture(scope="session")
@@ -13,7 +15,7 @@ def browser():
     if not URL and not DIST.exists():
         pytest.exit("dist/lonepair.html not found; run `npm run build` first", returncode=2)
     with sync_playwright() as p:
-        b = p.chromium.launch()
+        b = getattr(p, ENGINE).launch()
         yield b
         b.close()
 

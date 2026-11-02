@@ -4137,6 +4137,7 @@ ted.addEventListener('paste', e=>{ e.preventDefault(); e.stopPropagation(); cons
 ted.addEventListener('pointerdown', ()=>{ tedPending=null; });
 document.addEventListener('selectionchange', ()=>{ if (editingText) tedSyncBar(); });
 ted.addEventListener('keydown', e=>{
+  if (!editingText) return; // closed: Firefox can leave the focus in the hidden box, and the keys belong to the drawing
   const mod=e.ctrlKey||e.metaKey, k=e.key.toLowerCase();
   const sm=scriptKey(e); if (sm){ e.preventDefault(); tedToggle(sm); }
   else if (mod && (k==='z' || k==='y')){ e.preventDefault(); const redo=k==='y' || e.shiftKey, from=redo? tedFuture : tedHist, to=redo? tedHist : tedFuture;
@@ -4145,7 +4146,11 @@ ted.addEventListener('keydown', e=>{
   else if (e.key==='Enter' && e.shiftKey){ e.preventDefault(); tedInsert([{c:'\n',m:'n'}]); }
   else if (e.key==='Enter'){ e.preventDefault(); commitText(); }
   else if (e.key==='Enter' && e.shiftKey && editingText.atom) e.preventDefault(); // a label is one line
-  else if (e.key==='Escape'){ e.preventDefault(); if (editingText.fresh){ doc.texts=doc.texts.filter(x=>x!==editingText.t); undoStack.pop(); } editingText=null; ted.hidden=true; tedBar.hidden=true; changed(); }
+  else if (e.key==='Escape'){ e.preventDefault(); if (editingText.fresh){ doc.texts=doc.texts.filter(x=>x!==editingText.t); undoStack.pop(); } editingText=null; ted.hidden=true; tedBar.hidden=true; ted.blur(); changed(); }
+  else if ((e.key==='Home' || e.key==='End') && !e.shiftKey && !mod){ e.preventDefault(); // to the start or end of the line, also from a selection (Firefox leaves it)
+    const cs=tedChars(), [a,b]=tedGetSel(); let i=e.key==='End'? b : a;
+    if (e.key==='End') while (i<cs.length && cs[i].c!=='\n') i++; else while (i>0 && cs[i-1].c!=='\n') i--;
+    tedPending=null; tedSetSel(i); tedSyncBar(); }
   else if (/^(Arrow|Home|End|Page)/.test(e.key)) tedPending=null;
   e.stopPropagation();
 });
@@ -4156,7 +4161,7 @@ tedBar.querySelectorAll('[data-m]').forEach(b=>{
   b.onclick=()=>tedToggle(b.dataset.m); });
 function commitText(){
   if (!editingText) return; const {t,fresh,atom}=editingText; editingText=null;
-  let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true;
+  let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true; if (document.activeElement===ted) ted.blur();
   if (atom){ const lab=normalizeLabel(v.replace(/\n/g,' ')) || 'C'; // an emptied label goes back to carbon
     if (ix.atom.get(atom.id)===atom && lab!==atom.el){ pushUndo(); atom.el=lab; } changed(); return; }
   const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
@@ -4185,7 +4190,7 @@ window.addEventListener('keydown', e=>{
   // with a text or an atom selected, the subscript and superscript keys work as x₂ x² do; otherwise Ctrl/⌘ = is left to zoom the page
   const sm=scriptKey(e); if (sm && (textTargets().length || selAtoms().length)){ e.preventDefault(); scriptSelection(sm); return; }
   if (mod) return;
-  if (e.key==='Escape'){ sel.clear(); preview=null; closeInfo(); render(); return; }
+  if (e.key==='Escape'){ sel.clear(); preview=null; closeInfo(); render(); syncTextUI(); return; }
   if (e.key==='Delete'||e.key==='Backspace'){
     e.preventDefault();
     if (sel.size){ deleteSel(); return; }
