@@ -45,9 +45,16 @@ function kindOf(el){
   return 'generic';
 }
 // "OH", "NH2", "CH3" typed as labels become the bare element (hydrogens are added automatically)
+// substituent names typed as labels become their nicknames (phenyl -> Ph) or elements (hydroxy -> O, with its H added)
+const LABEL_NAMES={methyl:'Me', ethyl:'Et', propyl:'Pr', isopropyl:'iPr', butyl:'Bu', 'tert-butyl':'tBu', 't-butyl':'tBu', phenyl:'Ph', benzyl:'Bn', benzoyl:'Bz',
+  acetyl:'Ac', tosyl:'Ts', mesyl:'Ms', triflyl:'Tf', methoxy:'OMe', ethoxy:'OEt', acetoxy:'OAc', benzyloxy:'OBn', phenoxy:'OPh', nitro:'NO2', cyano:'CN', nitrile:'CN',
+  carboxy:'CO2H', carboxyl:'CO2H', formyl:'CHO', trifluoromethyl:'CF3', hydroxy:'O', hydroxyl:'O', amino:'N', thiol:'S', mercapto:'S', methylthio:'SMe',
+  fluoro:'F', chloro:'Cl', bromo:'Br', iodo:'I'};
+Object.setPrototypeOf(LABEL_NAMES, null);
 function normalizeLabel(t){
   t = (t||'').trim();
   if (!t) return null;
+  if (LABEL_NAMES[t.toLowerCase()]) return LABEL_NAMES[t.toLowerCase()];
   const m = t.match(/^([A-Z][a-z]?)H\d*$/);
   if (m && ELSET.has(m[1]) && !ABBR[t]) return m[1];
   const cap = t.length<=2 ? t[0].toUpperCase()+t.slice(1).toLowerCase() : t;
@@ -105,7 +112,7 @@ function sanitizeDoc(d){
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
-    font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color), g:grp(t.g)},['id','x','y','text','size','font','bold','italic','align','color','g']));
+    font:['serif','mono'].includes(t.font)?t.font:undefined, bold: typeof t.bold==='boolean'?t.bold:undefined, italic:t.italic?true:undefined, align:['left','right'].includes(t.align)?t.align:undefined, color:col(t.color), g:grp(t.g), on: t.on && typeof t.on==='object' ? {b:int(t.on.b), u:num(t.on.u), v:num(t.on.v), s:num(t.on.s)<0?-1:1} : undefined},['id','x','y','text','size','font','bold','italic','align','color','on','g']));
   out.pluses=arr(d.pluses).map(p=>pick({id:int(p.id), x:num(p.x), y:num(p.y), color:col(p.color), g:grp(p.g)},['id','x','y','color','g']));
   const clamp=(v,lo,hi,def)=>Math.min(hi,Math.max(lo,num(v,def)));
   out.plates=arr(d.plates).slice(0,50).map(q=>pick({id:int(q.id), x:num(q.x), y:num(q.y), w:clamp(q.w,10,2000,60), h:clamp(q.h,10,2000,72), g:grp(q.g),
@@ -153,6 +160,7 @@ function rescaleDoc(d, f){
   const sx=v=>cx+(v-cx)*f, sy=v=>cy+(v-cy)*f;
   for (const o of [...d.atoms, ...d.texts, ...d.pluses, ...(d.plates||[]), ...(d.brackets||[])]){ o.x=sx(o.x); o.y=sy(o.y); }
   for (const q of d.brackets||[]){ q.w*=f; q.h*=f; }
+  for (const t of d.texts) if (t.on){ t.on.u*=f; t.on.v*=f; delete t.on.mx; delete t.on.tx; } // re-placed from the scaled offsets
   for (const r of d.arrows){ r.x1=sx(r.x1); r.y1=sy(r.y1); r.x2=sx(r.x2); r.y2=sy(r.y2); if (r.cx!=null){ r.cx=sx(r.cx); r.cy=sy(r.cy); } }
 }
 function S(d){ d=d||doc; const k=d.style+'|'+(d.labelSize||'')+'|'+(d.styleOv?JSON.stringify(d.styleOv):''); let s=_sCache.get(k);
@@ -164,11 +172,34 @@ function buildIndex(d){
   d.bonds = d.bonds.filter(b=>ix.atom.has(b.a)&&ix.atom.has(b.b)&&b.a!==b.b);
   for (const b of d.bonds){ ix.bond.set(b.id,b); ix.adj.get(b.a).push({b,o:b.b}); ix.adj.get(b.b).push({b,o:b.a}); }
   for (const r of d.arrows) ix.arrow.set(r.id,r);
+  d.texts = d.texts.filter(t=>!t.on || ix.bond.has(t.on.b)); // a caption on a bond goes with the bond
   for (const t of d.texts) ix.text.set(t.id,t);
   for (const p of d.pluses) ix.plus.set(p.id,p);
   for (const q of d.plates) ix.plate.set(q.id,q);
   for (const q of d.brackets) ix.bracket.set(q.id,q);
+  placeCaptions(d, ix);
   return ix;
+}
+// Captions on bonds. t.on = {b, u, v, s}: u is the offset along the bond from its middle; s (+1 or -1) is the side and
+// v the gap from the bond to the near edge of the caption, so a longer caption grows away from the bond.
+// If the caption itself moved, its new place sets the offsets; if the bond moved (or the caption changed size), the caption follows.
+// mx, my, a, e and tx, ty remember the bond, the caption's half-depth and the caption as last placed.
+function captionFrame(d, ix, t, text){
+  const b=ix.bond.get(t.on.b), A=ix.atom.get(b.a), B=ix.atom.get(b.b), ang=Math.atan2(B.y-A.y,B.x-A.x), u=V(Math.cos(ang),Math.sin(ang)), n=V(-u.y,u.x);
+  const tm=textMetrics(d,{...t,text:(text ?? t.text)||' '});
+  return {m:V((A.x+B.x)/2,(A.y+B.y)/2), ang, u, n, ext:Math.abs(n.x)*tm.w/2+Math.abs(n.y)*tm.h/2};
+}
+// where a caption goes for its offsets (and, while it is being typed, for the text so far)
+function captionPos(d, ix, t, text){ const f=captionFrame(d,ix,t,text), o=t.on, across=(o.s<0?-1:1)*(o.v+f.ext);
+  return V(f.m.x+f.u.x*o.u+f.n.x*across, f.m.y+f.u.y*o.u+f.n.y*across); }
+function placeCaptions(d, ix){
+  for (const t of d.texts){ const o=t.on; if (!o) continue;
+    const {m,ang,u,n,ext}=captionFrame(d,ix,t);
+    const textMoved = o.tx!=null && (Math.abs(t.x-o.tx)>1e-6 || Math.abs(t.y-o.ty)>1e-6);
+    const moved = o.mx==null || Math.abs(o.mx-m.x)>1e-6 || Math.abs(o.my-m.y)>1e-6 || Math.abs(o.a-ang)>1e-9 || Math.abs((o.e??ext)-ext)>1e-6;
+    if (textMoved){ const r=V(t.x-m.x,t.y-m.y), across=dot(r,n); o.u=dot(r,u); o.s=across<0?-1:1; o.v=Math.abs(across)-ext; }
+    else if (moved){ const p=captionPos(d,ix,t); t.x=p.x; t.y=p.y; }
+    o.mx=m.x; o.my=m.y; o.a=ang; o.e=ext; o.tx=t.x; o.ty=t.y; }
 }
 function bondSum(ix,id){ let s=0; for(const {b} of ix.adj.get(id)||[]) if (!b.kind) s+=b.order; return s; }
 // what an atom label shows: D and T for hydrogen isotopes, otherwise the element (the mass number is drawn separately)
@@ -253,6 +284,8 @@ function chemRuns(str){ // digits after letters/brackets become subscripts
   if (cur) runs.push({t:cur,sub});
   return runs;
 }
+// a label with markup (R^{1}, X_{a}) is formatted like text; otherwise digits after letters are subscripts (CO2Me)
+const labelRuns=str=>/[\\^_]/.test(str) ? textRuns(str).map(r=>({t:r.t, sub:r.m==='sub', sup:r.m==='sup'})) : chemRuns(str);
 function chargeText(c){ if(!c) return ''; const a=Math.abs(c); return (a>1?a:'')+(c>0?'+':'\u2212'); }
 
 function layoutLabel(d, ix, atom){
@@ -282,7 +315,7 @@ function layoutLabel(d, ix, atom){
   } else {
     let str=atom.el;
     if (side==='left' && nb.length){ str = (ABBR[atom.el] && ABBR[atom.el].l) || atom.el; anchorFirst=false; }
-    runs=chemRuns(str);
+    runs=labelRuns(str);
   }
   // measure runs
   let x=0; const placed=[];
@@ -290,7 +323,7 @@ function layoutLabel(d, ix, atom){
   const total=x;
   let anchorC;
   if (anchorFirst){ const f=placed.find(r=>!r.sup); const ch = f.main ? f.t : f.t[0]; anchorC = f.x + tw(ch,f.size,fw)/2; }
-  else { let k=placed.length-1; while(k>0 && placed[k].sub) k--; const r=placed[k]; const ch = r.main ? r.t : r.t[r.t.length-1]; const cw=tw(ch,r.size,fw); anchorC = r.x + r.w - cw/2; }
+  else { let k=placed.length-1; while(k>0 && (placed[k].sub||placed[k].sup)) k--; const r=placed[k]; const ch = r.main ? r.t : r.t[r.t.length-1]; const cw=tw(ch,r.size,fw); anchorC = r.x + r.w - cw/2; }
   const shift = atom.x - anchorC, base = atom.y + fs*0.36;
   for (const p of placed) info.items.push({t:p.t, x:p.x+shift, y: base + (p.sub? fs*0.24 : p.sup? -fs*0.42 : 0), size:p.size});
   const x0=shift, x1=shift+total;
@@ -660,7 +693,7 @@ function renderPlate(d,q,out){
 }
 function renderDoc(d, ix){
   useStyle(d);
-  ix = ix || buildIndex(d);
+  if (ix) placeCaptions(d, ix); else ix=buildIndex(d);
   const labels=new Map(); for (const a of d.atoms) labels.set(a.id, layoutLabel(d,ix,a));
   const out=[];
   out.push(`<g font-family="${esc(FONT)}">`);

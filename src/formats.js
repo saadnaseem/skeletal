@@ -101,7 +101,8 @@ const FORMATS = (()=>{
         const right = lb.visible && lb.items.length && lb.items[0].x+0.01 < a.x - tw(a.el[0],fs,st.fontWeight)/2 - 0.5; // label reads leftward
         const label=txt=>{ const just=right?'Right':'Left'; const ch=a.el[0], w=tw(right? txt[txt.length-1]:ch,fs,st.fontWeight);
           n.children.push(E('t',{p:`${num(right? a.x+w/2 : a.x-w/2)} ${num(a.y+fs*0.36)}`, LabelJustification:just, Justification:right?'Right':undefined, LabelAlignment:right?'Right':undefined},
-            [E('s',{font:'3',size:num(fs),face:'96',color:colorIdx(a.color)},[],txt)])); };
+            /[\\^_]/.test(txt) ? textRuns(txt).map(r=>E('s',{font:'3',size:num(fs),face:r.m==='sub'?'32':r.m==='sup'?'64':'0',color:colorIdx(a.color)},[],r.t))
+              : [E('s',{font:'3',size:num(fs),face:'96',color:colorIdx(a.color)},[],txt)])); };
         if (k==='element'){
           if (a.el!=='C') n.attrs.Element=String(ZOF(a.el));
           if (a.charge) n.attrs.Charge=String(a.charge);
@@ -118,7 +119,7 @@ const FORMATS = (()=>{
           if (from){ const ecp=E('n',{id:id(), p:`${num(from.x)} ${num(from.y)}`, NodeType:'ExternalConnectionPoint', ExternalConnectionNum:'1'}); inner.children.push(ecp); inner.children.push(E('b',{id:id(), B:ecp.attrs.id, E:iid[0]})); }
           f.bonds.forEach(b=>inner.children.push(E('b',{id:id(), B:iid[b.a], E:iid[b.b], Order:b.order>1?String(b.order):undefined})));
           n.children.push(inner); label(a.el);
-        } else { n.attrs.NodeType='GenericNickname'; n.attrs.GenericNickname=a.el; label(a.el); }
+        } else { n.attrs.NodeType='GenericNickname'; n.attrs.GenericNickname=plainText(a.el); label(a.el); }
       }
       for (const b of d.bonds){ if (!nodeId.has(b.a)||!nodeId.has(b.b)) continue;
         const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)};
@@ -343,9 +344,9 @@ const FORMATS = (()=>{
       for (const n of kids(fr,'n')){
         const ty=n.attrs.NodeType||'Element', p=pt(n.attrs.p), lab=kids(n,'t')[0];
         if (ty==='ExternalConnectionPoint') continue;
-        const label = lab ? sPlain(lab) : '';
+        const label = lab ? sPlain(lab) : '', rich = lab ? sText(lab) : '';
         let el;
-        if (ty==='GenericNickname') el=n.attrs.GenericNickname||label||'R';
+        if (ty==='GenericNickname') el = rich && /[\\^_]/.test(rich) && plainText(rich)===(n.attrs.GenericNickname||label) ? rich : n.attrs.GenericNickname||label||'R';
         else if (ty==='Nickname' || ty==='Fragment' || ty==='Unspecified' || ty==='Formula'){
           const known = label && (ABBR[label] ? label : Object.keys(ABBR).find(k=>ABBR[k].l===label));
           const inner=kids(n,'fragment')[0];
@@ -360,7 +361,7 @@ const FORMATS = (()=>{
             if (first!=null) nodeMap.set(n.attrs.id, first);
             if (atts.length>1) multi.set(n.attrs.id, {atts, order:(n.attrs.BondOrdering||'').trim().split(/\s+/).filter(Boolean), used:0});
             continue; }
-          else el=label||'R';
+          else el=(/[\\^_]/.test(rich)? rich : label)||'R';
         } else {
           const z=+(n.attrs.Element||6); el=ELEMENTS[z-1]||'C';
           if (label==='D'||label==='T'){ el='H'; if (!n.attrs.Isotope) n.attrs.Isotope=label==='D'?'2':'3'; }
@@ -509,7 +510,8 @@ const FORMATS = (()=>{
   function chemfigWrite(d0){
     const d={...d0, bonds:d0.bonds.filter(b=>!b.kind)}, ix=buildIndex(d); // chemfig has no hydrogen or dative bonds
     const lab=a=>{ const k=kindOf(a.el), lb=layoutLabel(d,ix,a); if (k==='element' && !lb.visible) return '';
-      let s = k==='element' ? a.el+(()=>{ const h=implicitH(a,bondSum(ix,a.id)); return h? 'H'+(h>1?'_'+h:'') : ''; })() : (a.el.replace(/(\d+)/g,'_$1'));
+      let s = k==='element' ? a.el+(()=>{ const h=implicitH(a,bondSum(ix,a.id)); return h? 'H'+(h>1?'_'+h:'') : ''; })()
+        : /[\\^_]/.test(a.el) ? textRuns(a.el).map(r=>{ const x=r.t.replace(/[{}\\^_&%$#~]/g,''); return r.m==='sub'?`_{${x}}`:r.m==='sup'?`^{${x}}`:x; }).join('') : (a.el.replace(/(\d+)/g,'_$1'));
       if (a.charge) s+=`^{${Math.abs(a.charge)>1?Math.abs(a.charge):''}${a.charge>0?'+':'-'}}`;
       if (a.rad) s+='^{\\bullet}'; return /[_^\\]/.test(s)||s.length>1? `{${s}}` : s; };
     function one(comp){

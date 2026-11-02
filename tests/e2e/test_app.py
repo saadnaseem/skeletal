@@ -567,8 +567,9 @@ def test_real_double_click_edits_atom_label(page):
     page.evaluate("tryLoadText('CCO'); sel.clear(); setTool('select'); fit()")
     x, y = atom_xy(page, "(a)=>a.el==='O'")
     page.mouse.dblclick(x, y)
-    page.wait_for_selector("#lbIn")
-    page.fill("#lbIn", "OMe"); page.click("#lbGo")
+    page.wait_for_selector("#texted:not([hidden])")
+    page.wait_for_function("document.activeElement.id==='texted' && getSelection().toString()==='O'")
+    page.keyboard.type("OMe"); page.keyboard.press("Enter")  # replaces the selected O in place
     assert page.evaluate("doc.atoms.some(a=>a.el==='OMe')")
 
 

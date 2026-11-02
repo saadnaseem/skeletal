@@ -374,7 +374,7 @@ cv.addEventListener('pointerdown', e=>{
   if (e.pointerType==='touch' && h && (h.type==='atom'||h.type==='text'||h.type==='bracket')){
     const d0=drag; clearTimeout(longPressT);
     longPressT=setTimeout(()=>{ if (drag!==d0 || d0.moved) return; if (d0.undoPushed){ setDoc(JSON.parse(undoStack.pop())); } drag=null; preview=null; changed();
-      if (h.type==='text') startTextEdit(ix.text.get(h.id)); else if (h.type==='bracket') openBracketDialog(h.id); else openLabelDialog(h.id); }, 550);
+      if (h.type==='text') startTextEdit(ix.text.get(h.id)); else if (h.type==='bracket') openBracketDialog(h.id); else startLabelEdit(ix.atom.get(h.id)); }, 550);
   }
   beginTool(drag);
 });
@@ -420,7 +420,7 @@ function doubleAt(p){
   if (h && h.type==='plate'){ openTlcDialog(h.id); return true; }
   if (h && h.type==='bracket'){ openBracketDialog(h.id); return true; }
   if (h && h.type==='text'){ startTextEdit(ix.text.get(h.id)); return true; }
-  if (h && h.type==='atom' && tool.id==='select'){ openLabelDialog(h.id); return true; }
+  if (h && h.type==='atom' && tool.id==='select'){ startLabelEdit(ix.atom.get(h.id)); return true; }
   return false;
 }
 let lastPress=null;
@@ -628,6 +628,11 @@ function endTool(d,p){
   }
   if (id==='text'){
     if (h && h.type==='text'){ startTextEdit(ix.text.get(h.id)); return; }
+    if (h && h.type==='atom'){ startLabelEdit(ix.atom.get(h.id)); return; }
+    if (h && h.type==='bond'){ // near an end: that atom's label; the middle: a caption on the bond
+      const b=ix.bond.get(h.id), A=ix.atom.get(b.a), B=ix.atom.get(b.b), ab=sub(B,A), f=dot(sub(d.start,A),ab)/dot(ab,ab);
+      if (f<1/3 || f>2/3){ startLabelEdit(f<1/3? A : B); return; }
+      pushUndo(); const t={id:nid(), ...bondCaptionAt(b), text:'', ...tool.textStyle}; doc.texts.push(t); ix=buildIndex(doc); startTextEdit(t,true); return; }
     pushUndo(); const t={id:nid(),x:d.start.x,y:d.start.y,text:'',...tool.textStyle}; doc.texts.push(t); ix=buildIndex(doc); startTextEdit(t,true); return;
   }
   if (id==='plus'){ pushUndo(); doc.pluses.push({id:nid(),x:d.start.x,y:d.start.y}); return; }
@@ -650,8 +655,22 @@ function cycleDb(b){ const order=['auto','center','left','right']; const i=order
 const ted=$('#texted'), tedBar=$('#tedBar');
 let tedPending=null, tedHist=[], tedFuture=[]; // tedPending: the mode for the next typed character after a toggle with nothing selected
 const MAC=/Mac|iPhone|iPad/.test(navigator.platform||'');
-function startTextEdit(t, fresh){
-  editingText={t,fresh}; tedPending=null; tedHist=[]; tedFuture=[];
+// an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
+function startLabelEdit(a){ if (!a) return; const st=S();
+  startTextEdit({x:a.x, y:a.y, text:a.el, size:st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
+// where a new caption on a bond goes: beside its middle, on the side with more room (farther from the nearest other atom or bond)
+function bondCaptionAt(b){
+  const A=ix.atom.get(b.a), B=ix.atom.get(b.b), m=mul(add(A,B),0.5), u=norm(sub(B,A)), n=V(-u.y,u.x);
+  const room=sd=>{ const p=add(m,mul(n,sd*L*0.6)); let best=Infinity;
+    for (const q of doc.bonds) if (q!==b) best=Math.min(best, segDist(p, ix.atom.get(q.a), ix.atom.get(q.b)));
+    for (const x of doc.atoms) if (x!==A && x!==B) best=Math.min(best, Math.hypot(x.x-p.x, x.y-p.y));
+    return best; };
+  const sd=room(1)>=room(-1)? 1 : -1;
+  return {x:m.x+n.x*sd*L*0.5, y:m.y+n.y*sd*L*0.5, on:{b:b.id, u:0, v:L*0.2, s:sd}};
+}
+function startTextEdit(t, fresh, atom){
+  if (editingText) commitText();
+  editingText={t,fresh,atom}; tedPending=null; tedHist=[]; tedFuture=[];
   const m=textMetrics(doc,t), fs=m.fs*view.z;
   ted.hidden=false; tedBar.hidden=false; ted.style.fontSize=fs+'px';
   ted.style.fontFamily=m.family; ted.style.fontWeight=m.fw; ted.style.fontStyle=m.italic?'italic':'normal'; ted.style.color=t.color||'#000'; ted.style.textAlign=t.align||'center';
@@ -741,9 +760,10 @@ function pastedChars(html, txt){
     return x.m==='n' && i>=0 ? {c:'0123456789+−'[i], m:'sub'} : x.m==='n' && j>=0 ? {c:'0123456789+−'[j], m:'sup'} : x; });
 }
 function positionTed(){
-  if (!editingText) return; const t=editingText.t; const m=textMetrics(doc,{...t,text:tedMarkup()||' '});
+  if (!editingText) return; const t=editingText.t;
+  const m=textMetrics(doc,{...t,text:tedMarkup()||' '}), c=t.on && ix.text.get(t.id)===t ? captionPos(doc,ix,t,tedMarkup()) : t; // a caption grows away from its bond as you type
   const w=Math.max(60,(m.w+12)*view.z), hh=Math.max(m.fs*1.4*view.z, (m.h+4)*view.z);
-  const left=t.x*view.z+view.ox-w/2, top=t.y*view.z+view.oy-hh/2;
+  const left=c.x*view.z+view.ox-w/2, top=c.y*view.z+view.oy-hh/2;
   ted.style.width=w+'px'; ted.style.height=hh+'px'; ted.style.left=left+'px'; ted.style.top=top+'px';
   tedBar.style.left=Math.max(4,left)+'px'; tedBar.style.top=(top>40? top-34 : top+hh+6)+'px';
 }
@@ -767,6 +787,7 @@ ted.addEventListener('keydown', e=>{
   else if (mod && (k==='b' || k==='i' || k==='u')) e.preventDefault();
   else if (e.key==='Enter' && e.shiftKey){ e.preventDefault(); tedInsert([{c:'\n',m:'n'}]); }
   else if (e.key==='Enter'){ e.preventDefault(); commitText(); }
+  else if (e.key==='Enter' && e.shiftKey && editingText.atom) e.preventDefault(); // a label is one line
   else if (e.key==='Escape'){ e.preventDefault(); if (editingText.fresh){ doc.texts=doc.texts.filter(x=>x!==editingText.t); undoStack.pop(); } editingText=null; ted.hidden=true; tedBar.hidden=true; changed(); }
   else if (/^(Arrow|Home|End|Page)/.test(e.key)) tedPending=null;
   e.stopPropagation();
@@ -777,8 +798,10 @@ tedBar.querySelectorAll('[data-m]').forEach(b=>{
   b.addEventListener('pointerdown', e=>e.preventDefault()); b.addEventListener('mousedown', e=>e.preventDefault()); // keep the caret in the text
   b.onclick=()=>tedToggle(b.dataset.m); });
 function commitText(){
-  if (!editingText) return; const {t,fresh}=editingText; editingText=null;
+  if (!editingText) return; const {t,fresh,atom}=editingText; editingText=null;
   let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true;
+  if (atom){ const lab=normalizeLabel(v.replace(/\n/g,' ')) || 'C'; // an emptied label goes back to carbon
+    if (ix.atom.get(atom.id)===atom && lab!==atom.el){ pushUndo(); atom.el=lab; } changed(); return; }
   const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
   if (same(v, t.text||'')) v=t.text||''; // unchanged: keep the text exactly as it was written
   if (!fresh && v!==t.text) pushUndo();
@@ -874,7 +897,8 @@ function subDoc(keys){
   d.atoms=doc.atoms.filter(a=>aSet.has(a.id)).map(a=>({...a}));
   d.bonds=doc.bonds.filter(b=>aSet.has(b.a)&&aSet.has(b.b)).map(b=>({...b}));
   d.arrows=doc.arrows.filter(r=>all||keys.has('r'+r.id)).map(r=>({...r}));
-  d.texts=doc.texts.filter(t=>all||keys.has('t'+t.id)).map(t=>({...t}));
+  const bIds=new Set(d.bonds.map(b=>b.id));
+  d.texts=doc.texts.filter(t=>all||keys.has('t'+t.id)||(t.on && bIds.has(t.on.b))).map(t=>{ const n={...t}; if (t.on){ if (bIds.has(t.on.b)) n.on={b:t.on.b,u:t.on.u,v:t.on.v,s:t.on.s}; else delete n.on; } return n; });
   d.pluses=doc.pluses.filter(p=>all||keys.has('p'+p.id)).map(p=>({...p}));
   d.plates=doc.plates.filter(q=>all||keys.has('l'+q.id)).map(q=>JSON.parse(JSON.stringify(q)));
   d.brackets=doc.brackets.filter(q=>all||keys.has('k'+q.id)).map(q=>({...q}));
@@ -892,9 +916,9 @@ function pasteDoc(src, offset, at){
   sel.clear();
   const gMap=new Map(); let gNext=maxGroup()+1; const G=o=>{ if (o.g==null) return o; if (!gMap.has(o.g)) gMap.set(o.g,gNext++); o.g=gMap.get(o.g); return o; };
   for (const a of src.atoms){ const n=G({...a,id:nid(),x:a.x+dx,y:a.y+dy}); idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
-  for (const b of src.bonds){ doc.bonds.push({...b,id:nid(),a:idMap.get(b.a),b:idMap.get(b.b)}); }
+  const bMap=new Map(); for (const b of src.bonds){ const n={...b,id:nid(),a:idMap.get(b.a),b:idMap.get(b.b)}; bMap.set(b.id,n.id); doc.bonds.push(n); }
   for (const r of src.arrows){ const n=G({...r,id:nid(),x1:r.x1+dx,y1:r.y1+dy,x2:r.x2+dx,y2:r.y2+dy}); if(r.cx!=null){n.cx=r.cx+dx;n.cy=r.cy+dy;} doc.arrows.push(n); sel.add('r'+n.id); }
-  for (const t of src.texts){ const n=G({...t,id:nid(),x:t.x+dx,y:t.y+dy}); doc.texts.push(n); sel.add('t'+n.id); }
+  for (const t of src.texts){ const n=G({...t,id:nid(),x:t.x+dx,y:t.y+dy}); if (t.on){ if (bMap.has(t.on.b)) n.on={b:bMap.get(t.on.b),u:t.on.u,v:t.on.v,s:t.on.s}; else delete n.on; } doc.texts.push(n); sel.add('t'+n.id); }
   for (const p of src.pluses){ const n=G({...p,id:nid(),x:p.x+dx,y:p.y+dy}); doc.pluses.push(n); sel.add('p'+n.id); }
   for (const q of src.plates||[]){ const n=G({...JSON.parse(JSON.stringify(q)),id:nid(),x:q.x+dx,y:q.y+dy}); doc.plates.push(n); sel.add('l'+n.id); }
   for (const q of src.brackets||[]){ const n=G({...q,id:nid(),x:q.x+dx,y:q.y+dy}); doc.brackets.push(n); sel.add('k'+n.id); }
@@ -1901,13 +1925,6 @@ function openElementDialog(){
   const go=()=>{ const v=normalizeLabel($('#elIn').value); if(!v) return; closeDialog(); setTool('atom',{el:v}); toast(`Click atoms to label them ${v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
 }
-function openLabelDialog(atomId){
-  const a=ix.atom.get(atomId); if(!a) return;
-  openDialog(`<h3>Atom label</h3><p>Element, nickname (OMe, Ph, Boc…) or generic label (R1, X).</p><input type="text" id="lbIn" value="${esc(a.el)}"><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="lbGo">Apply</button></div>`);
-  const go=()=>{ const v=normalizeLabel($('#lbIn').value); if(!v) return; closeDialog(); pushUndo(); a.el=v; changed(); };
-  $('#lbGo').onclick=go; $('#lbIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
-}
-
 /* ================= style & colors ================= */
 const SWATCHES=['#000000','#2f4fd6','#d1231f','#1f8f3a','#7a2fb5','#d06a00','#808a94'];
 function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`<button class="sw" style="background:${c}" data-c="${c}" title="${c==='#000000'?'Black (default)':c}" aria-label="Color ${c}"></button>`).join('');
@@ -2253,7 +2270,7 @@ function confirmOpenProject(p, handle){
 }
 /* ================= text formatting ================= */
 const TSIZES=[6,7,8,9,10,11,12,14,16,18,20,24,28,32,36,48,60,72];
-function textTargets(){ const t=[...sel].filter(k=>k[0]==='t').map(k=>ix.text.get(+k.slice(1))).filter(Boolean); if (editingText && !t.includes(editingText.t)) t.push(editingText.t); return t; }
+function textTargets(){ const t=[...sel].filter(k=>k[0]==='t').map(k=>ix.text.get(+k.slice(1))).filter(Boolean); if (editingText && !editingText.atom && !t.includes(editingText.t)) t.push(editingText.t); return t; }
 function initTextUI(){
   $('#tSize').innerHTML=`<option value="">Auto</option>`+TSIZES.map(s=>`<option value="${s}">${s} pt</option>`).join('');
   $('#tSwatches').innerHTML=SWATCHES.map(c=>`<button class="sw" style="background:${c}" data-c="${c}" aria-label="Text color ${c}"></button>`).join('');
@@ -2268,9 +2285,16 @@ function initTextUI(){
   for (const b of [$('#tSub'),$('#tSup')]){ const m=b.dataset.tm;
     b.title=(m==='sub'?'Subscript':'Superscript')+` (${MAC?'⌘':'Ctrl+'}${m==='sup'?(MAC?'⇧':'Shift+'):''}=)`;
     b.onclick=()=>{ if (editingText){ tedToggle(m); return; }
-      const ts=textTargets(); if (!ts.length){ toast('Click in a text box and select the characters first, or select a text to change all of it'); return; }
-      const all=ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m)); pushUndo();
+      const ts=textTargets(), as=selAtoms().map(id=>ix.atom.get(id)).filter(a=>a && kindOf(a.el)!=='element');
+      if (!ts.length && !as.length){ toast(selAtoms().length? 'Element symbols take charges, not superscripts: use the charge tools, or double-click to give the atom a label such as R1'
+        : 'Click in a text box and select the characters first, or select a text or a label such as R1'); return; }
+      pushUndo();
+      const all=ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m));
       for (const t of ts) t.text=charsToMarkup(textCharsAll(t.text).map(x=>x.c==='\n'? x : all? {c:x.c,m:'n',keep:true} : {c:x.c,m}));
+      // a label: its numbers and primes switch (R1 -> R¹ and back)
+      const num=x=>/[0-9'′″]/.test(x.c), allA=as.every(a=>textCharsAll(a.el).filter(num).every(x=>x.m===m));
+      for (const a of as){ const cs=textCharsAll(a.el); if (!cs.some(num)) continue;
+        a.el=charsToMarkup(cs.map(x=>!num(x)? x : allA? {c:x.c,m:'n',keep:m==='sub'} : {c:x.c,m})) || a.el; }
       changed(); }; }
   document.querySelectorAll('[data-al]').forEach(b=>{ b.addEventListener('mousedown',keepFocus); b.onclick=()=>apply('align',b.dataset.al==='center'?null:b.dataset.al); });
   $('#tFont').onchange=e=>apply('font', e.target.value==='sans'?null:e.target.value);

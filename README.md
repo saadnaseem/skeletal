@@ -26,6 +26,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - Reaction, equilibrium, retrosynthetic, resonance, dashed and failed-reaction arrows.
 - Curved electron-pushing arrows (full and fishhook) with a draggable bend handle.
 - Text with subscripts and superscripts: pKₐ, Feᴵᴵᴵ, S_N2, ¹³C, cm⁻¹, [α]_D. While typing, press Ctrl/⌘ + = for a subscript and Ctrl/⌘ + Shift + = for a superscript (the same keys as Word), or use the x₂ x² buttons above the text box or in the Text panel (with a text selected but not being edited, they change all of it). With nothing selected the keys switch what you type next; with text selected they switch the selection. Formula digits become subscripts as you type (H2SO4 → H₂SO₄); select one and press Ctrl/⌘ + = to keep it normal (E2). Pasting from Word or a web page keeps subscripts and superscripts, and ChemDraw files keep them both ways. Each text box can have its own font, size, bold, italic, alignment and color.
+- The Text tool on an atom edits its label in place: type OMe, Ph, a name such as phenyl or methoxy, or a label with a superscript such as R¹ (Ctrl/⌘ + Shift + =, or select the atom and press x² in the Text panel). Double-clicking an atom does the same. On a bond, a click near either end labels that atom; a click near the middle adds a caption to the bond (hν, a, Δ) that moves, turns and is copied with it, and is deleted with it.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
 - Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
@@ -155,7 +156,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 140 unit tests (Node test runner)
+npm test             # 146 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
