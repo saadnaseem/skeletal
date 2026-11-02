@@ -107,7 +107,7 @@ function sanitizeDoc(d){
     for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
@@ -289,7 +289,7 @@ const labelRuns=str=>/[\\^_]/.test(str) ? textRuns(str).map(r=>({t:r.t, sub:r.m=
 function chargeText(c){ if(!c) return ''; const a=Math.abs(c); return (a>1?a:'')+(c>0?'+':'\u2212'); }
 
 function layoutLabel(d, ix, atom){
-  const st=S(d), fs=st.fontSize, fw=st.fontWeight, m=st.margin;
+  const st=S(d), fs=atom.size||st.fontSize, fw=st.fontWeight, m=st.margin;
   const nb=ix.adj.get(atom.id)||[];
   const dirs = nb.map(({o})=>{const q=ix.atom.get(o); return norm(sub(q,atom));});
   const kind=kindOf(atom.el);
@@ -444,7 +444,7 @@ function renderBond(d, ix, b, labels, out){
 
 function atomColor(d, a){ return a.color || (d.colorAtoms && CPK[a.el]) || '#000'; }
 function renderAtomDecor(d, ix, a, info, out){
-  const st=S(d), fs=st.fontSize, fw=st.fontWeight, col=atomColor(d,a);
+  const st=S(d), fs=a.size||st.fontSize, fw=st.fontWeight, col=atomColor(d,a);
   if (info.visible){
     for (const it of info.items) out.push(`<text x="${f2(it.x)}" y="${f2(it.y)}" font-size="${f2(it.size)}" font-weight="${fw}" fill="${col}">${esc(it.t)}</text>`);
   }

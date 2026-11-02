@@ -96,13 +96,13 @@ const FORMATS = (()=>{
     const fragOf=new Map();
     for (const comp of components(d,ix)){
       const fr=E('fragment',{id:id()}), nodeId=new Map();
-      for (const aid of comp){ const a=ix.atom.get(aid), k=kindOf(a.el), lb=layoutLabel(d,ix,a), n=E('n',{id:id(), p:`${num(a.x)} ${num(a.y)}`});
+      for (const aid of comp){ const a=ix.atom.get(aid), k=kindOf(a.el), lb=layoutLabel(d,ix,a), n=E('n',{id:id(), p:`${num(a.x)} ${num(a.y)}`}), afs=a.size||fs;
         nodeId.set(aid,n.attrs.id); fr.children.push(n);
-        const right = lb.visible && lb.items.length && lb.items[0].x+0.01 < a.x - tw(a.el[0],fs,st.fontWeight)/2 - 0.5; // label reads leftward
-        const label=txt=>{ const just=right?'Right':'Left'; const ch=a.el[0], w=tw(right? txt[txt.length-1]:ch,fs,st.fontWeight);
-          n.children.push(E('t',{p:`${num(right? a.x+w/2 : a.x-w/2)} ${num(a.y+fs*0.36)}`, LabelJustification:just, Justification:right?'Right':undefined, LabelAlignment:right?'Right':undefined},
-            /[\\^_]/.test(txt) ? textRuns(txt).map(r=>E('s',{font:'3',size:num(fs),face:r.m==='sub'?'32':r.m==='sup'?'64':'0',color:colorIdx(a.color)},[],r.t))
-              : [E('s',{font:'3',size:num(fs),face:'96',color:colorIdx(a.color)},[],txt)])); };
+        const right = lb.visible && lb.items.length && lb.items[0].x+0.01 < a.x - tw(a.el[0],afs,st.fontWeight)/2 - 0.5; // label reads leftward
+        const label=txt=>{ const just=right?'Right':'Left'; const ch=a.el[0], w=tw(right? txt[txt.length-1]:ch,afs,st.fontWeight);
+          n.children.push(E('t',{p:`${num(right? a.x+w/2 : a.x-w/2)} ${num(a.y+afs*0.36)}`, LabelJustification:just, Justification:right?'Right':undefined, LabelAlignment:right?'Right':undefined},
+            /[\\^_]/.test(txt) ? textRuns(txt).map(r=>E('s',{font:'3',size:num(afs),face:r.m==='sub'?'32':r.m==='sup'?'64':'0',color:colorIdx(a.color)},[],r.t))
+              : [E('s',{font:'3',size:num(afs),face:'96',color:colorIdx(a.color)},[],txt)])); };
         if (k==='element'){
           if (a.el!=='C') n.attrs.Element=String(ZOF(a.el));
           if (a.charge) n.attrs.Charge=String(a.charge);
@@ -185,7 +185,7 @@ const FORMATS = (()=>{
   const P={CreationProgram:[0x3,'str'],Name:[0x8,'str'],p:[0x200,'pt2'],BoundingBox:[0x204,'rect'],Head3D:[0x207,'pt3'],Tail3D:[0x208,'pt3'],Center3D:[0x20d,'pt3'],MajorAxisEnd3D:[0x20e,'pt3'],MinorAxisEnd3D:[0x20f,'pt3'],
     color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Isotope:[0x420,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
     Order:[0x600,'i16'],Display:[0x601,'i16'],DoublePosition:[0x603,'i16'],B:[0x604,'u32'],E:[0x605,'u32'],Justification:[0x701,'i8'],LabelAlignment:[0x705,'i8'],InterpretChemically:[0x708,'bool'],
-    BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelJustification:[0x823,'i8'],
+    BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelSize:[0x81c,'pt20'],LabelJustification:[0x823,'i8'],
     GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],BracketType:[0xa06,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
     ArrowheadWidth:[0xa31,'u16'],ArrowShaftSpacing:[0xa33,'u16'],ArrowheadHead:[0xa35,'i16'],ArrowheadTail:[0xa36,'i16'],FillType:[0xa37,'i16'],NoGo:[0xa3b,'i8'],
     ReactionStepReactants:[0xc01,'ids'],ReactionStepProducts:[0xc02,'ids'],ReactionStepArrows:[0xc04,'ids'],ReactionStepObjectsAboveArrow:[0xc05,'ids'],ReactionStepObjectsBelowArrow:[0xc06,'ids'],SupersededBy:[0x12,'u32']};
@@ -226,6 +226,7 @@ const FORMATS = (()=>{
         case 'i16': case 'u16': prop(tag,B.u16(iv)); break;
         case 'u32': prop(tag,B.i32(iv)); break;
         case 'coord': prop(tag,B.i32(fx(v))); break;
+        case 'pt20': prop(tag,B.u16(Math.round(parseFloat(v)*20))); break; // font sizes in twentieths of a point
         case 'bool': if (v==='yes') prop(tag,[]); break;
         case 'ids': { const a=String(v).trim().split(/\s+/).filter(Boolean); prop(tag,a.flatMap(x=>B.i32(+x))); break; }
         case 'pt2': case 'rect': { const a=String(v).trim().split(/\s+/); const s=[]; for (let i=0;i<a.length;i+=2){ s.push(a[i+1],a[i]); } prop(tag,s.flatMap(x=>B.i32(fx(x)))); break; }
@@ -276,7 +277,7 @@ const FORMATS = (()=>{
           case 'str': { const nr=dv.getUint16(o,true); v=dec1252([...bytes.subarray(o+2+nr*10,o+len)]); break; }
           case 'i8': v=dv.getInt8(o); break; case 'u8': v=dv.getUint8(o); break;
           case 'i16': v= len>=2? dv.getInt16(o,true) : dv.getInt8(o); break; case 'u16': v= len>=2? dv.getUint16(o,true) : dv.getUint8(o); break;
-          case 'u32': v=dv.getUint32(o,true); break; case 'coord': v=num(fixed(o)); break; case 'bool': v='yes'; break;
+          case 'u32': v=dv.getUint32(o,true); break; case 'coord': v=num(fixed(o)); break; case 'bool': v='yes'; break; case 'pt20': v=num(dv.getUint16(o,true)/20); break;
           case 'ids': { const a=[]; for (let i=0;i+4<=len;i+=4) a.push(dv.getUint32(o+i,true)); v=a.join(' '); break; }
           case 'pt2': case 'rect': { const a=[]; for (let i=0;i+8<=len;i+=8) a.push(num(fixed(o+i+4)),num(fixed(o+i))); v=a.join(' '); break; }
           case 'pt3': { const a=[]; for (let i=0;i+4<=len;i+=4) a.push(num(fixed(o+i))); v=a.join(' '); break; }
@@ -370,6 +371,7 @@ const FORMATS = (()=>{
         const a={id:nid++, x:p.x, y:p.y, el, charge:+(n.attrs.Charge||0)||0, lp:0, rad: n.attrs.Radical==='Doublet'?1:0, h: n.attrs.NumHydrogens!=null? +n.attrs.NumHydrogens : 0};
         const iso=+n.attrs.Isotope; if (Number.isInteger(iso) && iso>0 && iso<300 && ELEMENTS.includes(el)) a.iso=iso;
         setColor(a, n.attrs.color ?? (lab && (kids(lab,'s')[0]||{attrs:{}}).attrs.color));
+        const sz=lab && parseFloat((kids(lab,'s')[0]||{attrs:{}}).attrs.size); if (sz>=4 && sz<=72) a._sz=sz;
         const est=n.attrs.EnhancedStereoType; if (est==='And'||est==='Or') a.stg=est.toLowerCase()+(+n.attrs.EnhancedStereoGroupNum||1); else if (est==='Absolute' && n.attrs.EnhancedStereoGroupNum) a.stg='abs';
         atoms.push(a); nodeMap.set(n.attrs.id, a.id);
       }
@@ -449,6 +451,10 @@ const FORMATS = (()=>{
     for (const a of atoms) delete a.h;
     const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses,brackets}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
     if (st) Object.assign(d, st);
+    // labels: with no document label size, the size most labels use becomes the drawing's; a label in another size keeps its own
+    const sizes=d.atoms.map(a=>a._sz).filter(Boolean), most=sizes.slice().sort((x,y)=>sizes.filter(v=>v===y).length-sizes.filter(v=>v===x).length)[0];
+    if (!parseFloat((root.attrs||{}).LabelSize) && most && Math.abs(most-S(d).fontSize)>0.01) d.labelSize=most;
+    for (const a of d.atoms){ if (a._sz && Math.abs(a._sz-S(d).fontSize)>0.01) a.size=a._sz; delete a._sz; }
     if (Object.keys(skipped).length) d.skipped=skipped;
     return d;
   }
