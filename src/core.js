@@ -772,11 +772,46 @@ function fromOCL(mol, offset){
 }
 // A cyclohexane chair as textbooks draw it: opposite bonds parallel, the left end (the foot) down and the right end (the head) up.
 // flip mirrors it left to right, which is the chair after a ring flip. Bonds are one bond length; the ring is centred on the origin.
+const CHAIR_STEPS=[55,-12,18,235,168,198]; // bond directions around the ring, in degrees with y up
 function chairFragment(flip){
-  const steps=[55,-12,18,235,168], f=flip?-1:1, pts=[V(0,0)];
-  for (const a of steps){ const p=pts[pts.length-1], r=a*Math.PI/180; pts.push(V(p.x+f*Math.cos(r)*L, p.y-Math.sin(r)*L)); }
+  const f=flip?-1:1, pts=[V(0,0)];
+  for (const a of CHAIR_STEPS.slice(0,5)){ const p=pts[pts.length-1], r=a*Math.PI/180; pts.push(V(p.x+f*Math.cos(r)*L, p.y-Math.sin(r)*L)); }
   const cx=pts.reduce((t,p)=>t+p.x,0)/6, cy=pts.reduce((t,p)=>t+p.y,0)/6;
   return { atoms: pts.map(p=>({id:0, x:p.x-cx, y:p.y-cy, el:'C', charge:0, lp:0, rad:0})), bonds: pts.map((_,i)=>({a:i, b:(i+1)%6, order:1, stereo:'none'})) };
+}
+// Six-membered rings of single bonds drawn as chairs, matched to the textbook chair at any rotation, either way round and mirrored
+// (so ChemDraw's and Ketcher's chairs count too, and a regular hexagon does not). Each ring atom gets its two substituent directions:
+// axial, straight up or down in the chair's frame (up at the raised corners), and equatorial, parallel to the ring bonds one step away
+// and pointing out of the ring. Returns a Map from atom id to {ring, ax, eq}; cached on the index.
+function findChairs(d, ix){
+  if (ix.chairs) return ix.chairs;
+  const out=new Map(), seen=new Set(), T=CHAIR_STEPS.map(a=>-a*Math.PI/180); // screen angles (y down)
+  const wrap=t=>{ while(t>Math.PI) t-=2*Math.PI; while(t<-Math.PI) t+=2*Math.PI; return t; };
+  for (const b of d.bonds){
+    if (b.order!==1) continue;
+    const ring=ringPath(ix,b,6); if (!ring || ring.length!==6) continue;
+    const key=[...ring].sort((x,y)=>x-y).join(); if (seen.has(key)) continue; seen.add(key);
+    const P=ring.map(id=>ix.atom.get(id)), rs=new Set(ring);
+    let single=true; for (let i=0;i<6;i++){ const e=ix.adj.get(ring[i]).find(q=>q.o===ring[(i+1)%6]); if (!e || e.b.order!==1) single=false; }
+    if (!single) continue;
+    const A=P.map((p,i)=>angOf(sub(P[(i+1)%6],p)));
+    let best=null;
+    for (const m of [1,-1]) for (const rev of [false,true]) for (let k=0;k<6;k++){
+      // template direction for ring bond i: shifted by k, traversed backwards (reversed and turned 180°) or mirrored left to right
+      const t=i=>{ let a= rev ? T[(k+5-i+6*2)%6]+Math.PI : T[(k+i)%6]; return m<0 ? Math.PI-a : a; };
+      let sx=0, sy=0; for (let i=0;i<6;i++){ const dl=wrap(A[i]-t(i)); sx+=Math.cos(dl); sy+=Math.sin(dl); }
+      const th=Math.atan2(sy,sx); let worst=0; for (let i=0;i<6;i++) worst=Math.max(worst, Math.abs(wrap(A[i]-t(i)-th)));
+      if (!best || worst<best.worst) best={worst, th};
+    }
+    if (best.worst > 20*Math.PI/180) continue;
+    const up=fromAng(-Math.PI/2+best.th), c=mul(P.reduce((s,p)=>add(s,p),V(0,0)),1/6);
+    P.forEach((p,i)=>{
+      const mid=mul(add(P[(i+5)%6],P[(i+1)%6]),0.5), ax= dot(sub(p,mid),up)>0 ? up : mul(up,-1);
+      let eq=norm(sub(P[(i+2)%6],P[(i+1)%6])); if (dot(eq,sub(p,c))<0) eq=mul(eq,-1);
+      out.set(ring[i], {ring:rs, ids:ring, ax, eq});
+    });
+  }
+  ix.chairs=out; return out;
 }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)

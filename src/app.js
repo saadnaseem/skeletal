@@ -138,8 +138,20 @@ function nbrs(id){ return (ix.adj.get(id)||[]).map(({o})=>ix.atom.get(o)); }
 function snapAngle(v, step=Math.PI/12){ const t=Math.round(angOf(v)/step)*step; return fromAng(t); }
 
 // best direction for a new bond from an atom
+// on a chair, a new bond goes axial, then equatorial, whichever is still free
+function chairDir(atom){
+  const c=findChairs(doc,ix).get(atom.id); if (!c) return null;
+  const out=nbrs(atom.id).filter(q=>!c.ring.has(q.id)).map(q=>norm(sub(q,atom)));
+  return [c.ax,c.eq].find(v=>out.every(w=>dot(w,v)<Math.cos(Math.PI/6))) || null;
+}
+// a bond dragged from a chair atom snaps to its axial and equatorial directions
+function chairSnap(atom, v){
+  const c=atom && findChairs(doc,ix).get(atom.id); if (!c) return null;
+  const u=norm(v); return [c.ax,c.eq].find(w=>dot(u,w)>Math.cos(Math.PI/12)) || null;
+}
 function nextDir(atom){
   const ns=nbrs(atom.id);
+  const cd=ns.length>=2 && chairDir(atom); if (cd) return cd;
   if (!ns.length) return fromAng(-Math.PI/6);
   if (ns.length===1){
     const n0=ns[0], th=angOf(sub(n0,atom));
@@ -433,7 +445,7 @@ function beginTool(d){
     if (h && h.type==='handle'){ d.sub='handle'; return; }
     const k = h ? (h.type==='bond' ? null : keyOf(h)) : null;
     if (h && h.type==='bond'){ const b=ix.bond.get(h.id); d.bondKeys=['a'+b.a,'a'+b.b]; d.sub = sel.has('a'+b.a)&&sel.has('a'+b.b) ? 'move' : 'pending'; return; }
-    if (k){ d.key=k; d.sub = sel.has(k) ? 'move' : 'pending'; return; }
+    if (k){ d.key=k; d.sub = sel.has(k) ? 'move' : 'pending'; d.narrow = k[0]==='a' && sel.has(k) && sel.size>1; return; }
     d.sub = tool.lasso ? 'lasso' : 'rect'; if (d.sub==='lasso') d.path=[d.start]; if (!d.shift){ sel.clear(); render(); }
     return;
   }
@@ -457,7 +469,7 @@ function bondTarget(d,p){
   const near=atomNear(p,L*0.3, startAtom? new Set([startAtom.id]) : null);
   if (near) return {s, e:V(near.x,near.y), atom:near, startAtom};
   let v=sub(p,s); if (len(v)<1) v=V(1,0);
-  const u = d.alt? norm(v) : snapAngle(v);
+  const u = d.alt? norm(v) : chairSnap(startAtom,v) || snapAngle(v);
   return {s, e:add(s,mul(u,L)), atom:null, startAtom};
 }
 function moveTool(d,p){
@@ -544,6 +556,8 @@ function endTool(d,p){
     if (!d.moved){
       if (d.sub==='rect' || d.sub==='lasso'){ if(!d.shift) sel.clear(); return; }
       if (d.sub==='handle') return;
+      // a click picks the whole structure; a second click on one of its atoms picks just that atom (to give it a label, R¹, a color)
+      if (d.narrow && !d.shift){ sel.clear(); sel.add(d.key); return; }
       let keys = d.bondKeys ? fragmentKeys(+d.bondKeys[0].slice(1)) : d.key && d.key[0]==='a' ? fragmentKeys(+d.key.slice(1)) : [d.key];
       keys=withGroups(keys);
       if (d.shift){ const all=keys.every(k=>sel.has(k)); keys.forEach(k=> all? sel.delete(k) : sel.add(k)); }
@@ -652,9 +666,15 @@ function cycleDb(b){ const order=['auto','center','left','right']; const i=order
 /* ================= text editing ================= */
 // The editor shows the text formatted (H₂O, pKₐ, Fe^III) and holds it as formatted characters (see textChars).
 // Ctrl/⌘ = makes a subscript and Ctrl/⌘ Shift = a superscript, as in Word and ChemDraw; with nothing selected they switch the next characters typed.
+// Ctrl/⌘ , and Ctrl/⌘ . (as in Google Docs) do the same, for Safari, where ⌘ = may zoom the page instead.
 const ted=$('#texted'), tedBar=$('#tedBar');
 let tedPending=null, tedHist=[], tedFuture=[]; // tedPending: the mode for the next typed character after a toggle with nothing selected
 const MAC=/Mac|iPhone|iPad/.test(navigator.platform||'');
+// 'sub' or 'sup' for a subscript or superscript key, else null
+function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; const k=e.key;
+  if (e.code==='Equal' || k==='=' || k==='+') return e.shiftKey || k==='+' ? 'sup' : 'sub';
+  if (!e.shiftKey && (k===',' || k==='.')) return k==='.' ? 'sup' : 'sub';
+  return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
 function startLabelEdit(a){ if (!a) return; const st=S();
   startTextEdit({x:a.x, y:a.y, text:a.el, size:st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
@@ -781,7 +801,7 @@ ted.addEventListener('pointerdown', ()=>{ tedPending=null; });
 document.addEventListener('selectionchange', ()=>{ if (editingText) tedSyncBar(); });
 ted.addEventListener('keydown', e=>{
   const mod=e.ctrlKey||e.metaKey, k=e.key.toLowerCase();
-  if (mod && (e.code==='Equal' || k==='=' || k==='+')){ e.preventDefault(); tedToggle(e.shiftKey || k==='+' ? 'sup' : 'sub'); }
+  const sm=scriptKey(e); if (sm){ e.preventDefault(); tedToggle(sm); }
   else if (mod && (k==='z' || k==='y')){ e.preventDefault(); const redo=k==='y' || e.shiftKey, from=redo? tedFuture : tedHist, to=redo? tedHist : tedFuture;
     const s=from.pop(); if (s){ to.push({cs:tedChars(), sel:tedGetSel()}); tedApply(s.cs, s.sel); } }
   else if (mod && (k==='b' || k==='i' || k==='u')) e.preventDefault();
@@ -794,7 +814,7 @@ ted.addEventListener('keydown', e=>{
 });
 ted.addEventListener('blur', ()=>{ if (editingText) commitText(); });
 tedBar.querySelectorAll('[data-m]').forEach(b=>{
-  b.title=(b.dataset.m==='sub'?'Subscript':'Superscript')+` (${MAC?'⌘':'Ctrl+'}${b.dataset.m==='sup'?(MAC?'⇧':'Shift+'):''}=)`;
+  b.title=scriptTitle(b.dataset.m);
   b.addEventListener('pointerdown', e=>e.preventDefault()); b.addEventListener('mousedown', e=>e.preventDefault()); // keep the caret in the text
   b.onclick=()=>tedToggle(b.dataset.m); });
 function commitText(){
@@ -825,6 +845,8 @@ window.addEventListener('keydown', e=>{
   if (mod && e.shiftKey && e.key.toLowerCase()==='s'){ e.preventDefault(); openSaveAs(); return; }
   if (mod && e.key.toLowerCase()==='g'){ e.preventDefault(); e.shiftKey? ungroupSel() : groupSel(); return; }
   if (mod && e.key.toLowerCase()==='d'){ e.preventDefault(); if(sel.size){ clip=subDoc(sel); pasteDoc(clip, L); } return; }
+  // with a text or an atom selected, the subscript and superscript keys work as x₂ x² do; otherwise Ctrl/⌘ = is left to zoom the page
+  const sm=scriptKey(e); if (sm && (textTargets().length || selAtoms().length)){ e.preventDefault(); scriptSelection(sm); return; }
   if (mod) return;
   if (e.key==='Escape'){ sel.clear(); preview=null; closeInfo(); render(); return; }
   if (e.key==='Delete'||e.key==='Backspace'){
@@ -1013,15 +1035,17 @@ function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=
 function cleanUp(){
   const ids = selAtoms().length ? selAtoms() : doc.atoms.map(a=>a.id);
   if (!ids.length){ toast('Nothing to clean up'); return; }
-  pushUndo();
+  pushUndo(); let leftChairs=0;
   for (const comp of components(doc,ix,ids)){
     if (comp.length<2) continue;
+    const ch=chairPlan(comp); if (ch===false){ leftChairs++; continue; }
     const {mol,map}=toOCL(doc,ix,comp,{placeholders:true});
     let cx=0,cy=0; for (const id of comp){ const a=ix.atom.get(id); cx+=a.x; cy+=a.y; } cx/=comp.length; cy/=comp.length;
     mol.ensureHelperArrays(OCL.Molecule.cHelperParities);
     mol.inventCoordinates(); scaleLayout(mol);
     let nx=0,ny=0; for (const id of comp){ const i=map.get(id); nx+=mol.getAtomX(i)*L; ny+=mol.getAtomY(i)*L; } nx/=comp.length; ny/=comp.length;
     for (const id of comp){ const a=ix.atom.get(id), i=map.get(id); a.x=mol.getAtomX(i)*L-nx+cx; a.y=mol.getAtomY(i)*L-ny+cy; }
+    if (ch) chairRestore(ch);
     // stereo bonds as re-derived by OCL
     const inv=new Map([...map].map(([k,v])=>[v,k]));
     const stereoOf=new Map();
@@ -1033,7 +1057,42 @@ function cleanUp(){
       const f=stereoOf.get(b.a+'-'+b.b), r=stereoOf.get(b.b+'-'+b.a);
       if (f){ b.stereo=f; } else if (r){ const t=b.a; b.a=b.b; b.b=t; b.stereo=r; } }
   }
-  changed(); toast('Structure cleaned up');
+  changed(); toast(leftChairs ? 'Structure cleaned up. Linked or fused chairs were left as drawn' : 'Structure cleaned up', leftChairs? 5000 : undefined);
+}
+// Clean up keeps a chair a chair. Before the layout: the chair's shape and, for each substituent, whether it was axial or equatorial.
+// Returns null (no chair), false (two chairs, or a fused or bridged one: the structure is left as drawn) or the plan.
+function chairPlan(comp){
+  const cs=new Set(comp), found=new Map();
+  for (const [id,c] of findChairs(doc,ix)) if (cs.has(id) && c.ids.every(x=>cs.has(x))) found.set(c.ids.join(), c);
+  if (!found.size) return null; if (found.size>1) return false;
+  const c=[...found.values()][0], P=c.ids.map(id=>ix.atom.get(id)), m=mul(P.reduce((t,p)=>add(t,p),V(0,0)),1/6);
+  const subs=[];
+  for (const r of c.ids){ const ra=ix.atom.get(r), slots=findChairs(doc,ix).get(r);
+    for (const {o} of ix.adj.get(r)){ if (c.ring.has(o) || !cs.has(o)) continue;
+      const tree=[o], seen=new Set([o]);
+      for (let k=0;k<tree.length;k++) for (const q of ix.adj.get(tree[k])){ if (seen.has(q.o) || !cs.has(q.o)) continue;
+        if (c.ring.has(q.o)){ if (q.o!==r || k>0) return false; continue; }
+        seen.add(q.o); tree.push(q.o); }
+      const u=norm(sub(ix.atom.get(o),ra)), was= dot(u,slots.ax)>Math.cos(Math.PI*25/180) ? 'ax' : dot(u,slots.eq)>Math.cos(Math.PI*25/180) ? 'eq' : null;
+      subs.push({r, s:o, tree, was}); } }
+  return {c, rel:P.map(p=>sub(p,m)), subs};
+}
+// after the layout: the chair goes back, centred where the layout put the ring, and each substituent swings into its axial or equatorial place
+function chairRestore({c, rel, subs}){
+  const at=id=>ix.atom.get(id), old=new Map(c.ids.map(id=>[id, V(at(id).x,at(id).y)]));
+  for (const t of subs) for (const id of t.tree) old.set(id, V(at(id).x,at(id).y));
+  const m=mul(c.ids.reduce((t,id)=>add(t,old.get(id)),V(0,0)),1/6);
+  c.ids.forEach((id,i)=>{ const p=add(m,rel[i]); at(id).x=p.x; at(id).y=p.y; });
+  for (const r of c.ids){
+    const mine=subs.filter(t=>t.r===r), slots=findChairs(doc,ix).get(r), used=new Set();
+    for (const t of mine) if (t.was && !used.has(t.was)){ t.to=t.was; used.add(t.was); }
+    for (const t of mine) if (!t.to){ t.to=['eq','ax'].find(k=>!used.has(k)); if (t.to) used.add(t.to); }
+    for (const t of mine){
+      const R0=old.get(r), R1=V(at(r).x,at(r).y), d0=sub(old.get(t.s),R0);
+      const turn= t.to ? angOf(slots[t.to])-angOf(d0) : 0;
+      for (const id of t.tree){ const p=rotAround(old.get(id),R0,turn), q=add(R1,sub(p,R0)); at(id).x=q.x; at(id).y=q.y; }
+    }
+  }
 }
 function flip(axis){
   const keys = sel.size ? sel : null;
@@ -2285,21 +2344,7 @@ function initTextUI(){
   };
   const keepFocus=e=>{ if (editingText) e.preventDefault(); };
   for (const id of ['#tBold','#tItal','#tSub','#tSup','#tSwatches']) $(id).addEventListener('mousedown',keepFocus);
-  // x₂ x²: while typing they work on the selection (as Ctrl/⌘ = does); otherwise on the whole of each selected text
-  for (const b of [$('#tSub'),$('#tSup')]){ const m=b.dataset.tm;
-    b.title=(m==='sub'?'Subscript':'Superscript')+` (${MAC?'⌘':'Ctrl+'}${m==='sup'?(MAC?'⇧':'Shift+'):''}=)`;
-    b.onclick=()=>{ if (editingText){ tedToggle(m); return; }
-      const ts=textTargets(), as=selAtoms().map(id=>ix.atom.get(id)).filter(a=>a && kindOf(a.el)!=='element');
-      if (!ts.length && !as.length){ toast(selAtoms().length? 'Element symbols take charges, not superscripts: use the charge tools, or double-click to give the atom a label such as R1'
-        : 'Click in a text box and select the characters first, or select a text or a label such as R1'); return; }
-      pushUndo();
-      const all=ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m));
-      for (const t of ts) t.text=charsToMarkup(textCharsAll(t.text).map(x=>x.c==='\n'? x : all? {c:x.c,m:'n',keep:true} : {c:x.c,m}));
-      // a label: its numbers and primes switch (R1 -> R¹ and back)
-      const num=x=>/[0-9'′″]/.test(x.c), allA=as.every(a=>textCharsAll(a.el).filter(num).every(x=>x.m===m));
-      for (const a of as){ const cs=textCharsAll(a.el); if (!cs.some(num)) continue;
-        a.el=charsToMarkup(cs.map(x=>!num(x)? x : allA? {c:x.c,m:'n',keep:m==='sub'} : {c:x.c,m})) || a.el; }
-      changed(); }; }
+  for (const b of [$('#tSub'),$('#tSup')]){ b.title=scriptTitle(b.dataset.tm); b.onclick=()=>scriptSelection(b.dataset.tm); }
   document.querySelectorAll('[data-al]').forEach(b=>{ b.addEventListener('mousedown',keepFocus); b.onclick=()=>apply('align',b.dataset.al==='center'?null:b.dataset.al); });
   $('#tFont').onchange=e=>apply('font', e.target.value==='sans'?null:e.target.value);
   $('#tSize').onchange=e=>apply('size', e.target.value? +e.target.value : null);
@@ -2307,14 +2352,40 @@ function initTextUI(){
   $('#tItal').onclick=()=>{ const cur=currentTextStyle(); apply('italic', !cur.italic || null); };
   $('#tSwatches').onclick=e=>{ const b=e.target.closest('[data-c]'); if(b) apply('color', b.dataset.c==='#000000'?null:b.dataset.c); };
 }
+function scriptTitle(m){ return (m==='sub'?'Subscript':'Superscript')+(MAC? ` (${m==='sup'?'⇧':''}⌘= or ⌘${m==='sup'?'.':','})` : ` (Ctrl+${m==='sup'?'Shift+':''}=)`); }
+// the label characters x₂ x² switch on a selected atom: its numbers and primes (R1 -> R¹ and back)
+function scriptable(x){ return /[0-9'′″]/.test(x.c); }
+function labelAtoms(){ return selAtoms().map(id=>ix.atom.get(id)).filter(a=>a && kindOf(a.el)!=='element' && textCharsAll(a.el).some(scriptable)); }
+// x₂ x² and their keys: while typing they work on the selection (tedToggle); otherwise on the whole of each selected text and the numbers of each selected label.
+// One selected atom with nothing to switch (R, OMe, an element) opens its label with the mode on, so what is typed next is a subscript or superscript (R -> R¹).
+function scriptSelection(m){
+  if (editingText){ tedToggle(m); return; }
+  const ts=textTargets(), as=labelAtoms(), atoms=selAtoms();
+  if (!ts.length && !as.length){
+    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a);
+      setTimeout(()=>{ if (!editingText || editingText.atom!==a) return; tedSetSel(tedChars().length); tedPending=m; tedSyncBar(); },0);
+      toast(`Type the ${m==='sup'?'superscript':'subscript'}, then press Enter`+(kindOf(a.el)==='element'? ` (the atom becomes a label such as ${a.el}${m==='sup'?'¹':'₁'})` : '')); return; }
+    toast(atoms.length? 'Click one atom of the selected structure again to select just that atom, then press '+(m==='sup'?'x²':'x₂')
+      : 'Click in a text box and select the characters first, or select a text or an atom'); return; }
+  pushUndo();
+  const all=ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m));
+  for (const t of ts) t.text=charsToMarkup(textCharsAll(t.text).map(x=>x.c==='\n'? x : all? {c:x.c,m:'n',keep:true} : {c:x.c,m}));
+  const allA=as.every(a=>textCharsAll(a.el).filter(scriptable).every(x=>x.m===m));
+  for (const a of as) a.el=charsToMarkup(textCharsAll(a.el).map(x=>!scriptable(x)? x : allA? {c:x.c,m:'n',keep:m==='sub'} : {c:x.c,m})) || a.el;
+  changed();
+}
 function currentTextStyle(){ const ts=textTargets(); const t=ts[0]||tool.textStyle; const st=S(); return {font:t.font||'sans', size:t.size||'', bold: t.bold!=null ? !!t.bold : st.fontWeight>=600, italic:!!t.italic, align:t.align||'center', color:t.color||null}; }
 function syncTextUI(){
   if (!$('#tSize')) return;
   const ts=textTargets(), c=currentTextStyle();
-  $('#textScope').textContent = ts.length ? (ts.length===1?'Applies to the selected text':`Applies to ${ts.length} selected text objects`) : 'Settings for new text';
+  const one=selAtoms().length===1 && ix.atom.get(selAtoms()[0]), as=labelAtoms();
+  $('#textScope').textContent = ts.length ? (ts.length===1?'Applies to the selected text':`Applies to ${ts.length} selected text objects`)
+    : as.length ? (as.length===1? `x₂ x² apply to the label ${plainText(as[0].el)}` : `x₂ x² apply to ${as.length} selected labels`)
+    : one ? `x₂ x² edit the label ${plainText(one.el)}` : 'Settings for new text';
   $('#tFont').value=c.font; $('#tSize').value=c.size?String(c.size):''; $('#tSize').options[0].textContent=`Auto (${S().fontSize} pt)`;
   $('#tBold').setAttribute('aria-pressed',c.bold); $('#tItal').setAttribute('aria-pressed',c.italic);
-  if (!editingText) document.querySelectorAll('[data-tm]').forEach(b=>b.setAttribute('aria-pressed', ts.length>0 && ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===b.dataset.tm))));
+  if (!editingText) document.querySelectorAll('[data-tm]').forEach(b=>{ const m=b.dataset.tm;
+    b.setAttribute('aria-pressed', ts.length>0 ? ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m)) : as.length>0 && as.every(a=>textCharsAll(a.el).filter(scriptable).every(x=>x.m===m))); });
   document.querySelectorAll('[data-al]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.al===c.align));
   document.querySelectorAll('#tSwatches .sw').forEach(b=>b.style.boxShadow = ((c.color||'#000000')===b.dataset.c) ? '0 0 0 2px var(--accent)' : '');
 }

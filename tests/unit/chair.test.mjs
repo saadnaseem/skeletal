@@ -56,3 +56,41 @@ test('a chair keeps its shape through ChemDraw and molfile export', () => {
   const m = fromOCL(mol).atoms, cx = m.reduce((t, p) => t + p.x, 0) / 6, cy = m.reduce((t, p) => t + p.y, 0) / 6;
   assert.equal(key(m.map(p => ({ x: p.x - cx, y: p.y - cy }))), key(d.atoms), 'molfile');
 });
+
+// six carbons in a ring at the given points
+function ringDoc(pts, order = 1){
+  const d = newDoc(); let id = 1;
+  pts.forEach(p => d.atoms.push({ id: id++, x: p.x, y: p.y, el: 'C' }));
+  for (let i = 0; i < 6; i++) d.bonds.push({ id: id++, a: i + 1, b: (i + 1) % 6 + 1, order: i === 0 ? order : 1, stereo: 'none' });
+  d.nid = id; return d;
+}
+const findChairs = get('findChairs');
+const turn = (p, t) => ({ x: p.x * Math.cos(t) - p.y * Math.sin(t), y: p.x * Math.sin(t) + p.y * Math.cos(t) });
+const near = (u, v, m) => assert.ok(Math.abs(u.x - v.x) < 1e-6 && Math.abs(u.y - v.y) < 1e-6, `${m}: (${u.x}, ${u.y}) vs (${v.x}, ${v.y})`);
+
+test('chairs are recognised at any rotation, either way round and mirrored, and so are other programs’ chairs; a hexagon is not', () => {
+  const c = chairFragment(false).atoms;
+  for (const [name, pts] of [['chair', c], ['flipped', chairFragment(true).atoms], ['turned 70°', c.map(p => turn(p, 1.22))], ['numbered the other way', [...c].reverse()],
+    // Ketcher's Chair1 template (molfile y up)
+    ['Ketcher', [[4.9944, 2.4555], [6.7388, 3.0777], [9.2777, 2.1666], [10.4055, 4.161], [8.5333, 3.5388], [6.1166, 4.4555]].map(([x, y]) => ({ x: x * 8, y: -y * 8 }))]]){
+    const d = ringDoc(pts); assert.equal(findChairs(d, buildIndex(d)).size, 6, name);
+  }
+  const hex = [...Array(6)].map((_, k) => ({ x: L * Math.cos(k * Math.PI / 3), y: L * Math.sin(k * Math.PI / 3) }));
+  let d = ringDoc(hex); assert.equal(findChairs(d, buildIndex(d)).size, 0, 'a regular hexagon is not a chair');
+  d = ringDoc(c, 2); assert.equal(findChairs(d, buildIndex(d)).size, 0, 'a ring with a double bond is not a chair');
+});
+
+test('axial bonds point straight up at the raised corners and down at the others; equatorial bonds run parallel to the next-but-one ring bonds, outwards', () => {
+  for (const flip of [false, true]) for (const t of [0, 0.6]){
+    const d = ringDoc(chairFragment(flip).atoms.map(p => turn(p, t))), m = findChairs(d, buildIndex(d)), up = turn({ x: 0, y: -1 }, t);
+    const A = d.atoms, c = { x: A.reduce((s, p) => s + p.x, 0) / 6, y: A.reduce((s, p) => s + p.y, 0) / 6 };
+    const ups = A.map((a, i) => { const s = m.get(a.id), raised = ((a.x - (A[(i + 5) % 6].x + A[(i + 1) % 6].x) / 2) * up.x + (a.y - (A[(i + 5) % 6].y + A[(i + 1) % 6].y) / 2) * up.y) > 0;
+      near(s.ax, raised ? up : { x: -up.x, y: -up.y }, `axial at ${i}`);
+      const b = { x: A[(i + 2) % 6].x - A[(i + 1) % 6].x, y: A[(i + 2) % 6].y - A[(i + 1) % 6].y };
+      assert.ok(Math.abs(cross(s.eq, b)) < 1e-6, `equatorial at ${i} is parallel to a ring bond`);
+      assert.ok(s.eq.x * (a.x - c.x) + s.eq.y * (a.y - c.y) > 0, `equatorial at ${i} points out`);
+      assert.ok(s.eq.x * s.ax.x + s.eq.y * s.ax.y < 0, `equatorial at ${i} leans away from the axial bond`);
+      return raised; });
+    assert.deepEqual([...ups].map((u, i) => u !== ups[(i + 1) % 6]), [true, true, true, true, true, true], 'up and down corners alternate');
+  }
+});
