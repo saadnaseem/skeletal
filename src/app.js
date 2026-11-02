@@ -235,6 +235,9 @@ function hitTest(p, ptype){
   let best=null, bd=rA;
   for (const a of doc.atoms){ const d=dist(a,p); if (d<bd){bd=d; best={type:'atom',id:a.id};} }
   if (best) return best;
+  // anywhere on a label's letters (the H2 of NH2, or a label made bigger) is the atom too
+  for (const a of doc.atoms){ if (a.el==='C' && !a.iso) continue; const lb=layoutLabel(doc,ix,a); if (!lb.visible || !lb.box) continue;
+    const b=lb.box; if (p.x>=b.x0-1 && p.x<=b.x1+1 && p.y>=b.y0-1 && p.y<=b.y1+1) return {type:'atom',id:a.id}; }
   for (const t of doc.texts){ const m=textMetrics(doc,t); if (Math.abs(p.x-t.x)<=m.w/2+2 && Math.abs(p.y-t.y)<=m.h/2+2) return {type:'text',id:t.id}; }
   for (const q of doc.pluses){ if (dist(q,p)<Math.max(5,rB)) return {type:'plus',id:q.id}; }
   for (const q of doc.plates){ const b=plateBBox(doc,q); if (p.x>=b.x0&&p.x<=b.x1&&p.y>=b.y0&&p.y<=b.y1) return {type:'plate',id:q.id}; }
@@ -677,7 +680,7 @@ function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; con
   return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
 function startLabelEdit(a){ if (!a) return; const st=S();
-  startTextEdit({x:a.x, y:a.y, text:a.el, size:st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
+  startTextEdit({x:a.x, y:a.y, text:a.el, size:a.size||st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
 // where a new caption on a bond goes: beside its middle, on the side with more room (farther from the nearest other atom or bond)
 function bondCaptionAt(b){
   const A=ix.atom.get(b.a), B=ix.atom.get(b.b), m=mul(add(A,B),0.5), u=norm(sub(B,A)), n=V(-u.y,u.x);
@@ -1993,7 +1996,7 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
 function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
 // changing the style or bond length rescales the drawing so bonds keep the style's length
 function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
-$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; }); changed(); }); // a journal style replaces custom settings, as in ChemDraw
+$('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; for (const a of doc.atoms) delete a.size; }); changed(); }); // a journal style replaces custom settings (labels' own sizes too), as in ChemDraw
 const PRESET_NOTES = {
   acs:'ACS Document 1996 (ChemDraw): bond length 14.4 pt, line width 0.6 pt, bold width 2.0 pt, bond spacing 18%, hash spacing 2.5 pt, margin 1.6 pt, Arial 10 pt labels. Used by ACS journals and Organic Syntheses.',
   rsc:'RSC 1-column (ChemDraw 22 style sheet): bond length 12.2 pt, line width 0.45 pt, bold width 1.6 pt, bond spacing 20%, hash spacing 1.75 pt, margin 1.25 pt, Helvetica/Arial 7 pt labels.',
@@ -2083,7 +2086,7 @@ $('#bNew').onclick=()=>{
 };
 $('#bPage').onclick=openPageSetup; $('#bSolv').onclick=openSolvents; $('#bSolv2').onclick=openSolvents;
 $('#expArea').onchange=()=>{};
-$('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=st; delete pg.doc.labelSize; delete pg.doc.styleOv; }); useStyle(doc); changed(); toast(`${PRESETS[st].name} applied to every page`); };
+$('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) restyle(pg.doc,()=>{ pg.doc.style=st; delete pg.doc.labelSize; delete pg.doc.styleOv; for (const a of pg.doc.atoms) delete a.size; }); useStyle(doc); changed(); toast(`${PRESETS[st].name} applied to every page`); };
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
@@ -2334,12 +2337,18 @@ function confirmOpenProject(p, handle){
 /* ================= text formatting ================= */
 const TSIZES=[6,7,8,9,10,11,12,14,16,18,20,24,28,32,36,48,60,72];
 function textTargets(){ const t=[...sel].filter(k=>k[0]==='t').map(k=>ix.text.get(+k.slice(1))).filter(Boolean); if (editingText && !editingText.atom && !t.includes(editingText.t)) t.push(editingText.t); return t; }
+// atoms the Text panel's size and color apply to: the selected ones, or the label being typed; those showing a label first
+function labelTargets(){ if (editingText) return editingText.atom ? [editingText.atom] : [];
+  return selAtoms().map(id=>ix.atom.get(id)).filter(a=>a && layoutLabel(doc,ix,a).visible); }
+const ATOM_STYLE=new Set(['size','color']); // labels take the drawing's font, weight and alignment
 function initTextUI(){
   $('#tSize').innerHTML=`<option value="">Auto</option>`+TSIZES.map(s=>`<option value="${s}">${s} pt</option>`).join('');
   $('#tSwatches').innerHTML=SWATCHES.map(c=>`<button class="sw" style="background:${c}" data-c="${c}" aria-label="Text color ${c}"></button>`).join('');
   const apply=(k,v)=>{
-    const ts=textTargets();
-    if (ts.length){ if (!editingText || ts.length>1 || !editingText.fresh) pushUndo(); for (const t of ts){ if (v==null || v==='') delete t[k]; else t[k]=v; } if (editingText){ const et=editingText.t, m=textMetrics(doc,{...et,text:ted.value||' '}); ted.style.fontSize=m.fs*view.z+'px'; ted.style.fontFamily=m.family; ted.style.fontWeight=m.fw; ted.style.fontStyle=m.italic?'italic':'normal'; ted.style.color=et.color||'#000'; ted.style.textAlign=et.align||'center'; positionTed(); } changed(); }
+    const ts=textTargets(), as=ATOM_STYLE.has(k) ? labelTargets() : [];
+    if (ts.length || as.length){ if (!editingText || ts.length>1 || as.length || !editingText.fresh) pushUndo(); for (const t of [...ts,...as]){ if (v==null || v==='') delete t[k]; else t[k]=v; }
+      if (editingText && editingText.atom){ const a=editingText.atom; editingText.t.size=a.size||S().fontSize; editingText.t.color=a.color; } // the label being typed shows its new size
+      if (editingText){ const et=editingText.t, m=textMetrics(doc,{...et,text:ted.value||' '}); ted.style.fontSize=m.fs*view.z+'px'; ted.style.fontFamily=m.family; ted.style.fontWeight=m.fw; ted.style.fontStyle=m.italic?'italic':'normal'; ted.style.color=et.color||'#000'; ted.style.textAlign=et.align||'center'; positionTed(); } changed(); }
     else { if (v==null || v==='') delete tool.textStyle[k]; else tool.textStyle[k]=v; syncTextUI(); }
   };
   const keepFocus=e=>{ if (editingText) e.preventDefault(); };
@@ -2374,19 +2383,29 @@ function scriptSelection(m){
   for (const a of as) a.el=charsToMarkup(textCharsAll(a.el).map(x=>!scriptable(x)? x : allA? {c:x.c,m:'n',keep:m==='sub'} : {c:x.c,m})) || a.el;
   changed();
 }
-function currentTextStyle(){ const ts=textTargets(); const t=ts[0]||tool.textStyle; const st=S(); return {font:t.font||'sans', size:t.size||'', bold: t.bold!=null ? !!t.bold : st.fontWeight>=600, italic:!!t.italic, align:t.align||'center', color:t.color||null}; }
+function currentTextStyle(){ const ts=textTargets(), st=S();
+  if (!ts.length){ const a=labelTargets()[0]; if (a) return {font:'sans', size:a.size||'', bold:st.fontWeight>=600, italic:false, align:'center', color:a.color||null}; }
+  const t=ts[0]||tool.textStyle; return {font:t.font||'sans', size:t.size||'', bold: t.bold!=null ? !!t.bold : st.fontWeight>=600, italic:!!t.italic, align:t.align||'center', color:t.color||null}; }
 function syncTextUI(){
   if (!$('#tSize')) return;
-  const ts=textTargets(), c=currentTextStyle();
+  const ts=textTargets(), c=currentTextStyle(), la=labelTargets();
   const one=selAtoms().length===1 && ix.atom.get(selAtoms()[0]), as=labelAtoms();
-  $('#textScope').textContent = ts.length ? (ts.length===1?'Applies to the selected text':`Applies to ${ts.length} selected text objects`)
-    : as.length ? (as.length===1? `x₂ x² apply to the label ${plainText(as[0].el)}` : `x₂ x² apply to ${as.length} selected labels`)
-    : one ? `x₂ x² edit the label ${plainText(one.el)}` : 'Settings for new text';
+  const shown=a=>layoutLabel(doc,ix,a).items.map(i=>i.t).join('') || plainText(a.el);
+  const sizeOf = la.length===1 ? `the label ${shown(la[0])}` : `${la.length} labels (${la.slice(0,4).map(shown).join(', ')}${la.length>4?', …':''})`;
+  $('#textScope').textContent = ts.length ? (ts.length===1?'Applies to the selected text':`Applies to ${ts.length} selected text objects`)+(la.length? `; size and color also to ${sizeOf}` : '')
+    : editingText && editingText.atom ? `Size and color apply to ${sizeOf}`
+    : as.length ? `Size and color apply to ${sizeOf}; x₂ x² to the numbers of ${as.map(a=>plainText(a.el)).slice(0,3).join(', ')}`
+    : one && la.length ? `Size and color apply to ${sizeOf}; x₂ x² edit it`
+    : one ? `x₂ x² edit the label ${plainText(one.el)}`
+    : la.length ? `Size and color apply to ${sizeOf}` : 'Settings for new text';
+  // atom labels use the drawing's font, weight and alignment (Style); only size and color are their own
+  const atomsOnly=!ts.length && la.length>0;
+  for (const el of [$('#tFont'),$('#tBold'),$('#tItal'),...document.querySelectorAll('[data-al]')]){ if (el.dataset.t0==null) el.dataset.t0=el.title; el.disabled=atomsOnly; el.title= atomsOnly ? 'Atom labels use the drawing\u2019s font and weight (Style panel)' : el.dataset.t0; }
   $('#tFont').value=c.font; $('#tSize').value=c.size?String(c.size):''; $('#tSize').options[0].textContent=`Auto (${S().fontSize} pt)`;
   $('#tBold').setAttribute('aria-pressed',c.bold); $('#tItal').setAttribute('aria-pressed',c.italic);
   if (!editingText) document.querySelectorAll('[data-tm]').forEach(b=>{ const m=b.dataset.tm;
     b.setAttribute('aria-pressed', ts.length>0 ? ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m)) : as.length>0 && as.every(a=>textCharsAll(a.el).filter(scriptable).every(x=>x.m===m))); });
-  document.querySelectorAll('[data-al]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.al===c.align));
+  document.querySelectorAll('[data-al]').forEach(b=>b.setAttribute('aria-pressed', !atomsOnly && b.dataset.al===c.align));
   document.querySelectorAll('#tSwatches .sw').forEach(b=>b.style.boxShadow = ((c.color||'#000000')===b.dataset.c) ? '0 0 0 2px var(--accent)' : '');
 }
 function initLabelSize(){
