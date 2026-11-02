@@ -25,7 +25,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - Charges, lone pairs and radicals.
 - Reaction, equilibrium, retrosynthetic, resonance, dashed and failed-reaction arrows.
 - Curved electron-pushing arrows (full and fishhook) with a draggable bend handle.
-- Text with automatic chemical subscripts (H2SO4 → H₂SO₄) and `^` superscripts (Fe^3+). Each text box can have its own font, size, bold, italic, alignment and color.
+- Text with subscripts and superscripts: pKₐ, Feᴵᴵᴵ, S_N2, ¹³C, cm⁻¹, [α]_D. While typing, press Ctrl/⌘ + = for a subscript and Ctrl/⌘ + Shift + = for a superscript (the same keys as Word), or use the x₂ x² buttons above the text box. With nothing selected the keys switch what you type next; with text selected they switch the selection. Formula digits become subscripts as you type (H2SO4 → H₂SO₄); select one and press Ctrl/⌘ + = to keep it normal (E2). Pasting from Word or a web page keeps subscripts and superscripts, and ChemDraw files keep them both ways. Each text box can have its own font, size, bold, italic, alignment and color.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
 - Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
@@ -125,6 +125,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 | Nudge the selection | Arrow keys (Shift: 5 pt) |
 | Rotate the selection 15° | [ and ] |
 | New line in text | Shift + Enter |
+| Subscript, superscript in text | Ctrl/⌘ + =, Ctrl/⌘ + Shift + = |
 
 ## How the estimates work, and how accurate they are
 
@@ -154,7 +155,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 131 unit tests (Node test runner)
+npm test             # 140 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
@@ -201,6 +202,8 @@ A drawing is JSON. Coordinates are in points, with y pointing down.
   "texts":  [{ "id": 5, "x": 0, "y": 20, "text": "H2SO4", "size": 10, "font": "sans|serif|mono" }],
   "pluses": [], "style": "acs|slides", "page": { "w": 612, "h": 792, "across": 1, "down": 1 } }
 ```
+
+Text is stored as plain characters with a little markup: `_{…}` is a subscript and `^{…}` a superscript (`pK_{a}`, `Fe^{III}`, `S_{N}2`). Digits after a letter or a closing bracket are subscripts on their own (`H2SO4`), `^` followed by digits or charge signs is a superscript (`^13C`, `SO4^2-`), and a backslash keeps the next digit, `^`, `_` or `\` as typed (`E\2`). The text editor writes this for you.
 
 A project wraps a list of `pages` (each holding one drawing) and a list of `versions`. Every file is passed through `sanitizeDoc()` when it is loaded, because values end up in SVG markup.
 

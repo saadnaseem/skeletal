@@ -333,13 +333,17 @@ const FORMATS = (()=>{
     const colorOf=i=>{ if (i==null) return undefined; const c=table[+i-2]; return c && c!=='#000000' && c!=='#ffffff' ? c : undefined; };
     const setColor=(o,i)=>{ const c=colorOf(i); if (c) o.color=c; return o; };
     const pt=s=>{ const a=String(s||'0 0').trim().split(/\s+/).map(parseFloat); return V(a[0]||0,a[1]||0); };
-    const sText=t=>kids(t,'s').map(s=>{ const f=+(s.attrs.face||0), x=s.text||''; return (f&64)? '^'+x : x; }).join('') || (t.text||'').trim();
+    // style runs as formatted characters: face bit 32 subscript, 64 superscript, both (96) ChemDraw's Formula style,
+    // which subscripts the digits much as our own text does; digits in plain style stay normal (E2, C18)
+    const sChars=t=>kids(t,'s').flatMap(s=>{ const f=+(s.attrs.face||0)&96, m=f===32?'sub':f===64?'sup':'n'; return [...(s.text||'').replace(/\r/g,'\n')].map(c=>({c,m,keep:!f})); });
+    const sText=t=>charsToMarkup(sChars(t)) || (t.text||'').trim();
+    const sPlain=t=>sChars(t).map(x=>x.c).join('') || (t.text||'').trim();
     const nodeMap=new Map(), multi=new Map(); // CDX node id -> our atom id; nicknames with several attachment points
     function addFragment(fr){
       for (const n of kids(fr,'n')){
         const ty=n.attrs.NodeType||'Element', p=pt(n.attrs.p), lab=kids(n,'t')[0];
         if (ty==='ExternalConnectionPoint') continue;
-        const label = lab ? sText(lab).replace(/\^/g,'') : '';
+        const label = lab ? sPlain(lab) : '';
         let el;
         if (ty==='GenericNickname') el=n.attrs.GenericNickname||label||'R';
         else if (ty==='Nickname' || ty==='Fragment' || ty==='Unspecified' || ty==='Formula'){
@@ -433,12 +437,12 @@ const FORMATS = (()=>{
     }
     visit(root,false);
     // a short text at a bracket's top-right or bottom-right corner is its charge or repeat count (the nearest corner wins)
-    for (let i=texts.length-1;i>=0;i--){ const t=texts[i], fs=t.size||10; if (t.text.length>8 || t.text.includes('\n')) continue;
+    for (let i=texts.length-1;i>=0;i--){ const t=texts[i], fs=t.size||10; const lab=plainText(t.text); if (lab.length>8 || lab.includes('\n')) continue;
       let best=null, bd=Infinity;
       for (const q of brackets) for (const [key,yc] of [['sup',q.y-q.h/2],['sub',q.y+q.h/2]]){ const dx=t.x-(q.x+q.w/2);
         if (q[key]!=null || dx<=-fs*0.3 || dx>=fs*2.5 || Math.abs(t.y-yc)>fs*1.2) continue;
         const dd=Math.hypot(dx, t.y-yc); if (dd<bd){ bd=dd; best=[q,key]; } }
-      if (best){ best[0][best[1]]=t.text.replace(/\^/g,'').replace(/\u2212/g,'-'); texts.splice(i,1); } }
+      if (best){ best[0][best[1]]=lab.replace(/\u2212/g,'-'); texts.splice(i,1); } }
     kekulize(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
@@ -531,9 +535,16 @@ const FORMATS = (()=>{
     }
     const comps=components(d,ix).filter(c=>c.length);
     const rr=reactionRoles(d);
-    if (rr){ const f=cs=>cs.map(one).join(' \\+ '); const above=rr.above.map(t=>t.text).join(', ');
-      return `% requires \\usepackage{chemfig}\n\\schemestart\n${f(rr.reactants)}\n\\arrow{->[${above.replace(/[{}]/g,'')}]}\n${f(rr.products)}\n\\schemestop\n`; }
+    if (rr){ const f=cs=>cs.map(one).join(' \\+ '); const above=rr.above.map(t=>latexText(t.text)).join(', ');
+      return `% requires \\usepackage{chemfig}\n\\schemestart\n${f(rr.reactants)}\n\\arrow{->[${above}]}\n${f(rr.products)}\n\\schemestop\n`; }
     return '% requires \\usepackage{chemfig}\n'+comps.map(one).join('\n')+'\n';
+  }
+
+  // text for LaTeX: subscripts and superscripts the user set become \textsubscript/\textsuperscript; the digits of a formula stay plain
+  function latexText(str){
+    const seg=[]; for (const x of textCharsAll(str)){ const m=x.auto?'n':x.m, c=x.c==='\n'? ' ' : x.c.replace(/[{}\\^_&%$#~]/g,''), r=seg[seg.length-1];
+      if (r && r.m===m) r.t+=c; else seg.push({m,t:c}); }
+    return seg.map(r=>r.m==='sub'?`\\textsubscript{${r.t}}`:r.m==='sup'?`\\textsuperscript{${r.t}}`:r.t).join('');
   }
 
   /* ---------- molfile family ---------- */

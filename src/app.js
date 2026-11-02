@@ -645,33 +645,142 @@ function endTool(d,p){
 function cycleDb(b){ const order=['auto','center','left','right']; const i=order.indexOf(b.dbPos||'auto'); return order[(i+1)%order.length]; }
 
 /* ================= text editing ================= */
-const ted=$('#texted');
+// The editor shows the text formatted (H₂O, pKₐ, Fe^III) and holds it as formatted characters (see textChars).
+// Ctrl/⌘ = makes a subscript and Ctrl/⌘ Shift = a superscript, as in Word and ChemDraw; with nothing selected they switch the next characters typed.
+const ted=$('#texted'), tedBar=$('#tedBar');
+let tedPending=null, tedHist=[], tedFuture=[]; // tedPending: the mode for the next typed character after a toggle with nothing selected
+const MAC=/Mac|iPhone|iPad/.test(navigator.platform||'');
 function startTextEdit(t, fresh){
-  editingText={t,fresh};
+  editingText={t,fresh}; tedPending=null; tedHist=[]; tedFuture=[];
   const m=textMetrics(doc,t), fs=m.fs*view.z;
-  ted.hidden=false; ted.value=t.text; ted.style.fontSize=fs+'px';
+  ted.hidden=false; tedBar.hidden=false; ted.style.fontSize=fs+'px';
   ted.style.fontFamily=m.family; ted.style.fontWeight=m.fw; ted.style.fontStyle=m.italic?'italic':'normal'; ted.style.color=t.color||'#000'; ted.style.textAlign=t.align||'center';
+  const cs=normalizeChars(textCharsAll(t.text)); tedRender(cs);
   syncTextUI();
   positionTed();
-  setTimeout(()=>{ ted.focus(); ted.select(); },0);
+  setTimeout(()=>{ ted.focus(); tedSetSel(0, cs.length); tedSyncBar(); },0);
   render();
 }
-function positionTed(){
-  if (!editingText) return; const t=editingText.t; const m=textMetrics(doc,{...t,text:ted.value||' '});
-  const w=Math.max(60,(m.w+12)*view.z), hh=Math.max(m.fs*1.4*view.z, (m.h+4)*view.z);
-  ted.style.width=w+'px'; ted.style.height=hh+'px';
-  ted.style.left=(t.x*view.z+view.ox-w/2)+'px'; ted.style.top=(t.y*view.z+view.oy-hh/2)+'px';
+// formatted characters -> editor content; a digit kept normal after a letter is marked, as are automatic subscripts
+function tedRender(cs, sel){
+  let h='', i=0;
+  const kind=x=>x.c==='\n'? 'br' : x.m==='n'? (x.keep?'k':'n') : x.m+(x.auto?'a':'');
+  while (i<cs.length){ const k=kind(cs[i]); let j=i, t=''; while (j<cs.length && kind(cs[j])===k && k!=='br'){ t+=cs[j].c; j++; }
+    if (k==='br'){ h+='<br>'; i++; continue; }
+    t=esc(t); h+= k==='n'? t : k==='k'? `<span data-k>${t}</span>` : k==='suba'? `<sub data-a>${t}</sub>` : `<${k}>${t}</${k}>`; i=j; }
+  if (!cs.length || cs[cs.length-1].c==='\n') h+='<br data-end>'; // lets an empty last line show
+  ted.innerHTML=h;
+  if (sel!=null) tedSetSel(...(Array.isArray(sel)? sel : [sel,sel]));
 }
-ted.addEventListener('input', positionTed);
+// editor content (or pasted HTML) -> formatted characters
+function tedRead(root, html){
+  const out=[], nl=()=>{ if (out.length && out[out.length-1].c!=='\n') out.push({c:'\n',m:'n'}); };
+  (function walk(n, m, auto, keep){
+    for (const k of n.childNodes){
+      if (k.nodeType===3){ let v=k.nodeValue.replace(/\r\n?/g,'\n'); if (html) v=v.replace(/\s+/g,' ');
+        for (const c of v) out.push({c: c===' '?' ':c, m:c==='\n'?'n':m, auto, keep}); continue; }
+      if (k.nodeType!==1) continue;
+      const tag=k.tagName, va=(k.style&&k.style.verticalAlign)||'';
+      if (tag==='BR'){ if (!k.hasAttribute('data-end')) out.push({c:'\n',m:'n'}); continue; }
+      if (/^(SCRIPT|STYLE|HEAD|TITLE|META|LINK|TEMPLATE)$/.test(tag)) continue;
+      const block=/^(DIV|P|LI|TR|H[1-6]|PRE|BLOCKQUOTE)$/.test(tag);
+      if (block) nl();
+      if (tag==='SUB' || va==='sub') walk(k,'sub',k.hasAttribute('data-a'),false);
+      else if (tag==='SUP' || va==='super') walk(k,'sup',false,false);
+      else walk(k,m,auto,keep||k.hasAttribute('data-k'));
+      if (block) nl();
+    }
+  })(root,'n',false,false);
+  return out;
+}
+const tedChars=()=>normalizeChars(tedRead(ted));
+const tedMarkup=()=>charsToMarkup(tedChars());
+// selection as character offsets, counted the same way tedRead counts
+function tedOffset(node, off){ const r=document.createRange(); r.setStart(ted,0); r.setEnd(node,off); const d=document.createElement('div'); d.appendChild(r.cloneContents()); return tedRead(d).length; }
+function tedGetSel(){ const s=getSelection(); if (!s.rangeCount || !ted.contains(s.anchorNode)){ const n=tedChars().length; return [n,n]; }
+  const r=s.getRangeAt(0); return [tedOffset(r.startContainer,r.startOffset), tedOffset(r.endContainer,r.endOffset)]; }
+function tedPos(idx){
+  let n=0; const w=document.createTreeWalker(ted, NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT);
+  for (let k=w.nextNode(); k; k=w.nextNode()){
+    if (k.nodeType===3){ const len=k.nodeValue.length; if (idx<=n+len) return [k, idx-n]; n+=len; }
+    else if (k.tagName==='BR'){ const at=[k.parentNode, [...k.parentNode.childNodes].indexOf(k)]; if (idx<=n || k.hasAttribute('data-end')) return at; n++; }
+  }
+  return [ted, ted.childNodes.length];
+}
+function tedSetSel(a, b=a){ const s=getSelection(), r=document.createRange(); r.setStart(...tedPos(a)); r.setEnd(...tedPos(b)); s.removeAllRanges(); s.addRange(r); }
+function tedSnap(){ tedHist.push({cs:tedChars(), sel:tedGetSel()}); if (tedHist.length>200) tedHist.shift(); tedFuture=[]; }
+function tedApply(cs, sel){ tedRender(normalizeChars(cs), sel); positionTed(); tedSyncBar(); }
+// the mode at a collapsed caret: what was just switched on, else that of the character before (an automatic subscript carries on only for digits)
+function tedModeAt(cs, a){ if (tedPending) return tedPending; const p=cs[a-1]; return p && p.c!=='\n' && !p.auto ? p.m : 'n'; }
+function tedInsert(add){
+  tedSnap(); const cs=tedChars(), [a,b]=tedGetSel(), first=a<b && cs[a].c!=='\n' && !cs[a].auto ? cs[a] : null; cs.splice(a,b-a);
+  // typing over a selection takes its formatting, as in a word processor
+  const mode=!tedPending && first ? first.m : tedModeAt(cs,a), keep=!tedPending && first && first.keep, ins=add.map(x=>x.m? x : {c:x.c, m:x.c==='\n'?'n':mode, keep});
+  cs.splice(a,0,...ins); tedPending=null; tedApply(cs, a+ins.length);
+}
+function tedToggle(m){
+  const cs=tedChars(), [a,b]=tedGetSel();
+  if (a===b){ tedPending = tedModeAt(cs,a)===m ? 'n' : m; tedSyncBar(); return; }
+  tedSnap();
+  const part=cs.slice(a,b).filter(x=>x.c!=='\n'), off=part.length && part.every(x=>x.m===m);
+  for (let i=a;i<b;i++) if (cs[i].c!=='\n') cs[i] = off? {c:cs[i].c, m:'n', keep:true} : {c:cs[i].c, m};
+  tedApply(cs, [a,b]);
+}
+function tedSyncBar(){
+  if (!editingText) return; const cs=tedChars(), [a,b]=tedGetSel();
+  const mode = a===b ? tedModeAt(cs,a) : (()=>{ const p=cs.slice(a,b).filter(x=>x.c!=='\n'); return ['sub','sup'].find(m=>p.length && p.every(x=>x.m===m)) || 'n'; })();
+  tedBar.querySelectorAll('[data-m]').forEach(x=>x.setAttribute('aria-pressed', x.dataset.m===mode));
+}
+// pasted text keeps its subscripts and superscripts: from HTML (Word, web pages), as markup, or as Unicode digits (H₂O, cm⁻¹)
+const USUB='₀₁₂₃₄₅₆₇₈₉₊₋', USUP='⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻';
+function pastedChars(html, txt){
+  if (html){ const cs=tedRead(new DOMParser().parseFromString(html,'text/html').body, true);
+    while (cs.length && /\s/.test(cs[0].c)) cs.shift(); while (cs.length && /\s/.test(cs[cs.length-1].c)) cs.pop();
+    if (cs.length) return cs; }
+  return textCharsAll((txt||'').replace(/\r\n?/g,'\n')).map(x=>{ const i=USUB.indexOf(x.c), j=USUP.indexOf(x.c);
+    return x.m==='n' && i>=0 ? {c:'0123456789+−'[i], m:'sub'} : x.m==='n' && j>=0 ? {c:'0123456789+−'[j], m:'sup'} : x; });
+}
+function positionTed(){
+  if (!editingText) return; const t=editingText.t; const m=textMetrics(doc,{...t,text:tedMarkup()||' '});
+  const w=Math.max(60,(m.w+12)*view.z), hh=Math.max(m.fs*1.4*view.z, (m.h+4)*view.z);
+  const left=t.x*view.z+view.ox-w/2, top=t.y*view.z+view.oy-hh/2;
+  ted.style.width=w+'px'; ted.style.height=hh+'px'; ted.style.left=left+'px'; ted.style.top=top+'px';
+  tedBar.style.left=Math.max(4,left)+'px'; tedBar.style.top=(top>40? top-34 : top+hh+6)+'px';
+}
+ted.addEventListener('beforeinput', e=>{
+  const t=e.inputType;
+  if (t==='insertText' || t==='insertReplacementText'){ const s=e.data ?? (e.dataTransfer && e.dataTransfer.getData('text/plain')); if (s==null) return; e.preventDefault(); tedInsert([...s].map(c=>({c}))); }
+  else if (t==='insertParagraph' || t==='insertLineBreak'){ e.preventDefault(); tedInsert([{c:'\n',m:'n'}]); }
+  else if (t==='insertFromPaste' || t==='insertFromDrop' || t.startsWith('format') || t.startsWith('history')) e.preventDefault(); // paste is handled below; styling applies to the whole text from the Text panel
+  else if (!e.isComposing) tedSnap(); // deleting: the browser edits, then 'input' tidies up
+});
+ted.addEventListener('input', e=>{ if (!e.isComposing){ const sel=tedGetSel(); tedApply(tedChars(), sel); } });
+ted.addEventListener('compositionend', ()=>{ const sel=tedGetSel(); tedApply(tedChars(), sel); });
+ted.addEventListener('paste', e=>{ e.preventDefault(); e.stopPropagation(); const dt=e.clipboardData; if (dt) tedInsert(pastedChars(dt.getData('text/html'), dt.getData('text/plain'))); });
+ted.addEventListener('pointerdown', ()=>{ tedPending=null; });
+document.addEventListener('selectionchange', ()=>{ if (editingText) tedSyncBar(); });
 ted.addEventListener('keydown', e=>{
-  if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commitText(); }
-  if (e.key==='Escape'){ e.preventDefault(); if (editingText.fresh){ doc.texts=doc.texts.filter(x=>x!==editingText.t); undoStack.pop(); } editingText=null; ted.hidden=true; changed(); }
+  const mod=e.ctrlKey||e.metaKey, k=e.key.toLowerCase();
+  if (mod && (e.code==='Equal' || k==='=' || k==='+')){ e.preventDefault(); tedToggle(e.shiftKey || k==='+' ? 'sup' : 'sub'); }
+  else if (mod && (k==='z' || k==='y')){ e.preventDefault(); const redo=k==='y' || e.shiftKey, from=redo? tedFuture : tedHist, to=redo? tedHist : tedFuture;
+    const s=from.pop(); if (s){ to.push({cs:tedChars(), sel:tedGetSel()}); tedApply(s.cs, s.sel); } }
+  else if (mod && (k==='b' || k==='i' || k==='u')) e.preventDefault();
+  else if (e.key==='Enter' && e.shiftKey){ e.preventDefault(); tedInsert([{c:'\n',m:'n'}]); }
+  else if (e.key==='Enter'){ e.preventDefault(); commitText(); }
+  else if (e.key==='Escape'){ e.preventDefault(); if (editingText.fresh){ doc.texts=doc.texts.filter(x=>x!==editingText.t); undoStack.pop(); } editingText=null; ted.hidden=true; tedBar.hidden=true; changed(); }
+  else if (/^(Arrow|Home|End|Page)/.test(e.key)) tedPending=null;
   e.stopPropagation();
 });
 ted.addEventListener('blur', ()=>{ if (editingText) commitText(); });
+tedBar.querySelectorAll('[data-m]').forEach(b=>{
+  b.title=(b.dataset.m==='sub'?'Subscript':'Superscript')+` (${MAC?'⌘':'Ctrl+'}${b.dataset.m==='sup'?(MAC?'⇧':'Shift+'):''}=)`;
+  b.addEventListener('pointerdown', e=>e.preventDefault()); b.addEventListener('mousedown', e=>e.preventDefault()); // keep the caret in the text
+  b.onclick=()=>tedToggle(b.dataset.m); });
 function commitText(){
-  if (!editingText) return; const {t,fresh}=editingText; editingText=null; ted.hidden=true;
-  const v=ted.value.replace(/\s+$/,'');
+  if (!editingText) return; const {t,fresh}=editingText; editingText=null;
+  let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true;
+  const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
+  if (same(v, t.text||'')) v=t.text||''; // unchanged: keep the text exactly as it was written
   if (!fresh && v!==t.text) pushUndo();
   if (!v){ doc.texts=doc.texts.filter(x=>x!==t); if (fresh) undoStack.pop(); } else { t.text=v; if (fresh){ sel.clear(); } }
   changed();
@@ -681,7 +790,7 @@ function commitText(){
 let _nudge={depth:-1,t:0}; // consecutive arrow-key nudges share one undo step
 const HOTKEY_EL={c:'C',n:'N',o:'O',s:'S',p:'P',f:'F',l:'Cl',b:'Br',i:'I',h:'H'};
 window.addEventListener('keydown', e=>{
-  if (e.target.closest && e.target.closest('input,textarea,select,.dialog')) return;
+  if (e.target.closest && e.target.closest('input,textarea,select,.dialog,#texted')) return;
   const mod=e.ctrlKey||e.metaKey;
   if (e.key===' ' ){ spaceDown=true; cv.classList.add('pan'); e.preventDefault(); return; }
   if (mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
@@ -793,7 +902,7 @@ function pasteDoc(src, offset, at){
   changed();
 }
 document.addEventListener('paste', e=>{
-  if (e.target.closest && e.target.closest('input,textarea')) return;
+  if (e.target.closest && e.target.closest('input,textarea,#texted')) return;
   const txt=(e.clipboardData && e.clipboardData.getData('text/plain'))||'';
   e.preventDefault();
   if (txt.trim()){
@@ -2712,7 +2821,7 @@ function pkaAt(atomId, screen){
   const txt=label.join(', ');
   $('#icCopy').onclick=()=>copyText(`${A?A.cls:B.cls}: ${txt}`,'Copied');
   $('#icAdd').onclick=()=>{ if(!txt) return; const info=layoutLabel(doc,ix,a); const dir=freeDirs(info,1)[0]||V(0,-1); const p=add(a,mul(dir,L*1.1));
-    pushUndo(); doc.texts.push({id:nid(),x:p.x,y:p.y,text:txt.replace(/pKaH/,'pK_aH').replace(/pKa/,'pKa'),size:7,color:'#2459a8'}); closeInfo(); changed(); };
+    pushUndo(); doc.texts.push({id:nid(),x:p.x,y:p.y,text:txt.replace(/pKaH/g,'pK_{aH}').replace(/pKa/g,'pK_{a}'),size:7,color:'#2459a8'}); closeInfo(); changed(); };
 }
 function bdeAt(kind, id, screen){
   let r, site, where;

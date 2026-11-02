@@ -506,16 +506,69 @@ function arrowSamples(r){
 }
 
 /* text objects */
-function textRuns(str){
-  // ^ starts a superscript run of [0-9+−-·•]; digits after letters or ) become subscripts
-  const runs=[]; let i=0;
+// Text markup, one formatted character per entry ({c, m:'n'|'sub'|'sup', auto?, keep?}):
+//   _{…} subscript, ^{…} superscript (anything: pK_{a}, Fe^{III}, S_{N}2, ΔG^{‡}),
+//   ^ followed by digits or charge signs is a superscript too (^13C, SO4^2-),
+//   digits after a letter or a closing bracket are subscripts on their own (H2SO4, Pd(PPh3)4),
+//   a backslash keeps the next digit, ^, _ or \ as it is (E\2 for the E2 mechanism).
+const SUP_SHORT=/[0-9+\-−·•δ‡†]/, AUTO_AFTER=/[A-Za-z)\]]/;
+const chargeLike=s=>/^[0-9]*[+\-−]+[0-9]*$/.test(s);
+function textChars(str){
+  const out=[]; let i=0;
+  const push=(c,m,f)=>out.push({c,m,...f});
   while (i<str.length){
-    if (str[i]==='^'){ let j=i+1; while(j<str.length && /[0-9+\-−·•δ]/.test(str[j])) j++; if(j>i+1){ runs.push({t:str.slice(i+1,j).replace(/-/g,'\u2212'),m:'sup'}); i=j; continue; } }
-    const ch=str[i];
-    if (/[0-9]/.test(ch) && i>0 && /[A-Za-z)\]]/.test(str[i-1])){ let j=i; while(j<str.length && /[0-9]/.test(str[j])) j++; runs.push({t:str.slice(i,j),m:'sub'}); i=j; continue; }
-    let j=i+1; while(j<str.length && str[j]!=='^' && !(/[0-9]/.test(str[j]) && /[A-Za-z)\]]/.test(str[j-1]))) j++;
-    runs.push({t:str.slice(i,j),m:'n'}); i=j;
+    const ch=str[i], nx=str[i+1];
+    if (ch==='\\' && nx!=null && /[0-9^_\\]/.test(nx)){ push(nx,'n', /[0-9]/.test(nx) && autoAt(out)? {keep:true} : {}); i+=2; continue; }
+    if ((ch==='^' || ch==='_') && nx==='{'){
+      let j=i+2, body=''; while (j<str.length && str[j]!=='}'){ if (str[j]==='\\' && (str[j+1]==='}'||str[j+1]==='\\')) j++; body+=str[j]; j++; }
+      if (j<str.length){ const m=ch==='^'?'sup':'sub'; if (m==='sup' && chargeLike(body)) body=body.replace(/-/g,'\u2212');
+        for (const c of body) push(c,m); i=j+1; continue; }
+    }
+    if (ch==='^'){ let j=i+1; while (j<str.length && SUP_SHORT.test(str[j])) j++;
+      if (j>i+1){ for (const c of str.slice(i+1,j).replace(/-/g,'\u2212')) push(c,'sup'); i=j; continue; } }
+    if (/[0-9]/.test(ch) && autoAt(out)){ push(ch,'sub',{auto:true}); i++; continue; }
+    push(ch,'n'); i++;
   }
+  return out;
+}
+// would a digit typed after these characters become a subscript on its own?
+function autoAt(cs){ const p=cs[cs.length-1]; return !!p && ((p.m==='n' && !p.keep && AUTO_AFTER.test(p.c)) || (p.m==='sub' && p.auto)); }
+// re-derive the automatic subscripts after an edit: a digit after a letter is a subscript unless it is marked keep
+function normalizeChars(cs){
+  const out=[]; let set=false; // set: the last character is a subscript digit the user set (written plainly, so a normal digit after it must be kept)
+  for (const x of cs){
+    const m=x.c==='\n' || x.auto || !x.m ? 'n' : x.m; // an automatic subscript is normal text that the rule below subscripts again
+    if (/[0-9]/.test(x.c) && m!=='sup' && autoAt(out)){
+      if (m==='n' && (x.keep || set)) out.push({c:x.c,m,keep:true});
+      else { out.push({c:x.c,m:'sub',auto:true}); set=m==='sub'; continue; } // a subscript digit the rule gives anyway is written plainly (H2O)
+    }
+    else out.push({c:x.c,m});
+    set=false;
+  }
+  return out;
+}
+// formatted characters back to markup (the inverse of textChars, giving the same rendering)
+function charsToMarkup(cs){
+  cs=normalizeChars(cs); const out=[]; let i=0; // pieces; a lone backslash is escaped once we know what follows it
+  while (i<cs.length){
+    const x=cs[i];
+    if (x.m==='n'){ const nx=cs[i+1]&&cs[i+1].m==='n'?cs[i+1].c:'';
+      out.push(x.keep? '\\'+x.c : x.c==='\\'? {bs:true} : (x.c==='^' && (nx==='{' || SUP_SHORT.test(nx))) || (x.c==='_' && nx==='{')? '\\'+x.c : x.c);
+      i++; continue; }
+    if (x.auto){ out.push(x.c); i++; continue; }
+    let j=i, body=''; while (j<cs.length && cs[j].m===x.m && !cs[j].auto && cs[j].c!=='\n'){ body+=cs[j].c; j++; }
+    if (x.m==='sup' && chargeLike(body.replace(/\u2212/g,'-'))) body=body.replace(/\u2212/g,'-');
+    out.push((x.m==='sup'?'^{':'_{')+body.replace(/\\/g,'\\\\').replace(/}/g,'\\}')+'}');
+    i=j;
+  }
+  return out.map((p,k)=>p.bs? (/^[0-9^_\\]/.test(typeof out[k+1]==='string'? out[k+1] : out[k+1]? '\\' : '')? '\\\\' : '\\') : p).join('');
+}
+// a whole (multi-line) text as formatted characters; each line is read on its own, as it is drawn
+const textCharsAll=str=>String(str||'').split('\n').flatMap((ln,i)=>(i?[{c:'\n',m:'n'}]:[]).concat(textChars(ln)));
+const plainText=str=>textCharsAll(str).map(x=>x.c).join('');
+function textRuns(str){
+  const runs=[];
+  for (const x of textChars(str)){ const r=runs[runs.length-1]; if (r && r.m===x.m) r.t+=x.c; else runs.push({t:x.c,m:x.m}); }
   return runs;
 }
 function textFont(d,t){
