@@ -770,6 +770,14 @@ function fromOCL(mol, offset){
   }
   return {atoms,bonds};
 }
+// A cyclohexane chair as textbooks draw it: opposite bonds parallel, the left end (the foot) down and the right end (the head) up.
+// flip mirrors it left to right, which is the chair after a ring flip. Bonds are one bond length; the ring is centred on the origin.
+function chairFragment(flip){
+  const steps=[55,-12,18,235,168], f=flip?-1:1, pts=[V(0,0)];
+  for (const a of steps){ const p=pts[pts.length-1], r=a*Math.PI/180; pts.push(V(p.x+f*Math.cos(r)*L, p.y-Math.sin(r)*L)); }
+  const cx=pts.reduce((t,p)=>t+p.x,0)/6, cy=pts.reduce((t,p)=>t+p.y,0)/6;
+  return { atoms: pts.map(p=>({id:0, x:p.x-cx, y:p.y-cy, el:'C', charge:0, lp:0, rad:0})), bonds: pts.map((_,i)=>({a:i, b:(i+1)%6, order:1, stereo:'none'})) };
+}
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)
   const n=mol.getAllBonds(); if(!n) return;

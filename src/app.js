@@ -1966,10 +1966,14 @@ $('#colorAtoms').addEventListener('change', e=>{ pushUndo(); doc.colorAtoms=e.ta
 const TEMPLATES=[
   ['Benzene','c1ccccc1'],['Pyridine','c1ccncc1'],['Indole','c1ccc2[nH]ccc2c1'],['Imidazole','c1cnc[nH]1'],
   ['Purine','c1ncc2nc[nH]c2n1'],['Pyrimidine','c1cncnc1'],['Naphthalene','c1ccc2ccccc2c1'],['Cyclohexanone','O=C1CCCCC1'],
+  ['Chair cyclohexane',()=>chairFragment(false)],['Chair, ring-flipped',()=>chairFragment(true)],
   ['L-Amino acid','N[C@@H](C)C(=O)O'],['Dipeptide (Ala-Gly)','C[C@H](N)C(=O)NCC(=O)O'],['β-D-Glucose','OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O'],['Adenine','Nc1ncnc2[nH]cnc12'],
   ['Citric acid','OC(=O)CC(O)(CC(=O)O)C(=O)O'],['EDTA','OC(=O)CN(CC(=O)O)CCN(CC(=O)O)CC(=O)O'],['Steroid core','C1CCC2C(C1)CCC1C2CCC2CCCC12'],['Acetyl-CoA fragment','CC(=O)SCCNC(=O)CCNC(=O)C'],
 ];
-function renderTemplates(){ $('#tpl').innerHTML=TEMPLATES.map(([n,s])=>`<button data-s="${esc(s)}">${esc(n)}</button>`).join(''); $('#tpl').onclick=e=>{ const b=e.target.closest('[data-s]'); if(b){ tryLoadText(b.dataset.s); closePanelMobile(); } }; }
+// a template is a SMILES string, or a function giving a fragment drawn with fixed coordinates (chairs)
+function renderTemplates(){ $('#tpl').innerHTML=TEMPLATES.map(([n],i)=>`<button data-i="${i}">${esc(n)}</button>`).join('');
+  $('#tpl').onclick=e=>{ const b=e.target.closest('[data-i]'); if(!b) return; const s=TEMPLATES[+b.dataset.i][1];
+    if (typeof s==='function') insertFragments([{kind:'frag',f:s()}]); else tryLoadText(s); closePanelMobile(); }; }
 
 /* ================= wiring ================= */
 // side panel sections fold up; which ones are folded is remembered per browser

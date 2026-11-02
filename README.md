@@ -29,7 +29,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - The Text tool on an atom edits its label in place: type OMe, Ph, a name such as phenyl or methoxy, or a label with a superscript such as R¹ (Ctrl/⌘ + Shift + =, or select the atom and press x² in the Text panel). Double-clicking an atom does the same. On a bond, a click near either end labels that atom; a click near the middle adds a caption to the bond (hν, a, Δ) that moves, turns and is copied with it, and is deleted with it.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
-- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 16 built-in templates. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
+- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 18 built-in templates, including both chairs of cyclohexane. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
 - **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
 - **Enhanced stereochemistry:** right-click a stereocenter to label it abs, &1 (racemic) or or1 (relative), as in ChemDraw. The labels are saved in V3000 molfiles and ChemDraw files.
 - **TLC plates:** draw lanes, spots and streaks with Rf values and the eluent. They're drawn in the page style and can be edited by double-clicking.
@@ -156,7 +156,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 146 unit tests (Node test runner)
+npm test             # 150 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
