@@ -117,16 +117,21 @@ async function renderRecent(){
 }
 
 /* ================= model edits ================= */
-// a label typed for an atom: CH3, CH2, CH, NH2, OH give the element with its hydrogens shown; a count the bonds don't allow is kept as typed (see typedH).
+// a label typed for an atom: CH3, CH2, CH, NH2, OH (or as read leftward: H3C, H2N, HO) give the element with its hydrogens shown; a count
+// the bonds don't allow is kept as typed (see typedH). A charge written in it (NH3+, CH2+, O-, Fe2+) becomes the atom's charge.
 // a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
-  const t=(text||'').trim(), m=/^([A-Z][a-z]?)H(\d?)$/.exec(t);
-  if (m && VAL[m[1]] && !ABBR[t]){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:m[1]}, bs), n=m[2]===''? 1 : +m[2];
-    return {el:m[1], hs: m[1]==='C' || undefined, hl: n!==can && bs>0 ? t : undefined}; } // an atom with no bonds yet (a methyl placed first) follows its bonds
+  const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
+  if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
+    const charge=p.charge!=null ? p.charge : p.h!=null ? 0 : atom.charge||0, out={el:p.el}; if (p.charge!=null || p.h!=null) out.charge=charge;
+    if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
+      if (p.el==='C') out.hs=true;
+      if (p.h!==can && bs>0) out.hl=p.el+'H'+(p.h===1?'':p.h); } // an atom with no bonds yet (a methyl placed first) follows its bonds
+    return out; }
   return {el: normalizeLabel(t) || 'C'};
 }
-function setLabel(a, {el, hs, hl}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; }
-const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'');
+function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -687,8 +692,9 @@ function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; con
   if (!e.shiftKey && (k===',' || k==='.')) return k==='.' ? 'sup' : 'sub';
   return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
-function startLabelEdit(a){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
-  const text=a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el; // a carbon shown as CH3 opens as CH3
+function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
+  const q=withCharge && a.charge && kindOf(a.el)==='element' ? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : ''; // with its charge, so retyping keeps it (CH2+)
+  const text=(a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el)+q; // a carbon shown as CH3 opens as CH3
   startTextEdit({x:a.x, y:a.y, text, size:st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
 // where a new caption on a bond goes: beside its middle, on the side with more room (farther from the nearest other atom or bond)
 function bondCaptionAt(b){
@@ -984,7 +990,7 @@ function molToFragment(mol){
   return {atoms,bonds};
 }
 function layoutSmiles(smi){
-  const mol=OCL.Molecule.fromSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
+  const mol=smilesMol(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -1042,7 +1048,7 @@ function tryLoadText(txt, quiet){
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
-    const mol=OCL.Molecule.fromSmiles(line); if (!mol.getAllAtoms()) throw 0;
+    const mol=smilesMol(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
     insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
   }catch(err){ if(!quiet) console.warn(err); return false; }
@@ -1603,7 +1609,8 @@ function analyzeNow(){
   if (!r){ props.innerHTML='<dd style="grid-column:1/-1">Could not interpret this structure.</dd>'; return; }
   const row=(k,v,copy,cls='')=>`<dt>${k}</dt><dd class="${cls}">${v}</dd>${copy!=null?`<button class="mini" data-copy="${esc(copy)}">Copy</button>`:'<span></span>'}`;
   let html='';
-  if (r.generic) html+=`<dd style="grid-column:1/-1;color:var(--ink-2);font-size:12.5px;margin-bottom:6px">Generic groups (R, X, custom labels) are left out of these values.</dd>`;
+  if (r.generic){ const left=[...new Set(ids.map(id=>ix.atom.get(id)).filter(a=>a && kindOf(a.el)==='generic').map(a=>plainText(a.el)))];
+    html+=`<dd style="grid-column:1/-1;color:var(--ink-2);font-size:12.5px;margin-bottom:6px">Generic groups are left out of these values: ${esc(left.slice(0,6).join(', '))}${left.length>6?', …':''}. A label the app doesn\u2019t recognise as an element or group counts as generic, like R.</dd>`; }
   html+=row('SMILES', esc(r.smiles), r.smiles,'code');
   html+=row('Formula', fmtFormula(r.formula), r.formula);
   html+=row('MW', r.mw.toFixed(2)+' g/mol', r.mw.toFixed(2));
@@ -2048,8 +2055,8 @@ function openElementDialog(){
   openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(tool.lab || (['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el))}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
   dialog.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ $('#elIn').value=b.dataset.e; go(); });
   const go=()=>{ const raw=$('#elIn').value.trim(), v=normalizeLabel(raw); if(!v) return; closeDialog();
-    const hl=/^([A-Z][a-z]?)H\d?$/.exec(raw), lab = hl && VAL[hl[1]] && !ABBR[raw] ? raw : undefined; // as typedLabel takes it
-    setTool('atom',{el: lab? hl[1] : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
+    const p=!ABBR[raw] && parseLabel(raw), lab = p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+
+    setTool('atom',{el: lab? p.el : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
 }
 /* ================= style & colors ================= */
@@ -2430,7 +2437,7 @@ function scriptSelection(m){
   if (editingText){ tedToggle(m); return; }
   const ts=textTargets(), as=labelAtoms(), atoms=selAtoms();
   if (!ts.length && !as.length){
-    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a);
+    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a, false); // without its charge: x² then types R¹, not N+¹
       setTimeout(()=>{ if (!editingText || editingText.atom!==a) return; tedSetSel(tedChars().length); tedPending=m; tedSyncBar(); },0);
       toast(`Type the ${m==='sup'?'superscript':'subscript'}, then press Enter`+(kindOf(a.el)==='element'? ` (the atom becomes a label such as ${a.el}${m==='sup'?'¹':'₁'})` : '')); return; }
     toast(atoms.length? 'Click one atom of the selected structure again to select just that atom, then press '+(m==='sup'?'x²':'x₂')

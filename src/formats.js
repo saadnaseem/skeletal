@@ -48,7 +48,7 @@ const FORMATS = (()=>{
     const m=OCL.Molecule.fromSmiles(ABBR[el].s); m.inventCoordinates(); scaleLayout(m);
     const pts=[]; for (let i=0;i<m.getAllAtoms();i++) pts.push(V(m.getAtomX(i)*L,m.getAtomY(i)*L));
     const bonds=[]; for (let b=0;b<m.getAllBonds();b++) bonds.push({a:m.getBondAtom(0,b), b:m.getBondAtom(1,b), order:Math.min(3,m.getBondOrder(b)||1)});
-    const atoms=pts.map((p,i)=>({p, el:m.getAtomLabel(i), charge:m.getAtomCharge(i)||0}));
+    const atoms=pts.map((p,i)=>({p, el:m.getAtomLabel(i), charge:m.getAtomCharge(i)||0, iso:m.getAtomMass(i)||undefined})); // CD3: its D keep their mass
     return {atoms,bonds};
   }
   // place a nickname's atoms with atom 0 at `at`, pointing away from `from`
@@ -66,7 +66,7 @@ const FORMATS = (()=>{
     for (const a of d.atoms){ if (kindOf(a.el)!=='abbr'){ const n={...a,id:nid++}; out.atoms.push(n); map.set(a.id,n.id); } }
     for (const a of d.atoms){ if (kindOf(a.el)!=='abbr') continue;
       const nb=(ix.adj.get(a.id)||[])[0], from=nb? ix.atom.get(nb.o) : null;
-      const f=placeAbbr(a.el, a, from), ids=f.atoms.map(q=>{ const n={id:nid++,x:q.p.x,y:q.p.y,el:q.el,charge:q.charge,lp:0,rad:0}; out.atoms.push(n); return n.id; });
+      const f=placeAbbr(a.el, a, from), ids=f.atoms.map(q=>{ const n={id:nid++,x:q.p.x,y:q.p.y,el:q.el,charge:q.charge,lp:0,rad:0}; if (q.iso) n.iso=q.iso; out.atoms.push(n); return n.id; });
       f.bonds.forEach(b=>out.bonds.push({id:nid++,a:ids[b.a],b:ids[b.b],order:b.order,stereo:'none'}));
       map.set(a.id, ids[0]); }
     for (const b of d.bonds) if (map.has(b.a)&&map.has(b.b)&&!b.kind) out.bonds.push({...b,id:nid++,a:map.get(b.a),b:map.get(b.b)});
@@ -115,7 +115,7 @@ const FORMATS = (()=>{
         } else if (k==='abbr'){
           n.attrs.NodeType='Nickname';
           const nb=(ix.adj.get(aid)||[])[0], from=nb? ix.atom.get(nb.o):null, f=placeAbbr(a.el,a,from);
-          const inner=E('fragment',{id:id()}), iid=f.atoms.map(q=>{ const m=E('n',{id:id(), p:`${num(q.p.x)} ${num(q.p.y)}`}); if (q.el!=='C') m.attrs.Element=String(ZOF(q.el)); if (q.charge) m.attrs.Charge=String(q.charge); inner.children.push(m); return m.attrs.id; });
+          const inner=E('fragment',{id:id()}), iid=f.atoms.map(q=>{ const m=E('n',{id:id(), p:`${num(q.p.x)} ${num(q.p.y)}`}); if (q.el!=='C') m.attrs.Element=String(ZOF(q.el)); if (q.charge) m.attrs.Charge=String(q.charge); if (q.iso) m.attrs.Isotope=String(q.iso); inner.children.push(m); return m.attrs.id; });
           if (from){ const ecp=E('n',{id:id(), p:`${num(from.x)} ${num(from.y)}`, NodeType:'ExternalConnectionPoint', ExternalConnectionNum:'1'}); inner.children.push(ecp); inner.children.push(E('b',{id:id(), B:ecp.attrs.id, E:iid[0]})); }
           f.bonds.forEach(b=>inner.children.push(E('b',{id:id(), B:iid[b.a], E:iid[b.b], Order:b.order>1?String(b.order):undefined})));
           n.children.push(inner); label(a.el);

@@ -560,6 +560,7 @@ const ABBR = {
   CHO:{s:'C=O',l:'OHC'}, CN:{s:'C#N',l:'NC'}, NO2:{s:'[N+](=O)[O-]',l:'O2N'}, CF3:{s:'C(F)(F)F',l:'F3C'}, CCl3:{s:'C(Cl)(Cl)Cl',l:'Cl3C'},
   SO3H:{s:'S(=O)(=O)O',l:'HO3S'}, SO2Me:{s:'S(=O)(=O)C',l:'MeO2S'}, PO3H2:{s:'P(=O)(O)O',l:'H2O3P'}, OPO3H2:{s:'OP(=O)(O)O',l:'H2O3PO'},
   CONH2:{s:'C(N)=O',l:'H2NOC'}, SMe:{s:'SC',l:'MeS'}, N3:{s:'N=[N+]=[N-]'},
+  CD3:{s:'C([2H])([2H])[2H]',l:'D3C'}, OD:{s:'O[2H]',l:'DO'}, ND2:{s:'N([2H])[2H]',l:'D2N'}, // deuterated: the D count in formula and mass
 };
 const GENERIC = new Set(['R','R1','R2','R3','R4','R5','R6',"R'","R''",'X','Ar','Nu','E','LG','PG','Z','M','L','Ln']);
 const CPK = {N:'#2f4fd6',O:'#d1231f',S:'#b38a00',P:'#d06a00',F:'#1f8f3a',Cl:'#1f8f3a',Br:'#8b2a14',I:'#6a1fa0',B:'#c26a6a',Si:'#8a7a5c',Se:'#b36b00'};
@@ -581,15 +582,44 @@ const LABEL_NAMES={methyl:'Me', ethyl:'Et', propyl:'Pr', isopropyl:'iPr', butyl:
   carboxy:'CO2H', carboxyl:'CO2H', formyl:'CHO', trifluoromethyl:'CF3', hydroxy:'O', hydroxyl:'O', amino:'N', thiol:'S', mercapto:'S', methylthio:'SMe',
   fluoro:'F', chloro:'Cl', bromo:'Br', iodo:'I'};
 Object.setPrototypeOf(LABEL_NAMES, null);
+// a nickname written the way it reads leftward (MeO, F3C, Me2N) -> the nickname
+const ABBR_LEFT=Object.fromEntries(Object.entries(ABBR).filter(([,v])=>v.l).map(([k,v])=>[v.l,k])); Object.setPrototypeOf(ABBR_LEFT, null);
 function normalizeLabel(t){
   t = (t||'').trim();
   if (!t) return null;
   if (LABEL_NAMES[t.toLowerCase()]) return LABEL_NAMES[t.toLowerCase()];
+  if (ABBR[t]) return t;
+  if (ABBR_LEFT[t]) return ABBR_LEFT[t];
   const m = t.match(/^([A-Z][a-z]?)H\d*$/);
-  if (m && ELSET.has(m[1]) && !ABBR[t]) return m[1];
+  if (m && ELSET.has(m[1])) return m[1]; // NaH, NH2: the element; its H come from the bonds
+  const p=parseLabel(t); if (p) return p.el; // NH2, H2N, HO, NH3+, Fe2+ -> the element (the H and charge are set by typedLabel)
+  // a symbol typed in one case (cl, BR, CU, ZN); but CO, NO, SO, CS, PO are groups, not cobalt, nobelium...
   const cap = t.length<=2 ? t[0].toUpperCase()+t.slice(1).toLowerCase() : t;
-  if (ELSET.has(cap)) return cap;
+  if (ELSET.has(cap) && !CAPS_GROUPS.has(t)) return cap;
   return t;
+}
+const CAPS_GROUPS=new Set(['CO','NO','SO','CS','PO']);
+// A label typed for an atom read as an element with its hydrogens and charge: NH2, H2N (as read leftward), OH, HO, CH3, CH3+, NH3+,
+// O-, OH-, Fe2+, H+. h is null when no H was written; charge is undefined when no charge was written. Anything else: null.
+function parseLabel(raw){
+  const t=plainText(String(raw||'')).trim().replace(/\u2212/g,'-'); if (!t) return null;
+  const body=x=>{ let m=/^([A-Z][a-z]?)(?:H(\d*))?$/.exec(x), el, h=null;
+    if (m){ el=m[1]; if (m[2]!==undefined) h= m[2]===''? 1 : +m[2]; }
+    else if ((m=/^H(\d*)([A-Z][a-z]?)$/.exec(x))){ el=m[2]; h= m[1]===''? 1 : +m[1]; }
+    else return null;
+    if (!ELSET.has(el) || (h!=null && (!VAL[el] || el==='H' || h>4))) return null;
+    return {el, h}; };
+  // a charge of more than one is only read for an ion that can be one atom (Fe2+, Fe+3, O2-, S2-): N2+ (diazonium), N3- (azide) and I3- are
+  // groups of atoms, left as labels rather than read as N with a 2+ charge
+  const ion=(b,n)=>b && b.h==null && n>=2 && n<=8 && (!VAL[b.el] || (n===2 && ['O','S','Se'].includes(b.el)));
+  const f=/^([A-Z][a-z]?)([+-])(\d)$/.exec(t); if (f){ const b=body(f[1]); return ion(b,+f[3]) ? {...b, charge:(f[2]==='+'?1:-1)*+f[3]} : null; }
+  const c=/^(.*?)(\d*)([+-])$/.exec(t);
+  if (!c) return body(t);
+  const sg=c[3]==='+'? 1 : -1;
+  const a=c[1]+c[2] ? body(c[1]+c[2]) : null; // the digits belong to the H (NH3+): a single charge
+  if (a && (c[2]==='' || a.h!=null)) return {...a, charge:sg};
+  const b=c[2] && c[1] ? body(c[1]) : null; // or they are the charge (Fe2+, O2-)
+  return ion(b,+c[2]) ? {...b, charge:sg*+c[2]} : null;
 }
 
 /* ================= geometry ================= */
@@ -1269,7 +1299,7 @@ function toOCL(d, ix, atomIds, opts={}){
       if (k!=='element') generic = generic || k==='generic';
     } else if (k==='abbr'){
       const f=abbrMol(a.el); const base=mol.getAllAtoms();
-      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,a.y/L+0.2*(j%2)); }
+      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); if (f.getAtomMass(j)) mol.setAtomMass(i,f.getAtomMass(j)); /* CD3: its D */ mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,a.y/L+0.2*(j%2)); }
       for (let j=0;j<f.getAllBonds();j++){ const bb=mol.addBond(base+f.getBondAtom(0,j), base+f.getBondAtom(1,j)); mol.setBondType(bb, f.isDelocalizedBond(j)? M.cBondTypeDelocalized : f.getBondOrder(j)===2? M.cBondTypeDouble : f.getBondOrder(j)===3? M.cBondTypeTriple : M.cBondTypeSingle); }
       map.set(id,base);
     } else { generic=true; }
@@ -1297,7 +1327,7 @@ function fromOCL(mol, offset){
   for (let i=0;i<n;i++){
     const el=mol.getAtomLabel(i);
     const a={id:0,x:mol.getAtomX(i)*L,y:mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
-    const ms=mol.getAtomMass(i); if (ms) a.iso=ms;
+    const ms=mol.getAtomMass(i); if (ms && !(el==='H' && ms===1)) a.iso=ms; // [1H] marks a drawn H (smilesMol), not protium
     atoms.push(a); ids.push(a);
   }
   // keep AND/OR stereo groups from V3000 molfiles (ABS is the default and stays unlabelled)
@@ -1355,6 +1385,8 @@ function findChairs(d, ix){
   }
   ix.chairs=out; return out;
 }
+// SMILES with its explicit hydrogens kept as atoms ([H]C([H])([H])O draws its H): OpenChemLib drops plain [H], so they go in as [1H]
+function smilesMol(smi){ return OCL.Molecule.fromSmiles(String(smi).replace(/\[H\]/g,'[1H]')); }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)
   const n=mol.getAllBonds(); if(!n) return;
@@ -2321,7 +2353,7 @@ const FORMATS = (()=>{
     const m=OCL.Molecule.fromSmiles(ABBR[el].s); m.inventCoordinates(); scaleLayout(m);
     const pts=[]; for (let i=0;i<m.getAllAtoms();i++) pts.push(V(m.getAtomX(i)*L,m.getAtomY(i)*L));
     const bonds=[]; for (let b=0;b<m.getAllBonds();b++) bonds.push({a:m.getBondAtom(0,b), b:m.getBondAtom(1,b), order:Math.min(3,m.getBondOrder(b)||1)});
-    const atoms=pts.map((p,i)=>({p, el:m.getAtomLabel(i), charge:m.getAtomCharge(i)||0}));
+    const atoms=pts.map((p,i)=>({p, el:m.getAtomLabel(i), charge:m.getAtomCharge(i)||0, iso:m.getAtomMass(i)||undefined})); // CD3: its D keep their mass
     return {atoms,bonds};
   }
   // place a nickname's atoms with atom 0 at `at`, pointing away from `from`
@@ -2339,7 +2371,7 @@ const FORMATS = (()=>{
     for (const a of d.atoms){ if (kindOf(a.el)!=='abbr'){ const n={...a,id:nid++}; out.atoms.push(n); map.set(a.id,n.id); } }
     for (const a of d.atoms){ if (kindOf(a.el)!=='abbr') continue;
       const nb=(ix.adj.get(a.id)||[])[0], from=nb? ix.atom.get(nb.o) : null;
-      const f=placeAbbr(a.el, a, from), ids=f.atoms.map(q=>{ const n={id:nid++,x:q.p.x,y:q.p.y,el:q.el,charge:q.charge,lp:0,rad:0}; out.atoms.push(n); return n.id; });
+      const f=placeAbbr(a.el, a, from), ids=f.atoms.map(q=>{ const n={id:nid++,x:q.p.x,y:q.p.y,el:q.el,charge:q.charge,lp:0,rad:0}; if (q.iso) n.iso=q.iso; out.atoms.push(n); return n.id; });
       f.bonds.forEach(b=>out.bonds.push({id:nid++,a:ids[b.a],b:ids[b.b],order:b.order,stereo:'none'}));
       map.set(a.id, ids[0]); }
     for (const b of d.bonds) if (map.has(b.a)&&map.has(b.b)&&!b.kind) out.bonds.push({...b,id:nid++,a:map.get(b.a),b:map.get(b.b)});
@@ -2388,7 +2420,7 @@ const FORMATS = (()=>{
         } else if (k==='abbr'){
           n.attrs.NodeType='Nickname';
           const nb=(ix.adj.get(aid)||[])[0], from=nb? ix.atom.get(nb.o):null, f=placeAbbr(a.el,a,from);
-          const inner=E('fragment',{id:id()}), iid=f.atoms.map(q=>{ const m=E('n',{id:id(), p:`${num(q.p.x)} ${num(q.p.y)}`}); if (q.el!=='C') m.attrs.Element=String(ZOF(q.el)); if (q.charge) m.attrs.Charge=String(q.charge); inner.children.push(m); return m.attrs.id; });
+          const inner=E('fragment',{id:id()}), iid=f.atoms.map(q=>{ const m=E('n',{id:id(), p:`${num(q.p.x)} ${num(q.p.y)}`}); if (q.el!=='C') m.attrs.Element=String(ZOF(q.el)); if (q.charge) m.attrs.Charge=String(q.charge); if (q.iso) m.attrs.Isotope=String(q.iso); inner.children.push(m); return m.attrs.id; });
           if (from){ const ecp=E('n',{id:id(), p:`${num(from.x)} ${num(from.y)}`, NodeType:'ExternalConnectionPoint', ExternalConnectionNum:'1'}); inner.children.push(ecp); inner.children.push(E('b',{id:id(), B:ecp.attrs.id, E:iid[0]})); }
           f.bonds.forEach(b=>inner.children.push(E('b',{id:id(), B:iid[b.a], E:iid[b.b], Order:b.order>1?String(b.order):undefined})));
           n.children.push(inner); label(a.el);
@@ -3463,16 +3495,21 @@ async function renderRecent(){
 }
 
 /* ================= model edits ================= */
-// a label typed for an atom: CH3, CH2, CH, NH2, OH give the element with its hydrogens shown; a count the bonds don't allow is kept as typed (see typedH).
+// a label typed for an atom: CH3, CH2, CH, NH2, OH (or as read leftward: H3C, H2N, HO) give the element with its hydrogens shown; a count
+// the bonds don't allow is kept as typed (see typedH). A charge written in it (NH3+, CH2+, O-, Fe2+) becomes the atom's charge.
 // a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
-  const t=(text||'').trim(), m=/^([A-Z][a-z]?)H(\d?)$/.exec(t);
-  if (m && VAL[m[1]] && !ABBR[t]){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:m[1]}, bs), n=m[2]===''? 1 : +m[2];
-    return {el:m[1], hs: m[1]==='C' || undefined, hl: n!==can && bs>0 ? t : undefined}; } // an atom with no bonds yet (a methyl placed first) follows its bonds
+  const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
+  if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
+    const charge=p.charge!=null ? p.charge : p.h!=null ? 0 : atom.charge||0, out={el:p.el}; if (p.charge!=null || p.h!=null) out.charge=charge;
+    if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
+      if (p.el==='C') out.hs=true;
+      if (p.h!==can && bs>0) out.hl=p.el+'H'+(p.h===1?'':p.h); } // an atom with no bonds yet (a methyl placed first) follows its bonds
+    return out; }
   return {el: normalizeLabel(t) || 'C'};
 }
-function setLabel(a, {el, hs, hl}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; }
-const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'');
+function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -4033,8 +4070,9 @@ function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; con
   if (!e.shiftKey && (k===',' || k==='.')) return k==='.' ? 'sup' : 'sub';
   return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
-function startLabelEdit(a){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
-  const text=a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el; // a carbon shown as CH3 opens as CH3
+function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
+  const q=withCharge && a.charge && kindOf(a.el)==='element' ? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : ''; // with its charge, so retyping keeps it (CH2+)
+  const text=(a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el)+q; // a carbon shown as CH3 opens as CH3
   startTextEdit({x:a.x, y:a.y, text, size:st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
 // where a new caption on a bond goes: beside its middle, on the side with more room (farther from the nearest other atom or bond)
 function bondCaptionAt(b){
@@ -4330,7 +4368,7 @@ function molToFragment(mol){
   return {atoms,bonds};
 }
 function layoutSmiles(smi){
-  const mol=OCL.Molecule.fromSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
+  const mol=smilesMol(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -4388,7 +4426,7 @@ function tryLoadText(txt, quiet){
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
-    const mol=OCL.Molecule.fromSmiles(line); if (!mol.getAllAtoms()) throw 0;
+    const mol=smilesMol(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
     insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
   }catch(err){ if(!quiet) console.warn(err); return false; }
@@ -4949,7 +4987,8 @@ function analyzeNow(){
   if (!r){ props.innerHTML='<dd style="grid-column:1/-1">Could not interpret this structure.</dd>'; return; }
   const row=(k,v,copy,cls='')=>`<dt>${k}</dt><dd class="${cls}">${v}</dd>${copy!=null?`<button class="mini" data-copy="${esc(copy)}">Copy</button>`:'<span></span>'}`;
   let html='';
-  if (r.generic) html+=`<dd style="grid-column:1/-1;color:var(--ink-2);font-size:12.5px;margin-bottom:6px">Generic groups (R, X, custom labels) are left out of these values.</dd>`;
+  if (r.generic){ const left=[...new Set(ids.map(id=>ix.atom.get(id)).filter(a=>a && kindOf(a.el)==='generic').map(a=>plainText(a.el)))];
+    html+=`<dd style="grid-column:1/-1;color:var(--ink-2);font-size:12.5px;margin-bottom:6px">Generic groups are left out of these values: ${esc(left.slice(0,6).join(', '))}${left.length>6?', …':''}. A label the app doesn\u2019t recognise as an element or group counts as generic, like R.</dd>`; }
   html+=row('SMILES', esc(r.smiles), r.smiles,'code');
   html+=row('Formula', fmtFormula(r.formula), r.formula);
   html+=row('MW', r.mw.toFixed(2)+' g/mol', r.mw.toFixed(2));
@@ -5394,8 +5433,8 @@ function openElementDialog(){
   openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(tool.lab || (['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el))}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
   dialog.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ $('#elIn').value=b.dataset.e; go(); });
   const go=()=>{ const raw=$('#elIn').value.trim(), v=normalizeLabel(raw); if(!v) return; closeDialog();
-    const hl=/^([A-Z][a-z]?)H\d?$/.exec(raw), lab = hl && VAL[hl[1]] && !ABBR[raw] ? raw : undefined; // as typedLabel takes it
-    setTool('atom',{el: lab? hl[1] : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
+    const p=!ABBR[raw] && parseLabel(raw), lab = p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+
+    setTool('atom',{el: lab? p.el : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
 }
 /* ================= style & colors ================= */
@@ -5776,7 +5815,7 @@ function scriptSelection(m){
   if (editingText){ tedToggle(m); return; }
   const ts=textTargets(), as=labelAtoms(), atoms=selAtoms();
   if (!ts.length && !as.length){
-    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a);
+    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a, false); // without its charge: x² then types R¹, not N+¹
       setTimeout(()=>{ if (!editingText || editingText.atom!==a) return; tedSetSel(tedChars().length); tedPending=m; tedSyncBar(); },0);
       toast(`Type the ${m==='sup'?'superscript':'subscript'}, then press Enter`+(kindOf(a.el)==='element'? ` (the atom becomes a label such as ${a.el}${m==='sup'?'¹':'₁'})` : '')); return; }
     toast(atoms.length? 'Click one atom of the selected structure again to select just that atom, then press '+(m==='sup'?'x²':'x₂')
