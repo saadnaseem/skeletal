@@ -5733,8 +5733,8 @@ function syncTextUI(){
   const sizeOf = la.length===1 ? `the label ${shown(la[0])}` : `${la.length} labels (${la.slice(0,4).map(shown).join(', ')}${la.length>4?', …':''})`;
   $('#textScope').textContent = ts.length ? (ts.length===1?'Applies to the selected text':`Applies to ${ts.length} selected text objects`)+(la.length? `; size and color also to ${sizeOf}` : '')
     : editingText && editingText.atom ? `Size and color apply to ${sizeOf}`
-    : as.length ? `Size and color apply to ${sizeOf}; x₂ x² to the numbers of ${as.map(a=>plainText(a.el)).slice(0,3).join(', ')}`
-    : one && la.length ? `Size and color apply to ${sizeOf}; x₂ x² edit it`
+    : as.length ? (as.length===1 && la.length===1 ? `x₂ x², size and color apply to ${sizeOf}` : `x₂ x² apply to ${as.length===1? 'the label '+plainText(as[0].el) : as.length+' selected labels'}; size and color to ${sizeOf}`)
+    : one && la.length ? `x₂ x² edit the label ${shown(one)}; size and color apply to it`
     : one ? `x₂ x² edit the label ${plainText(one.el)}`
     : la.length ? `Size and color apply to ${sizeOf}` : 'Settings for new text';
   // atom labels use the drawing's font, weight and alignment (Style); only size and color are their own
