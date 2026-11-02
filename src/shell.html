@@ -397,6 +397,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       <p class="note" style="margin:12px 0 6px">Document</p>
       <div class="row" style="justify-content:space-between"><span id="pageInfo" style="font-size:13px">Free canvas</span><button class="tb" onclick="openPageSetup()">Change</button></div>
       <div class="row" style="margin-top:10px"><label for="labelSize" style="font-size:13px">Atom label size</label><select class="sel" id="labelSize"></select></div>
+      <div class="row"><label for="showCH" style="font-size:13px">H on carbons</label><select class="sel" id="showCH"><option value="">Off (skeletal)</option><option value="end">End carbons (CH₃)</option><option value="all">All carbons</option></select></div>
       <div class="row"><label class="chk"><input type="checkbox" id="colorAtoms"> Color heteroatom labels</label></div>
       <p class="note" style="margin:12px 0 6px">Color the selection</p>
       <div class="swatches" id="swatches"></div>
@@ -466,6 +467,10 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <button role="menuitem" data-cmd="smiles" data-need="atoms"><span>Copy SMILES</span><kbd>Ctrl Shift C</kbd></button>
   <button role="menuitem" data-cmd="molfile" data-need="atoms"><span>Copy molfile</span></button>
   <button role="menuitem" data-cmd="image"><span>Copy image</span><kbd>Ctrl C</kbd></button>
+  <div class="menusep" role="separator"></div>
+  <button role="menuitem" data-cmd="showh" data-need="atoms"><span>Show H on carbons (CH<sub>3</sub>)</span></button>
+  <button role="menuitem" data-cmd="addh" data-need="atoms"><span>Draw H as bonds</span></button>
+  <button role="menuitem" data-cmd="remh" data-need="atoms"><span>Remove H bonds</span></button>
   <div class="menusep" role="separator"></div>
   <button role="menuitem" data-cmd="stereo" data-need="atoms"><span>Stereo group (abs, &amp;, or)…</span></button>
   <button role="menuitem" data-cmd="analysis" data-need="atoms"><span>Analysis (elemental, m/z)</span></button>

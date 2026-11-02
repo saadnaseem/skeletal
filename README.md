@@ -23,6 +23,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - Any element, nicknames (OMe, Boc, Ph, CO₂H, Ts and about 50 more) and generic labels (R, R¹, X).
 - Nicknames count toward formula and mass, and flip automatically (MeO, HO₂C) when the bond comes from the right.
 - Charges, lone pairs and radicals.
+- **Hydrogens on carbons:** type CH3, CH2 or CH as a carbon's label (Text tool or double-click) and it is drawn that way; a bare C makes it a plain vertex again. A count the bonds don't allow (CH3 on a carbon with two bonds) is drawn as typed and flagged in red; the formula follows the bonds. Right-click a selection for **Show H on carbons**, **Draw H as bonds** (each H on its own bond, at 120° or axial/equatorial on a chair, ready for a wedge) and **Remove H bonds**. **Style → H on carbons** shows them on end carbons (CH₃) or all carbons for the whole drawing. ChemDraw files keep the labels both ways.
 - Reaction, equilibrium, retrosynthetic, resonance, dashed and failed-reaction arrows.
 - Curved electron-pushing arrows (full and fishhook) with a draggable bend handle.
 - Text with subscripts and superscripts: pKₐ, Feᴵᴵᴵ, S_N2, ¹³C, cm⁻¹, [α]_D. While typing, press Ctrl/⌘ + = for a subscript and Ctrl/⌘ + Shift + = for a superscript (the same keys as Word), or use the x₂ x² buttons above the text box or in the Text panel (with a text selected but not being edited, they change all of it). With nothing selected the keys switch what you type next; with text selected they switch the selection. Formula digits become subscripts as you type (H2SO4 → H₂SO₄); select one and press Ctrl/⌘ + = to keep it normal (E2). Pasting from Word or a web page keeps subscripts and superscripts, and ChemDraw files keep them both ways. Each text box can have its own font, size, bold, italic, alignment and color.
@@ -156,7 +157,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 158 unit tests (Node test runner)
+npm test             # 164 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)

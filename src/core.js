@@ -30,6 +30,7 @@ const ABBR = {
   CHO:{s:'C=O',l:'OHC'}, CN:{s:'C#N',l:'NC'}, NO2:{s:'[N+](=O)[O-]',l:'O2N'}, CF3:{s:'C(F)(F)F',l:'F3C'}, CCl3:{s:'C(Cl)(Cl)Cl',l:'Cl3C'},
   SO3H:{s:'S(=O)(=O)O',l:'HO3S'}, SO2Me:{s:'S(=O)(=O)C',l:'MeO2S'}, PO3H2:{s:'P(=O)(O)O',l:'H2O3P'}, OPO3H2:{s:'OP(=O)(O)O',l:'H2O3PO'},
   CONH2:{s:'C(N)=O',l:'H2NOC'}, SMe:{s:'SC',l:'MeS'}, N3:{s:'N=[N+]=[N-]'},
+  CD3:{s:'C([2H])([2H])[2H]',l:'D3C'}, OD:{s:'O[2H]',l:'DO'}, ND2:{s:'N([2H])[2H]',l:'D2N'}, // deuterated: the D count in formula and mass
 };
 const GENERIC = new Set(['R','R1','R2','R3','R4','R5','R6',"R'","R''",'X','Ar','Nu','E','LG','PG','Z','M','L','Ln']);
 const CPK = {N:'#2f4fd6',O:'#d1231f',S:'#b38a00',P:'#d06a00',F:'#1f8f3a',Cl:'#1f8f3a',Br:'#8b2a14',I:'#6a1fa0',B:'#c26a6a',Si:'#8a7a5c',Se:'#b36b00'};
@@ -51,15 +52,44 @@ const LABEL_NAMES={methyl:'Me', ethyl:'Et', propyl:'Pr', isopropyl:'iPr', butyl:
   carboxy:'CO2H', carboxyl:'CO2H', formyl:'CHO', trifluoromethyl:'CF3', hydroxy:'O', hydroxyl:'O', amino:'N', thiol:'S', mercapto:'S', methylthio:'SMe',
   fluoro:'F', chloro:'Cl', bromo:'Br', iodo:'I'};
 Object.setPrototypeOf(LABEL_NAMES, null);
+// a nickname written the way it reads leftward (MeO, F3C, Me2N) -> the nickname
+const ABBR_LEFT=Object.fromEntries(Object.entries(ABBR).filter(([,v])=>v.l).map(([k,v])=>[v.l,k])); Object.setPrototypeOf(ABBR_LEFT, null);
 function normalizeLabel(t){
   t = (t||'').trim();
   if (!t) return null;
   if (LABEL_NAMES[t.toLowerCase()]) return LABEL_NAMES[t.toLowerCase()];
+  if (ABBR[t]) return t;
+  if (ABBR_LEFT[t]) return ABBR_LEFT[t];
   const m = t.match(/^([A-Z][a-z]?)H\d*$/);
-  if (m && ELSET.has(m[1]) && !ABBR[t]) return m[1];
+  if (m && ELSET.has(m[1])) return m[1]; // NaH, NH2: the element; its H come from the bonds
+  const p=parseLabel(t); if (p) return p.el; // NH2, H2N, HO, NH3+, Fe2+ -> the element (the H and charge are set by typedLabel)
+  // a symbol typed in one case (cl, BR, CU, ZN); but CO, NO, SO, CS, PO are groups, not cobalt, nobelium...
   const cap = t.length<=2 ? t[0].toUpperCase()+t.slice(1).toLowerCase() : t;
-  if (ELSET.has(cap)) return cap;
+  if (ELSET.has(cap) && !CAPS_GROUPS.has(t)) return cap;
   return t;
+}
+const CAPS_GROUPS=new Set(['CO','NO','SO','CS','PO']);
+// A label typed for an atom read as an element with its hydrogens and charge: NH2, H2N (as read leftward), OH, HO, CH3, CH3+, NH3+,
+// O-, OH-, Fe2+, H+. h is null when no H was written; charge is undefined when no charge was written. Anything else: null.
+function parseLabel(raw){
+  const t=plainText(String(raw||'')).trim().replace(/\u2212/g,'-'); if (!t) return null;
+  const body=x=>{ let m=/^([A-Z][a-z]?)(?:H(\d*))?$/.exec(x), el, h=null;
+    if (m){ el=m[1]; if (m[2]!==undefined) h= m[2]===''? 1 : +m[2]; }
+    else if ((m=/^H(\d*)([A-Z][a-z]?)$/.exec(x))){ el=m[2]; h= m[1]===''? 1 : +m[1]; }
+    else return null;
+    if (!ELSET.has(el) || (h!=null && (!VAL[el] || el==='H' || h>4))) return null;
+    return {el, h}; };
+  // a charge of more than one is only read for an ion that can be one atom (Fe2+, Fe+3, O2-, S2-): N2+ (diazonium), N3- (azide) and I3- are
+  // groups of atoms, left as labels rather than read as N with a 2+ charge
+  const ion=(b,n)=>b && b.h==null && n>=2 && n<=8 && (!VAL[b.el] || (n===2 && ['O','S','Se'].includes(b.el)));
+  const f=/^([A-Z][a-z]?)([+-])(\d)$/.exec(t); if (f){ const b=body(f[1]); return ion(b,+f[3]) ? {...b, charge:(f[2]==='+'?1:-1)*+f[3]} : null; }
+  const c=/^(.*?)(\d*)([+-])$/.exec(t);
+  if (!c) return body(t);
+  const sg=c[3]==='+'? 1 : -1;
+  const a=c[1]+c[2] ? body(c[1]+c[2]) : null; // the digits belong to the H (NH3+): a single charge
+  if (a && (c[2]==='' || a.h!=null)) return {...a, charge:sg};
+  const b=c[2] && c[1] ? body(c[1]) : null; // or they are the charge (Fe2+, O2-)
+  return ion(b,+c[2]) ? {...b, charge:sg*+c[2]} : null;
 }
 
 /* ================= geometry ================= */
@@ -103,11 +133,13 @@ function sanitizeDoc(d){
   const pick=(o,keys)=>{ const r={}; for (const k of keys) if (o[k]!==undefined) r[k]=o[k]; return r; };
   const out={ v:1, style: Object.hasOwn(PRESETS, d.style) ? d.style : 'acs', colorAtoms:!!d.colorAtoms, nid:int(d.nid,1) };
   if (d.labelSize!=null && Number.isFinite(+d.labelSize)) out.labelSize=Math.min(72,Math.max(4,+d.labelSize));
+  if (d.showCH==='end' || d.showCH==='all') out.showCH=d.showCH;
   if (d.styleOv && typeof d.styleOv==='object'){ const o={};
     for (const [k,[lo,hi]] of Object.entries(STYLE_LIMITS)){ const v=+d.styleOv[k]; if (d.styleOv[k]!=null && Number.isFinite(v)) o[k]=Math.min(hi,Math.max(lo,v)); }
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
-  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size']));
+  out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined,
+    hs: a.hs ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','hl']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
@@ -216,6 +248,14 @@ function implicitH(atom, bsum){
   }
   return 0;
 }
+// Hydrogens shown on an atom. A label typed with a count the bonds don't allow (CH3 on a carbon with two bonds) is kept as typed:
+// hl holds it, and only while its element is the atom's, so changing the atom drops it. hs shows a carbon's label with its hydrogens (CH2).
+function typedH(a){ const m=a.hl && /^([A-Z][a-z]?)H(\d*)$/.exec(a.hl); return m && m[1]===a.el ? (m[2]===''? 1 : +m[2]) : null; }
+function labelH(a, ix){ const t=typedH(a); return t!=null ? t : implicitH(a, bondSum(ix,a.id)); }
+// once the bonds make a typed count right (a bond was added or removed), the label follows the bonds from then on
+function settleTypedH(d, ix){ for (const a of d.atoms) if (a.hl && (typedH(a)==null || typedH(a)===implicitH(a, bondSum(ix,a.id)))){ if (typedH(a)!=null && a.el==='C') a.hs=true; delete a.hl; } }
+// a carbon is drawn as a bare vertex unless it stands alone, has a mass number, is set to show its hydrogens, or the drawing shows them (doc.showCH: 'end' or 'all')
+function carbonShown(d, a, deg){ return deg===0 || !!a.iso || !!a.hs || typedH(a)!=null || (d && d.showCH==='all') || (d && d.showCH==='end' && deg===1); }
 // halogens go past one bond only towards electronegative partners: ClO4-, BrF5, ICl3, PhI(OAc)2, IBX, Togni reagents
 const HYPER_LIG=new Set(['N','O','F','Cl']);
 // atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
@@ -227,7 +267,9 @@ function valenceError(atom, ix){
   const vals=VAL[atom.el]; if (!vals) return null; // metals: no fixed valence
   const g=GROUP[atom.el], ch=atom.charge||0;
   let max=-1; for (const v0 of vals){ let v=v0; if (g==='c') v=v0-Math.abs(ch); else if (g==='n'||g==='o'||g==='x') v=v0+ch; else if (g==='b') v=v0-ch; else if (g==='h') v=v0-Math.abs(ch); max=Math.max(max,v, v0>vals[0]? v0+Math.abs(ch) : -1); } // hypervalent states take a charge as an extra bond (PF6-, IF6-)
-  const bs=bondSum(ix,atom.id), have=bs+(atom.rad?1:0);
+  const bs=bondSum(ix,atom.id), have=bs+(atom.rad?1:0), th=typedH(atom);
+  if (th!=null && th!==implicitH(atom,bs)){ const can=implicitH(atom,bs);
+    return {have:bs+th, max:bs+can, why:`${atom.hl} was typed, but with ${bs} bond${bs===1?'':'s'} this ${atom.el} takes ${can} H (${atom.el}${can?'H'+(can>1?can:''):''})`}; }
   if (g==='x' && have>vals[0]+ch && have<=max && !(ix.adj.get(atom.id)||[]).some(({o})=>{ const e=ix.atom.get(o)?.el; return e!==atom.el && HYPER_LIG.has(e); })){
     const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
     return {have, max:vals[0]+ch, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; a halogen takes more than ${vals[0]+ch} only with O, N or F partners (e.g. ClO4\u2212, BrF5, PhI(OAc)2)`};
@@ -293,7 +335,7 @@ function layoutLabel(d, ix, atom){
   const nb=ix.adj.get(atom.id)||[];
   const dirs = nb.map(({o})=>{const q=ix.atom.get(o); return norm(sub(q,atom));});
   const kind=kindOf(atom.el);
-  const visible = atom.el!=='C' || nb.length===0 || !!atom.iso;
+  const visible = atom.el!=='C' || carbonShown(d, atom, nb.length);
   const info={visible, dirs, items:[], box:null, extra:[]};
   const score=dv=>dirs.reduce((s,v)=>s+Math.max(0,dot(v,dv)),0);
   const sr=score(V(1,0)), sl=score(V(-1,0)), sb=score(V(0,1)), sa=score(V(0,-1));
@@ -302,7 +344,7 @@ function layoutLabel(d, ix, atom){
     info.hDir=null;
     return info;
   }
-  const h = kind==='element' ? implicitH(atom, bondSum(ix,atom.id)) : 0;
+  const h = kind==='element' ? labelH(atom, ix) : 0;
   if (kind==='element' && h>0 && Math.min(sr,sl)>0.45 && Math.min(sb,sa)<Math.min(sr,sl)) side = sb<=sa ? 'below':'above';
   let runs, anchorFirst=true;
   if (kind==='element'){
@@ -727,7 +769,7 @@ function toOCL(d, ix, atomIds, opts={}){
       if (k!=='element') generic = generic || k==='generic';
     } else if (k==='abbr'){
       const f=abbrMol(a.el); const base=mol.getAllAtoms();
-      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,a.y/L+0.2*(j%2)); }
+      for (let j=0;j<f.getAllAtoms();j++){ const i=mol.addAtom(f.getAtomicNo(j)); owner[i]=id; mol.setAtomCharge(i,f.getAtomCharge(j)); if (f.getAtomMass(j)) mol.setAtomMass(i,f.getAtomMass(j)); /* CD3: its D */ mol.setAtomX(i,a.x/L+j*0.3); mol.setAtomY(i,a.y/L+0.2*(j%2)); }
       for (let j=0;j<f.getAllBonds();j++){ const bb=mol.addBond(base+f.getBondAtom(0,j), base+f.getBondAtom(1,j)); mol.setBondType(bb, f.isDelocalizedBond(j)? M.cBondTypeDelocalized : f.getBondOrder(j)===2? M.cBondTypeDouble : f.getBondOrder(j)===3? M.cBondTypeTriple : M.cBondTypeSingle); }
       map.set(id,base);
     } else { generic=true; }
@@ -755,7 +797,7 @@ function fromOCL(mol, offset){
   for (let i=0;i<n;i++){
     const el=mol.getAtomLabel(i);
     const a={id:0,x:mol.getAtomX(i)*L,y:mol.getAtomY(i)*L,el:el,charge:mol.getAtomCharge(i)||0,lp:0,rad:mol.getAtomRadical(i)?1:0};
-    const ms=mol.getAtomMass(i); if (ms) a.iso=ms;
+    const ms=mol.getAtomMass(i); if (ms && !(el==='H' && ms===1)) a.iso=ms; // [1H] marks a drawn H (smilesMol), not protium
     atoms.push(a); ids.push(a);
   }
   // keep AND/OR stereo groups from V3000 molfiles (ABS is the default and stays unlabelled)
@@ -813,6 +855,8 @@ function findChairs(d, ix){
   }
   ix.chairs=out; return out;
 }
+// SMILES with its explicit hydrogens kept as atoms ([H]C([H])([H])O draws its H): OpenChemLib drops plain [H], so they go in as [1H]
+function smilesMol(smi){ return OCL.Molecule.fromSmiles(String(smi).replace(/\[H\]/g,'[1H]')); }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)
   const n=mol.getAllBonds(); if(!n) return;

@@ -17,7 +17,7 @@ function pushUndo(){ undoStack.push(JSON.stringify(doc)); if(undoStack.length>20
 function undo(){ if(!undoStack.length) return; redoStack.push(JSON.stringify(doc)); setDoc(JSON.parse(undoStack.pop())); sel.clear(); changed(); }
 function redo(){ if(!redoStack.length) return; undoStack.push(JSON.stringify(doc)); setDoc(JSON.parse(redoStack.pop())); sel.clear(); changed(); }
 function updateUndoButtons(){ $('#bUndo').disabled=!undoStack.length; $('#bRedo').disabled=!redoStack.length; }
-function changed(){ ix=buildIndex(doc); pruneSel(); render(); scheduleAnalysis(); autosave(); syncFileUI(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
+function changed(){ ix=buildIndex(doc); settleTypedH(doc,ix); pruneSel(); render(); scheduleAnalysis(); autosave(); syncFileUI(); updateUndoButtons(); syncStyleUI(); syncTextUI(); syncPageUI(); }
 function syncPageUI(){ const e=$('#expArea'); if(!e) return; const has=!!doc.page; e.disabled=!has; if(!has) e.value='crop'; const p=doc.page; $('#pageInfo').textContent = p ? `${(PAGE_PRESETS[p.preset]||{n:'Custom'}).n.split(' (')[0]}, ${p.across} × ${p.down} ${p.across*p.down>1?'sheets':'sheet'} (${inch(p.w*p.across)} × ${inch(p.h*p.down)} in)` : 'Free canvas'; }
 function pruneSel(){ for (const k of [...sel]){ const t=k[0], id=+k.slice(1); const m={a:ix.atom,r:ix.arrow,t:ix.text,p:ix.plus,l:ix.plate,k:ix.bracket}[t]; if(!m||!m.has(id)) sel.delete(k);} }
 let _saveT=null;
@@ -117,6 +117,21 @@ async function renderRecent(){
 }
 
 /* ================= model edits ================= */
+// a label typed for an atom: CH3, CH2, CH, NH2, OH (or as read leftward: H3C, H2N, HO) give the element with its hydrogens shown; a count
+// the bonds don't allow is kept as typed (see typedH). A charge written in it (NH3+, CH2+, O-, Fe2+) becomes the atom's charge.
+// a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
+function typedLabel(text, atom){
+  const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
+  if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
+    const charge=p.charge!=null ? p.charge : p.h!=null ? 0 : atom.charge||0, out={el:p.el}; if (p.charge!=null || p.h!=null) out.charge=charge;
+    if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
+      if (p.el==='C') out.hs=true;
+      if (p.h!==can && bs>0) out.hl=p.el+'H'+(p.h===1?'':p.h); } // an atom with no bonds yet (a methyl placed first) follows its bonds
+    return out; }
+  return {el: normalizeLabel(t) || 'C'};
+}
+function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -236,7 +251,7 @@ function hitTest(p, ptype){
   for (const a of doc.atoms){ const d=dist(a,p); if (d<bd){bd=d; best={type:'atom',id:a.id};} }
   if (best) return best;
   // anywhere on a label's letters (the H2 of NH2, or a label made bigger) is the atom too
-  for (const a of doc.atoms){ if (a.el==='C' && !a.iso) continue; const lb=layoutLabel(doc,ix,a); if (!lb.visible || !lb.box) continue;
+  for (const a of doc.atoms){ if (a.el==='C' && !carbonShown(doc,a,(ix.adj.get(a.id)||[]).length)) continue; const lb=layoutLabel(doc,ix,a); if (!lb.visible || !lb.box) continue;
     const b=lb.box; if (p.x>=b.x0-1 && p.x<=b.x1+1 && p.y>=b.y0-1 && p.y<=b.y1+1) return {type:'atom',id:a.id}; }
   for (const t of doc.texts){ const m=textMetrics(doc,t); if (Math.abs(p.x-t.x)<=m.w/2+2 && Math.abs(p.y-t.y)<=m.h/2+2) return {type:'text',id:t.id}; }
   for (const q of doc.pluses){ if (dist(q,p)<Math.max(5,rB)) return {type:'plus',id:q.id}; }
@@ -620,10 +635,11 @@ function endTool(d,p){
     return;
   }
   if (id==='atom'){
-    if (d.moved && h && h.type==='atom'){ const t=bondTarget(d,p); pushUndo(); const sA=ix.atom.get(h.id); const eA=t.atom||addAtom(t.e.x,t.e.y,tool.el); addBond(sA.id,eA.id,1); return; }
+    const put=a=>setLabel(a, tool.lab ? typedLabel(tool.lab, a) : {el:tool.el}); // after its bonds are made: CH3 counts them
+    if (d.moved && h && h.type==='atom'){ const t=bondTarget(d,p); pushUndo(); const sA=ix.atom.get(h.id); const eA=t.atom||addAtom(t.e.x,t.e.y,tool.el); addBond(sA.id,eA.id,1); if (!t.atom) put(eA); return; }
     pushUndo();
-    if (h && h.type==='atom'){ const a=ix.atom.get(h.id); a.el=tool.el; return; }
-    addAtom(d.start.x,d.start.y,tool.el); return;
+    if (h && h.type==='atom'){ put(ix.atom.get(h.id)); return; }
+    put(addAtom(d.start.x,d.start.y,tool.el)); return;
   }
   if (id==='charge'){
     if (!(h && h.type==='atom')){ toast('Click an atom'); return; }
@@ -679,8 +695,10 @@ function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; con
   if (!e.shiftKey && (k===',' || k==='.')) return k==='.' ? 'sup' : 'sub';
   return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
-function startLabelEdit(a){ if (!a) return; const st=S();
-  startTextEdit({x:a.x, y:a.y, text:a.el, size:a.size||st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
+function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
+  const q=withCharge && a.charge && kindOf(a.el)==='element' ? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : ''; // with its charge, so retyping keeps it (CH2+)
+  const text=(a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el)+q; // a carbon shown as CH3 opens as CH3
+  startTextEdit({x:a.x, y:a.y, text, size:a.size||st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
 // where a new caption on a bond goes: beside its middle, on the side with more room (farther from the nearest other atom or bond)
 function bondCaptionAt(b){
   const A=ix.atom.get(b.a), B=ix.atom.get(b.b), m=mul(add(A,B),0.5), u=norm(sub(B,A)), n=V(-u.y,u.x);
@@ -828,8 +846,9 @@ tedBar.querySelectorAll('[data-m]').forEach(b=>{
 function commitText(){
   if (!editingText) return; const {t,fresh,atom}=editingText; editingText=null;
   let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true; if (document.activeElement===ted) ted.blur();
-  if (atom){ const lab=normalizeLabel(v.replace(/\n/g,' ')) || 'C'; // an emptied label goes back to carbon
-    if (ix.atom.get(atom.id)===atom && lab!==atom.el){ pushUndo(); atom.el=lab; } changed(); return; }
+  if (atom){ if (v===t.text){ changed(); return; } // left as it opened: nothing changes
+    const lab=typedLabel(v.replace(/\n/g,' '), atom); // an emptied label goes back to carbon
+    if (ix.atom.get(atom.id)===atom && !sameLabel(atom,lab)){ pushUndo(); setLabel(atom,lab); } changed(); return; }
   const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
   if (same(v, t.text||'')) v=t.text||''; // unchanged: keep the text exactly as it was written
   if (!fresh && v!==t.text) pushUndo();
@@ -871,7 +890,7 @@ window.addEventListener('keydown', e=>{
   if (hover && hover.type==='atom'){
     const a=ix.atom.get(hover.id); if(!a) return;
     const kl=k.toLowerCase();
-    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); a.el = (kl==='c'&&e.shiftKey)? 'C' : HOTKEY_EL[kl]; changed(); return; }
+    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: (kl==='c'&&e.shiftKey)? 'C' : HOTKEY_EL[kl]}); changed(); return; }
     if (k==='+'||k==='='){ pushUndo(); a.charge=(a.charge||0)+1; changed(); return; }
     if (k==='-'){ pushUndo(); a.charge=(a.charge||0)-1; changed(); return; }
     if (k==='.'){ pushUndo(); a.rad=a.rad?0:1; changed(); return; }
@@ -921,7 +940,7 @@ function clearPage(){
 
 /* ================= sub-documents, clipboard ================= */
 function subDoc(keys){
-  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms, ...(doc.labelSize?{labelSize:doc.labelSize}:{}), ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{})};
+  const d={...newDoc(), style:doc.style, colorAtoms:doc.colorAtoms, ...(doc.labelSize?{labelSize:doc.labelSize}:{}), ...(doc.showCH?{showCH:doc.showCH}:{}), ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{})};
   const all = !keys || !keys.size;
   const aSet=new Set(all? doc.atoms.map(a=>a.id) : [...keys].filter(k=>k[0]==='a').map(k=>+k.slice(1)));
   d.atoms=doc.atoms.filter(a=>aSet.has(a.id)).map(a=>({...a}));
@@ -945,7 +964,8 @@ function pasteDoc(src, offset, at){
   if (at && bb){ dx=at.x-(bb.x0+bb.x1)/2; dy=at.y-(bb.y0+bb.y1)/2; }
   sel.clear();
   const gMap=new Map(); let gNext=maxGroup()+1; const G=o=>{ if (o.g==null) return o; if (!gMap.has(o.g)) gMap.set(o.g,gNext++); o.g=gMap.get(o.g); return o; };
-  for (const a of src.atoms){ const n=G({...a,id:nid(),x:a.x+dx,y:a.y+dy}); idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
+  const six=src.showCH && src.showCH!==doc.showCH ? buildIndex(src) : null; // from a drawing that shows CH3: those carbons keep it here
+  for (const a of src.atoms){ const n=G({...a,id:nid(),x:a.x+dx,y:a.y+dy}); if (six && a.el==='C'){ const g=(six.adj.get(a.id)||[]).length; if (g && (src.showCH==='all' || g===1) && !carbonShown(doc,a,g)) n.hs=true; } idMap.set(a.id,n.id); doc.atoms.push(n); sel.add('a'+n.id); }
   const bMap=new Map(); for (const b of src.bonds){ const n={...b,id:nid(),a:idMap.get(b.a),b:idMap.get(b.b)}; bMap.set(b.id,n.id); doc.bonds.push(n); }
   for (const r of src.arrows){ const n=G({...r,id:nid(),x1:r.x1+dx,y1:r.y1+dy,x2:r.x2+dx,y2:r.y2+dy}); if(r.cx!=null){n.cx=r.cx+dx;n.cy=r.cy+dy;} doc.arrows.push(n); sel.add('r'+n.id); }
   for (const t of src.texts){ const n=G({...t,id:nid(),x:t.x+dx,y:t.y+dy}); if (t.on){ if (bMap.has(t.on.b)) n.on={b:bMap.get(t.on.b),u:t.on.u,v:t.on.v,s:t.on.s}; else delete n.on; } doc.texts.push(n); sel.add('t'+n.id); }
@@ -973,7 +993,7 @@ function molToFragment(mol){
   return {atoms,bonds};
 }
 function layoutSmiles(smi){
-  const mol=OCL.Molecule.fromSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
+  const mol=smilesMol(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -1031,7 +1051,7 @@ function tryLoadText(txt, quiet){
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
-    const mol=OCL.Molecule.fromSmiles(line); if (!mol.getAllAtoms()) throw 0;
+    const mol=smilesMol(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
     insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
   }catch(err){ if(!quiet) console.warn(err); return false; }
@@ -1478,6 +1498,52 @@ async function openFindDb(){
 }
 
 /* ================= context menu ================= */
+/* ================= hydrogens ================= */
+// carbons of the selection (or of the drawing, with nothing selected)
+const hTargets=()=>(sel.size? selAtoms().map(id=>ix.atom.get(id)) : doc.atoms).filter(Boolean);
+// Show H: selected carbons are drawn with their hydrogens (CH3, CH2, CH); again turns it off
+function toggleShowH(){
+  const cs=hTargets().filter(a=>a.el==='C'); if (!cs.length){ toast('Select carbons first: their labels show the H (CH3, CH2, CH)'); return; }
+  const on=!cs.every(a=>a.hs || typedH(a)!=null); pushUndo();
+  for (const a of cs){ if (on) a.hs=true; else { delete a.hs; delete a.hl; } } changed();
+}
+// Draw H as bonds: each implicit H of the selected atoms becomes an H atom on its own bond, placed in the free directions, ready for a wedge
+function addHBonds(){
+  const as=hTargets().filter(a=>kindOf(a.el)==='element' && a.el!=='H'); let n=0;
+  const want=as.map(a=>[a, implicitH(a, bondSum(ix,a.id))]).filter(([,k])=>k>0); if (!want.length){ toast('These atoms have no hydrogens to draw'); return; }
+  pushUndo();
+  for (const [a,k] of want){ delete a.hl; delete a.hs;
+    for (const u of hDirs(a,k)){ const p=add(a,mul(u,L)), h=addAtom(p.x,p.y,'H'); addBond(a.id,h.id,1); n++; } }
+  changed(); toast(`Drew ${n} H. Click a C–H bond with a wedge or hash tool to show its stereochemistry`);
+}
+// where k new H bonds go from an atom: spread evenly across its widest free gap (outside a ring, as drawn by hand: a ring CH2 fans
+// its two H out), each turned a little if it would land on another atom
+function hDirs(a, k){
+  const angs=nbrs(a.id).map(q=>angOf(sub(q,a))).sort((x,y)=>x-y);
+  // on a chair: axial, then equatorial, as a bond drawn there would go
+  const ch=findChairs(doc,ix).get(a.id);
+  if (ch){ const used=nbrs(a.id).filter(q=>!ch.ring.has(q.id)).map(q=>norm(sub(q,a))), free=[ch.ax,ch.eq].filter(v=>used.every(w=>dot(w,v)<Math.cos(Math.PI/6)));
+    if (free.length>=k) return free.slice(0,k); }
+  let base;
+  if (k===1) base=[angOf(nextDir(a))]; // one H: the zigzag direction (C–O–H at 120°)
+  else if (angs.length===1){ const t=angs[0]; base=[t+2*Math.PI/3, t-2*Math.PI/3, t+Math.PI].slice(0,k); } // CH2, CH3 on one bond: fanned at 120°
+  else { let from=-Math.PI/6, span=2*Math.PI;
+    if (angs.length){ let g=-1; for (let i=0;i<angs.length;i++){ const a1=angs[i], a2=i+1<angs.length? angs[i+1] : angs[0]+2*Math.PI; if (a2-a1>g){ g=a2-a1; from=a1; } } span=g; }
+    const step=span/(angs.length? k+1 : k); base=[...Array(k)].map((_,i)=>from+step*(angs.length? i+1 : i)); }
+  const out=[];
+  for (let t of base){ // turned a little if it would land on another atom or another new H
+    for (const d of [0,0.13,-0.13,0.26,-0.26,0.4,-0.4,0.55,-0.55]){ const q=add(a,mul(fromAng(t+d),L)); if (!atomNear(q,L*0.5,new Set([a.id])) && !out.some(u=>dist(add(a,mul(u,L)),q)<L*0.5)){ t+=d; break; } }
+    out.push(fromAng(t)); }
+  return out;
+}
+// Remove H bonds: H atoms on one bond that are selected or sit on a selected atom go back to being implicit
+function removeHBonds(){
+  const ids=new Set(hTargets().map(a=>a.id)), plainH=a=>{ const e=ix.adj.get(a.id)||[]; if (a.el!=='H' || a.iso || a.charge || a.rad || e.length!==1 || e[0].b.kind || e[0].b.order!==1) return false;
+    const o=ix.atom.get(e[0].o); return o.el!=='H' && !!VAL[o.el]; }; // only H that come back as implicit H (not on a metal, not H2)
+  const gone=doc.atoms.filter(a=>plainH(a) && (ids.has(a.id) || ids.has(ix.adj.get(a.id)[0].o)));
+  if (!gone.length){ toast('No H bonds here to remove'); return; }
+  pushUndo(); deleteKeys(new Set(gone.map(a=>'a'+a.id))); sel=new Set([...sel].filter(k=>ix.atom.has(+k.slice(1)) || k[0]!=='a')); changed();
+}
 const ctxMenu=$('#ctxMenu');
 function closeCtx(){ ctxMenu.hidden=true; }
 let ctxAtom=null, ctxPlate=null, ctxBracket=null;
@@ -1508,6 +1574,7 @@ ctxMenu.onclick=e=>{ const b=e.target.closest('[data-cmd]'); if (!b || b.disable
   else if (c==='image'){ clip=subDoc(sel.size?sel:null); copyImage(); }
   else if (c==='group') groupSel(); else if (c==='ungroup') ungroupSel();
   else if (c==='delete') deleteSel();
+  else if (c==='showh') toggleShowH(); else if (c==='addh') addHBonds(); else if (c==='remh') removeHBonds();
 };
 document.addEventListener('pointerdown', e=>{ if (!ctxMenu.contains(e.target)) closeCtx(); });
 window.addEventListener('keydown', e=>{ if (e.key==='Escape') closeCtx(); }, true);
@@ -1545,7 +1612,8 @@ function analyzeNow(){
   if (!r){ props.innerHTML='<dd style="grid-column:1/-1">Could not interpret this structure.</dd>'; return; }
   const row=(k,v,copy,cls='')=>`<dt>${k}</dt><dd class="${cls}">${v}</dd>${copy!=null?`<button class="mini" data-copy="${esc(copy)}">Copy</button>`:'<span></span>'}`;
   let html='';
-  if (r.generic) html+=`<dd style="grid-column:1/-1;color:var(--ink-2);font-size:12.5px;margin-bottom:6px">Generic groups (R, X, custom labels) are left out of these values.</dd>`;
+  if (r.generic){ const left=[...new Set(ids.map(id=>ix.atom.get(id)).filter(a=>a && kindOf(a.el)==='generic').map(a=>plainText(a.el)))];
+    html+=`<dd style="grid-column:1/-1;color:var(--ink-2);font-size:12.5px;margin-bottom:6px">Generic groups are left out of these values: ${esc(left.slice(0,6).join(', '))}${left.length>6?', …':''}. A label the app doesn\u2019t recognise as an element or group counts as generic, like R.</dd>`; }
   html+=row('SMILES', esc(r.smiles), r.smiles,'code');
   html+=row('Formula', fmtFormula(r.formula), r.formula);
   html+=row('MW', r.mw.toFixed(2)+' g/mol', r.mw.toFixed(2));
@@ -1951,7 +2019,7 @@ function renderTools(){
 function setTool(id, o={}){
   if (editingText) commitText();
   if (id!=='pka' && id!=='bde' && document.getElementById('infocard')) closeInfo();
-  tool.id=id; Object.assign(tool,o);
+  tool.id=id; if (!('lab' in o)) delete tool.lab; Object.assign(tool,o); // lab: a typed label such as CH3 (element dialog)
   if (id!=='select'){ /* keep selection visible but frame only shows for select */ }
   cv.setAttribute('class', id==='select'?'select': id==='erase'?'erase':'');
   syncTools(); render();
@@ -1959,8 +2027,8 @@ function setTool(id, o={}){
 function syncTools(){
   document.querySelectorAll('#tools .tool').forEach(b=>{ const it=b._it; let on = it.id===tool.id;
     if (on && it.o){ for (const k in it.o){ if (JSON.stringify(it.o[k])!==JSON.stringify(tool[k])) on=false; } }
-    if (it.other) on = tool.id==='atom' && !['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el);
-    if (it.id==='atom' && !it.other && it.o && tool.id==='atom') on = tool.el===it.o.el;
+    if (it.other) on = tool.id==='atom' && (!!tool.lab || !['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el));
+    if (it.id==='atom' && !it.other && it.o && tool.id==='atom') on = !tool.lab && tool.el===it.o.el;
     b.setAttribute('aria-pressed', on?'true':'false'); });
 }
 
@@ -1987,9 +2055,11 @@ function openSmilesDialog(){
 }
 function openElementDialog(){
   const sug=['Me','Et','iPr','tBu','Ph','Bn','OMe','OAc','CO2H','CO2Me','NHBoc','Boc','Ts','OTf','TMS','CF3','NO2','CN','R','R1','X','Nd','Fe','Cu','Si','Se','Na','Li'];
-  openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el)}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
+  openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(tool.lab || (['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el))}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
   dialog.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ $('#elIn').value=b.dataset.e; go(); });
-  const go=()=>{ const v=normalizeLabel($('#elIn').value); if(!v) return; closeDialog(); setTool('atom',{el:v}); toast(`Click atoms to label them ${v}`); };
+  const go=()=>{ const raw=$('#elIn').value.trim(), v=normalizeLabel(raw); if(!v) return; closeDialog();
+    const p=!ABBR[raw] && parseLabel(raw), lab = p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+
+    setTool('atom',{el: lab? p.el : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
 }
 /* ================= style & colors ================= */
@@ -1998,7 +2068,7 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; for (const q of doc.brackets) if (sel.has('k'+q.id)) q.color=c; changed(); }; }
-function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; }
+function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; $('#showCH').value=doc.showCH||''; }
 // changing the style or bond length rescales the drawing so bonds keep the style's length
 function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
 $('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; for (const a of doc.atoms) delete a.size; }); changed(); }); // a journal style replaces custom settings (labels' own sizes too), as in ChemDraw
@@ -2121,7 +2191,7 @@ function switchPage(i){
   renderPages();
 }
 function addPage(copyOf){
-  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{}), ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
+  const id=project.nextPage++; const d = copyOf ? normalizeDoc(JSON.parse(JSON.stringify(copyOf.doc))) : {...newDoc(), style:doc.style, labelSize:doc.labelSize, colorAtoms:doc.colorAtoms, ...(doc.showCH?{showCH:doc.showCH}:{}), ...(doc.styleOv?{styleOv:{...doc.styleOv}}:{}), ...(doc.page?{page:{...doc.page, x:0, y:0}}:{})};
   project.pages.splice(project.cur+1,0,{id, name: copyOf ? copyOf.name+' copy' : 'Page '+(project.pages.length+1), doc:d});
   switchPage(project.cur+1); autosave();
 }
@@ -2376,7 +2446,7 @@ function scriptSelection(m){
   if (editingText){ tedToggle(m); return; }
   const ts=textTargets(), as=labelAtoms(), atoms=selAtoms();
   if (!ts.length && !as.length){
-    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a);
+    if (atoms.length===1){ const a=ix.atom.get(atoms[0]); startLabelEdit(a, false); // without its charge: x² then types R¹, not N+¹
       setTimeout(()=>{ if (!editingText || editingText.atom!==a) return; tedSetSel(tedChars().length); tedPending=m; tedSyncBar(); },0);
       toast(`Type the ${m==='sup'?'superscript':'subscript'}, then press Enter`+(kindOf(a.el)==='element'? ` (the atom becomes a label such as ${a.el}${m==='sup'?'¹':'₁'})` : '')); return; }
     toast(atoms.length? 'Click one atom of the selected structure again to select just that atom, then press '+(m==='sup'?'x²':'x₂')
@@ -2416,6 +2486,7 @@ function syncTextUI(){
 function initLabelSize(){
   $('#labelSize').innerHTML=`<option value="">Style default</option>`+[7,8,9,10,11,12,14,16,18,20,24].map(s=>`<option value="${s}">${s} pt</option>`).join('');
   $('#labelSize').onchange=e=>{ pushUndo(); if (e.target.value) doc.labelSize=+e.target.value; else delete doc.labelSize; changed(); };
+  $('#showCH').onchange=e=>{ pushUndo(); if (e.target.value) doc.showCH=e.target.value; else delete doc.showCH; changed(); };
 }
 /* ================= PDF ================= */
 function pageExportSVG(d, mode){

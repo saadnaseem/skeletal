@@ -183,7 +183,8 @@ def test_keys_on_an_element_open_it_and_escape_leaves_it(page):
     focused(page)
     page.keyboard.type("+")
     page.keyboard.press("Enter")
-    assert els(page)[3] == "O^{+}"
+    # a superscript + on an element is its charge (O+), so it still counts in the formula
+    assert els(page)[3] == "O" and page.evaluate("doc.atoms[3].charge") == 1
     assert page.evaluate("undoStack.length") == undo + 1
 
 
