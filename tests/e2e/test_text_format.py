@@ -151,6 +151,8 @@ def test_shift_enter_makes_a_second_line(page):
     ("", "Fe^{III}", "Fe^{III}"),
 ])
 def test_paste_keeps_subscripts_and_superscripts(page, html, plain, want):
+    if page.context.browser.browser_type.name == "firefox":
+        pytest.skip("Firefox empties the clipboardData of a paste event made by a script; a real paste is not affected")
     new_text(page)
     page.evaluate("""([h,p])=>{ const dt=new DataTransfer(); if (h) dt.setData('text/html',h); dt.setData('text/plain',p);
       document.getElementById('texted').dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt, bubbles:true, cancelable:true})); }""", [html, plain])
@@ -204,3 +206,24 @@ def test_text_panel_buttons_work_while_typing_and_on_a_selected_text(page):
     page.evaluate("sel.clear(); changed();")
     page.click("#tSub")
     assert [stored(page, 0), stored(page, 1)] == ["pK_{a}", "‡"]
+
+
+def test_comma_and_period_keys_and_keys_on_a_selected_text(page):
+    # Ctrl/⌘ . and Ctrl/⌘ , (as in Google Docs) work like Ctrl/⌘ Shift = and Ctrl/⌘ =
+    new_text(page)
+    page.keyboard.type("Fe")
+    page.keyboard.press("Meta+Period")
+    page.keyboard.type("III")
+    page.keyboard.press("Meta+Period")
+    page.keyboard.type(" pK")
+    page.keyboard.press("Control+Comma")
+    page.keyboard.type("a")
+    page.keyboard.press("Enter")
+    assert stored(page) == "Fe^{III} pK_{a}"
+    # a text selected but not being edited: the keys change all of it, as x₂ x² do
+    page.evaluate("doc.texts.push({id:nid(), x:0, y:80, text:'‡'}); sel=new Set(['t'+doc.texts[1].id]); changed();")
+    page.keyboard.press(f"{MOD}+Shift+Equal")
+    assert stored(page, 1) == "^{‡}"
+    page.keyboard.press(f"{MOD}+Shift+Equal")
+    assert stored(page, 1) == "‡"
+    assert page.is_hidden("#texted")
