@@ -1,5 +1,6 @@
 """Text tool on atoms and bonds: atom labels edited in place (with sub/superscripts), captions attached to bonds, and the Text panel's x₂ x² on labels."""
 import math
+import pytest
 
 TEXT = '#tools button[title^="Text"]'
 
@@ -121,10 +122,75 @@ def test_panel_superscript_on_a_selected_label(page):
     assert page.evaluate("doc.atoms[2].el") == "R^{1}"
     page.click("#tSup")
     assert page.evaluate("doc.atoms[2].el") == "R1"
-    # an element symbol takes charges, not superscripts: nothing changes
+    # an element symbol has no number to raise: its label opens instead, and leaving it unchanged changes nothing
     page.evaluate("sel=new Set(['a'+doc.atoms[0].id]); render();")
     page.click("#tSup")
+    focused(page)
+    page.keyboard.press("Escape")
     assert page.evaluate("doc.atoms[0].el") == "C"
+
+
+def two_labels(page):
+    """CC(C)OC with R1 and R2 on the two ends, drawn large, with the select tool on."""
+    page.evaluate("tryLoadText('CC(C)OC'); doc.atoms[0].el='R1'; doc.atoms[4].el='R2'; changed(); sel.clear(); setTool('select'); fit()")
+
+
+def click_atom(page, i):
+    sx, sy = screen(page, *page.evaluate(f"[doc.atoms[{i}].x, doc.atoms[{i}].y]"))
+    page.mouse.click(sx, sy)
+    page.wait_for_timeout(500)  # not a double-click
+
+
+def selected(page):
+    return page.evaluate("[...sel].sort()")
+
+
+def test_a_second_click_on_an_atom_selects_just_it_and_x2_raises_its_number(page):
+    two_labels(page)
+    click_atom(page, 0)
+    assert len(selected(page)) == 5, "the first click picks the whole structure"
+    click_atom(page, 0)
+    assert selected(page) == [page.evaluate("'a'+doc.atoms[0].id")], "the second picks just the atom"
+    assert "R1" in page.text_content("#textScope")
+    page.click("#tSup")
+    assert page.evaluate("doc.atoms.map(a=>a.el)") == ["R^{1}", "C", "C", "O", "R2"], "only the clicked label changes"
+    assert page.get_attribute("#tSup", "aria-pressed") == "true"
+    page.click("#tSub")
+    assert page.evaluate("doc.atoms[0].el") == "R1", "a subscript 1 after a letter is written plainly (drawn R₁)"
+    page.click("#tSub")
+    assert page.evaluate("doc.atoms[0].el") == "R\\1"
+    # the whole structure selected: both labels switch together
+    page.evaluate("sel=new Set(doc.atoms.map(a=>'a'+a.id)); changed();")
+    page.click("#tSup")
+    assert page.evaluate("[doc.atoms[0].el, doc.atoms[4].el]") == ["R^{1}", "R^{2}"]
+
+
+@pytest.mark.parametrize("keys,want", [
+    ("Control+Shift+Equal", "R^{1}"), ("Meta+Shift+Equal", "R^{1}"), ("Meta+Period", "R^{1}"),
+    ("Control+Equal", "R\\1"), ("Meta+Comma", "R\\1"),
+])
+def test_keys_work_on_a_selected_atom_without_opening_it(page, keys, want):
+    two_labels(page)
+    click_atom(page, 0)
+    click_atom(page, 0)
+    page.keyboard.press(keys)
+    assert page.evaluate("doc.atoms[0].el") == want
+    assert page.evaluate("doc.atoms[4].el") == "R2"
+    assert page.is_hidden("#texted")
+
+
+def test_x2_on_an_atom_with_no_number_opens_it_ready_to_type_a_superscript(page):
+    two_labels(page)
+    click_atom(page, 3)  # O
+    click_atom(page, 3)
+    page.click("#tSup")
+    focused(page)
+    assert page.get_attribute('#tedBar [data-m="sup"]', "aria-pressed") == "true"
+    page.keyboard.type("1")
+    page.keyboard.press("Enter")
+    assert page.evaluate("doc.atoms[3].el") == "O^{1}"
+    page.keyboard.press("Control+z")
+    assert page.evaluate("doc.atoms[3].el") == "O"
 
 
 def test_double_click_a_label_and_use_the_bar(page):
