@@ -729,7 +729,7 @@ function tedToggle(m){
 function tedSyncBar(){
   if (!editingText) return; const cs=tedChars(), [a,b]=tedGetSel();
   const mode = a===b ? tedModeAt(cs,a) : (()=>{ const p=cs.slice(a,b).filter(x=>x.c!=='\n'); return ['sub','sup'].find(m=>p.length && p.every(x=>x.m===m)) || 'n'; })();
-  tedBar.querySelectorAll('[data-m]').forEach(x=>x.setAttribute('aria-pressed', x.dataset.m===mode));
+  document.querySelectorAll('#tedBar [data-m], [data-tm]').forEach(x=>x.setAttribute('aria-pressed', (x.dataset.m||x.dataset.tm)===mode));
 }
 // pasted text keeps its subscripts and superscripts: from HTML (Word, web pages), as markup, or as Unicode digits (H₂O, cm⁻¹)
 const USUB='₀₁₂₃₄₅₆₇₈₉₊₋', USUP='⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻';
@@ -2263,7 +2263,15 @@ function initTextUI(){
     else { if (v==null || v==='') delete tool.textStyle[k]; else tool.textStyle[k]=v; syncTextUI(); }
   };
   const keepFocus=e=>{ if (editingText) e.preventDefault(); };
-  for (const id of ['#tBold','#tItal','#tSwatches']) $(id).addEventListener('mousedown',keepFocus);
+  for (const id of ['#tBold','#tItal','#tSub','#tSup','#tSwatches']) $(id).addEventListener('mousedown',keepFocus);
+  // x₂ x²: while typing they work on the selection (as Ctrl/⌘ = does); otherwise on the whole of each selected text
+  for (const b of [$('#tSub'),$('#tSup')]){ const m=b.dataset.tm;
+    b.title=(m==='sub'?'Subscript':'Superscript')+` (${MAC?'⌘':'Ctrl+'}${m==='sup'?(MAC?'⇧':'Shift+'):''}=)`;
+    b.onclick=()=>{ if (editingText){ tedToggle(m); return; }
+      const ts=textTargets(); if (!ts.length){ toast('Click in a text box and select the characters first, or select a text to change all of it'); return; }
+      const all=ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===m)); pushUndo();
+      for (const t of ts) t.text=charsToMarkup(textCharsAll(t.text).map(x=>x.c==='\n'? x : all? {c:x.c,m:'n',keep:true} : {c:x.c,m}));
+      changed(); }; }
   document.querySelectorAll('[data-al]').forEach(b=>{ b.addEventListener('mousedown',keepFocus); b.onclick=()=>apply('align',b.dataset.al==='center'?null:b.dataset.al); });
   $('#tFont').onchange=e=>apply('font', e.target.value==='sans'?null:e.target.value);
   $('#tSize').onchange=e=>apply('size', e.target.value? +e.target.value : null);
@@ -2278,6 +2286,7 @@ function syncTextUI(){
   $('#textScope').textContent = ts.length ? (ts.length===1?'Applies to the selected text':`Applies to ${ts.length} selected text objects`) : 'Settings for new text';
   $('#tFont').value=c.font; $('#tSize').value=c.size?String(c.size):''; $('#tSize').options[0].textContent=`Auto (${S().fontSize} pt)`;
   $('#tBold').setAttribute('aria-pressed',c.bold); $('#tItal').setAttribute('aria-pressed',c.italic);
+  if (!editingText) document.querySelectorAll('[data-tm]').forEach(b=>b.setAttribute('aria-pressed', ts.length>0 && ts.every(t=>textCharsAll(t.text).every(x=>x.c==='\n' || x.m===b.dataset.tm))));
   document.querySelectorAll('[data-al]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.al===c.align));
   document.querySelectorAll('#tSwatches .sw').forEach(b=>b.style.boxShadow = ((c.color||'#000000')===b.dataset.c) ? '0 0 0 2px var(--accent)' : '');
 }
