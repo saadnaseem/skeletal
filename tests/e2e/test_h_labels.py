@@ -154,3 +154,13 @@ def test_a_count_of_zero_is_kept(page):
     label(page, 2, "NH0")
     assert page.evaluate("[doc.atoms[2].el, doc.atoms[2].hl]") == ["N", "NH0"]
     assert shown(page, 2) == "N"
+
+
+def test_a_shown_ch3_can_be_clicked_on_its_letters_and_resized(page):
+    draw(page, "CCO")
+    label(page, 0, "CH3")
+    p = page.evaluate("(()=>{ const it=layoutLabel(doc,ix,doc.atoms[0]).items; const h=it[it.length-1]; return [h.x, h.y-h.size*0.3]; })()")
+    assert page.evaluate(f"hitTest(V({p[0]},{p[1]}))") == {"type": "atom", "id": page.evaluate("doc.atoms[0].id")}
+    page.evaluate("sel=new Set(['a'+doc.atoms[0].id]); setTool('select'); changed();")
+    page.select_option("#tSize", "16")
+    assert page.evaluate("[doc.atoms[0].el, doc.atoms[0].size, layoutLabel(doc,ix,doc.atoms[0]).items[0].size]") == ["C", 16, 16]
