@@ -235,6 +235,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
 .tbtn{width:30px; height:30px; border:1px solid var(--line); background:var(--btn); border-radius:6px; display:grid; place-items:center; padding:0}
 .tbtn[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:transparent}
 .tbtn svg{width:16px; height:16px}
+.tbtn sub,.tbtn sup{font-size:65%; line-height:0}
 .scopeT{font-size:12px; color:var(--ink-2); margin:-6px 0 10px}
 @media (max-width: 860px){
   .pages{right:150px; bottom:10px}
@@ -324,6 +325,8 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
       <div class="row tstyle">
         <button class="tbtn" id="tBold" aria-pressed="false" title="Bold" aria-label="Bold"><b>B</b></button>
         <button class="tbtn" id="tItal" aria-pressed="false" title="Italic" aria-label="Italic"><i style="font-family:Georgia,serif">I</i></button>
+        <button class="tbtn" id="tSub" data-tm="sub" aria-pressed="false" aria-label="Subscript"><span>x<sub>2</sub></span></button>
+        <button class="tbtn" id="tSup" data-tm="sup" aria-pressed="false" aria-label="Superscript"><span>x<sup>2</sup></span></button>
         <span style="width:6px"></span>
         <button class="tbtn" data-al="left" title="Align left" aria-label="Align left"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M2 8h8M2 12h11"/></svg></button>
         <button class="tbtn" data-al="center" title="Center" aria-label="Center"><svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h12M4 8h8M2.5 12h11"/></svg></button>

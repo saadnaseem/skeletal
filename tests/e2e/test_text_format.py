@@ -181,3 +181,26 @@ def test_typing_on_a_phone_sized_screen(mobile):
     page.keyboard.type("+")
     page.keyboard.press("Enter")
     assert page.evaluate("doc.texts[0].text") == "CH3^{+}"
+
+
+def test_text_panel_buttons_work_while_typing_and_on_a_selected_text(page):
+    # while typing: the panel's x₂ works like Ctrl/⌘ = and keeps the caret in the text
+    new_text(page)
+    page.keyboard.type("pK")
+    page.click("#tSub")
+    assert page.get_attribute("#tSub", "aria-pressed") == "true"
+    assert page.evaluate("document.activeElement.id") == "texted"
+    page.keyboard.type("a")
+    page.keyboard.press("Enter")
+    assert stored(page) == "pK_{a}"
+    # not typing: x² makes the whole selected text a superscript, and again turns it back
+    page.evaluate("doc.texts.push({id:nid(), x:0, y:80, text:'‡'}); sel=new Set(['t'+doc.texts[1].id]); changed();")
+    page.click("#tSup")
+    assert stored(page, 1) == "^{‡}"
+    assert page.get_attribute("#tSup", "aria-pressed") == "true"
+    page.click("#tSup")
+    assert stored(page, 1) == "‡"
+    # nothing selected: a hint, no change
+    page.evaluate("sel.clear(); changed();")
+    page.click("#tSub")
+    assert [stored(page, 0), stored(page, 1)] == ["pK_{a}", "‡"]
