@@ -29,7 +29,7 @@ const MS = (()=>{
     const c={}; let charge=0, radicals=0;
     for (let i=0;i<mol.getAllAtoms();i++){ const el=mol.getAtomLabel(i); c[el]=(c[el]||0)+1;
       if (el!=='H'){ const h=mol.getImplicitHydrogens(i); if (h) c.H=(c.H||0)+h; }
-      charge+=mol.getAtomCharge(i); if (mol.getAtomRadical(i)) radicals++; }
+      charge+=mol.getAtomCharge(i); const r=mol.getAtomRadical(i); if (r) radicals+= r===32?1:2; } // unpaired electrons: a carbene (singlet or triplet) has two
     return {counts:c, charge, radicals};
   }
   function massOf(counts){ let m=0; for (const [el,n] of Object.entries(counts)){ if (!known(el)) return NaN; m+=n*mono(el); } return m; }

@@ -121,7 +121,7 @@ async function renderRecent(){
 // the bonds don't allow is kept as typed (see typedH). A charge written in it (NH3+, CH2+, O-, Fe2+) becomes the atom's charge.
 // a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
-  const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
+  const t=tidyLabel(text), p=!ABBR[t] && parseLabel(t);
   if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
     const charge=p.charge!=null ? p.charge : p.h!=null ? 0 : atom.charge||0, out={el:p.el}; if (p.charge!=null || p.h!=null) out.charge=charge;
     if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
@@ -132,6 +132,11 @@ function typedLabel(text, atom){
 }
 function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
 const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+// the radical tool and the . key: none, a radical, then a carbene where the atom still has an H to give up (CH3 -> CH2• -> :CH), then none
+const nextRad=a=>a.rad===2 ? 0 : a.rad ? (kindOf(a.el)==='element' && implicitH(a, bondSum(ix,a.id))>0 ? 2 : 0) : 1;
+// say so when a typed label reads as nothing and drops out of formula, mass and NMR (true when it warned)
+function warnUnread(el){ if (!unreadFormula(el)) return false;
+  toast(`“${plainText(el)}” isn’t an element, nickname or formula Lone Pair can read, so it is left out of the formula, mass and NMR, like R. Try a nickname (Et, OMe) or a formula like CH2CH3`, 7000); return true; }
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -645,7 +650,7 @@ function endTool(d,p){
     if (!(h && h.type==='atom')){ toast('Click an atom'); return; }
     pushUndo(); const a=ix.atom.get(h.id);
     if (tool.charge===1) a.charge=(a.charge||0)+1; else if (tool.charge===-1) a.charge=(a.charge||0)-1;
-    else if (tool.charge==='lp') a.lp=((a.lp||0)+1)%4; else if (tool.charge==='rad') a.rad=a.rad?0:1;
+    else if (tool.charge==='lp') a.lp=((a.lp||0)+1)%4; else if (tool.charge==='rad') a.rad=nextRad(a);
     return;
   }
   if (id==='arrow'){
@@ -718,7 +723,7 @@ function startTextEdit(t, fresh, atom){
   const cs=normalizeChars(textCharsAll(t.text)); tedRender(cs);
   syncTextUI();
   positionTed();
-  setTimeout(()=>{ ted.focus(); tedSetSel(0, cs.length); tedSyncBar(); },0);
+  setTimeout(()=>{ if (!editingText || document.activeElement===ted) return; ted.focus(); tedSetSel(0, cs.length); tedSyncBar(); },0); // after the click that opened it
   render();
 }
 // formatted characters -> editor content; a digit kept normal after a letter is marked, as are automatic subscripts
@@ -848,7 +853,7 @@ function commitText(){
   let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true; if (document.activeElement===ted) ted.blur();
   if (atom){ if (v===t.text){ changed(); return; } // left as it opened: nothing changes
     const lab=typedLabel(v.replace(/\n/g,' '), atom); // an emptied label goes back to carbon
-    if (ix.atom.get(atom.id)===atom && !sameLabel(atom,lab)){ pushUndo(); setLabel(atom,lab); } changed(); return; }
+    if (ix.atom.get(atom.id)===atom && !sameLabel(atom,lab)){ pushUndo(); setLabel(atom,lab); } changed(); warnUnread(lab.el); return; }
   const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
   if (same(v, t.text||'')) v=t.text||''; // unchanged: keep the text exactly as it was written
   if (!fresh && v!==t.text) pushUndo();
@@ -861,6 +866,8 @@ let _nudge={depth:-1,t:0}; // consecutive arrow-key nudges share one undo step
 const HOTKEY_EL={c:'C',n:'N',o:'O',s:'S',p:'P',f:'F',l:'Cl',b:'Br',i:'I',h:'H'};
 window.addEventListener('keydown', e=>{
   if (e.target.closest && e.target.closest('input,textarea,select,.dialog,#texted')) return;
+  // a label editor that just opened and isn't focused yet (typing straight after the double-click): the key goes into it, not to the hotkeys
+  if (editingText && !ted.hidden && e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey){ ted.focus(); tedSetSel(0, normalizeChars(textCharsAll(tedMarkup())).length); return; }
   const mod=e.ctrlKey||e.metaKey;
   if (e.key===' ' ){ spaceDown=true; cv.classList.add('pan'); e.preventDefault(); return; }
   if (mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
@@ -890,10 +897,11 @@ window.addEventListener('keydown', e=>{
   if (hover && hover.type==='atom'){
     const a=ix.atom.get(hover.id); if(!a) return;
     const kl=k.toLowerCase();
-    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: (kl==='c'&&e.shiftKey)? 'C' : HOTKEY_EL[kl]}); changed(); return; }
+    if (HOTKEY_EL[kl] && k.length===1){ const wasC=a.el==='C'; pushUndo(); setLabel(a, {el: (kl==='c'&&e.shiftKey)? 'C' : HOTKEY_EL[kl]}); changed();
+      if (wasC && kl==='h' && (ix.adj.get(a.id)||[]).length) toast('That carbon is now a hydrogen atom (Ctrl+Z undoes it). To show the H on carbons, use Show H in the toolbar'); return; }
     if (k==='+'||k==='='){ pushUndo(); a.charge=(a.charge||0)+1; changed(); return; }
     if (k==='-'){ pushUndo(); a.charge=(a.charge||0)-1; changed(); return; }
-    if (k==='.'){ pushUndo(); a.rad=a.rad?0:1; changed(); return; }
+    if (k==='.'){ pushUndo(); a.rad=nextRad(a); changed(); return; }
   }
   if (hover && hover.type==='bond'){
     const b=ix.bond.get(hover.id); if(!b) return;
@@ -2057,7 +2065,7 @@ function openElementDialog(){
   const sug=['Me','Et','iPr','tBu','Ph','Bn','OMe','OAc','CO2H','CO2Me','NHBoc','Boc','Ts','OTf','TMS','CF3','NO2','CN','R','R1','X','Nd','Fe','Cu','Si','Se','Na','Li'];
   openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(tool.lab || (['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el))}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
   dialog.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ $('#elIn').value=b.dataset.e; go(); });
-  const go=()=>{ const raw=$('#elIn').value.trim(), v=normalizeLabel(raw); if(!v) return; closeDialog();
+  const go=()=>{ const raw=tidyLabel($('#elIn').value), v=normalizeLabel(raw); if(!v) return; closeDialog(); if (warnUnread(v)) return setTool('atom',{el:v});
     const p=!ABBR[raw] && parseLabel(raw), lab = p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+
     setTool('atom',{el: lab? p.el : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
@@ -2068,7 +2076,12 @@ function renderSwatches(){ const w=$('#swatches'); w.innerHTML=SWATCHES.map(c=>`
   w.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; if(!sel.size){ toast('Select something to color first'); return; } pushUndo(); const c=b.dataset.c==='#000000'?null:b.dataset.c; const aS=new Set(selAtoms());
     for (const a of doc.atoms) if (aS.has(a.id)) a.color=c; for (const bd of doc.bonds) if (aS.has(bd.a)&&aS.has(bd.b)) bd.color=c;
     for (const r of doc.arrows) if (sel.has('r'+r.id)) r.color=c; for (const t of doc.texts) if (sel.has('t'+t.id)) t.color=c; for (const p of doc.pluses) if (sel.has('p'+p.id)) p.color=c; for (const q of doc.brackets) if (sel.has('k'+q.id)) q.color=c; changed(); }; }
-function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; $('#showCH').value=doc.showCH||''; }
+function syncStyleUI(){ syncDrawSet(); $('#presetNote').textContent=PRESET_NOTES[doc.style]||''; document.querySelectorAll('#presetSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===doc.style?'true':'false')); $('#colorAtoms').checked=!!doc.colorAtoms; $('#labelSize').value=doc.labelSize?String(doc.labelSize):''; $('#showCH').value=doc.showCH||''; syncShowH(); }
+// the toolbar's Show H button: cycles the drawing between skeletal, CH3 on end carbons and H on every carbon (Style → H on carbons)
+const SHOWH_NEXT={'':'end', end:'all', all:''}, SHOWH_TEXT={'':'Show H', end:'H: ends', all:'H: all'};
+function syncShowH(){ const b=$('#bShowH'); if (!b) return; const v=doc.showCH||''; b.setAttribute('aria-pressed', v?'true':'false'); $('#bShowHt').textContent=SHOWH_TEXT[v]; }
+function cycleShowH(){ pushUndo(); const v=SHOWH_NEXT[doc.showCH||'']; if (v) doc.showCH=v; else delete doc.showCH; changed();
+  toast(v==='end' ? 'Showing H on end carbons (CH3). Click again for every carbon' : v==='all' ? 'Showing H on every carbon. Click again for skeletal' : 'Skeletal: carbons as plain vertices'); }
 // changing the style or bond length rescales the drawing so bonds keep the style's length
 function restyle(d, fn){ const before=S(d).bondLength; fn(); rescaleDoc(d, S(d).bondLength/before); if (d===doc) useStyle(d); }
 $('#presetSeg').addEventListener('click', e=>{ const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===doc.style) return; pushUndo(); restyle(doc,()=>{ doc.style=b.dataset.p; delete doc.styleOv; delete doc.labelSize; for (const a of doc.atoms) delete a.size; }); changed(); }); // a journal style replaces custom settings (labels' own sizes too), as in ChemDraw
@@ -2486,6 +2499,7 @@ function syncTextUI(){
 function initLabelSize(){
   $('#labelSize').innerHTML=`<option value="">Style default</option>`+[7,8,9,10,11,12,14,16,18,20,24].map(s=>`<option value="${s}">${s} pt</option>`).join('');
   $('#labelSize').onchange=e=>{ pushUndo(); if (e.target.value) doc.labelSize=+e.target.value; else delete doc.labelSize; changed(); };
+  $('#bShowH').onclick=cycleShowH;
   $('#showCH').onchange=e=>{ pushUndo(); if (e.target.value) doc.showCH=e.target.value; else delete doc.showCH; changed(); };
 }
 /* ================= PDF ================= */
