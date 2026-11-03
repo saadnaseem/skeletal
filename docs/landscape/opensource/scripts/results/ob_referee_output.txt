@@ -1,0 +1,52 @@
+
+JSME (smiles() vs input)
+[A1] smiles=MATCH  molRT=MATCH
+[A2] smiles=MATCH  molRT=MATCH
+[A3] smiles=MATCH  molRT=MATCH
+[A4] smiles=MATCH  molRT=MATCH
+[A5] smiles=MATCH  molRT=MATCH
+[A6] smiles=MATCH  molRT=MATCH
+[A7a] smiles=MATCH  molRT=MATCH
+[A7b] smiles=MATCH  molRT=MATCH
+[A8] smiles=MATCH  molRT=MATCH
+[A9] smiles=DIFF  molRT=DIFF
+[A10] smiles=MATCH  molRT=MATCH
+[A11] smiles=MATCH  molRT=MATCH
+[A12] smiles=DIFF  molRT=DIFF
+[A13a] smiles=MATCH  molRT=MATCH
+[A13b] smiles=MATCH  molRT=MATCH
+[A14] smiles=MATCH  molRT=MATCH
+[A15] smiles=MATCH  molRT=MATCH
+[A16] smiles=MATCH  molRT=MATCH
+[A17a] smiles=MATCH  molRT=MATCH
+[A17b] smiles=MATCH  molRT=MATCH
+[A18] smiles=MATCH  molRT=MATCH
+[A19a] input not parseable by OB; outputs: smiles=""  molRT=""
+[A19b] input not parseable by OB; outputs: smiles=""  molRT=""
+[A20] smiles=MATCH  molRT=MATCH
+
+MolView (PC = PubChem 2D SDF via MolPad filter, LOC = JSME molfile via MolPad filter)
+[A1] PC_smiles=MATCH  LOC_smiles=MATCH
+[A2] PC_smiles=MATCH  LOC_smiles=MATCH
+[A3] PC_smiles=MATCH  LOC_smiles=MATCH
+[A4] PC_smiles=MATCH  LOC_smiles=MATCH
+[A5] PC_smiles=MATCH  LOC_smiles=MATCH
+[A6] PC_smiles=MATCH  LOC_smiles=DIFF
+[A7a] PC_smiles=MATCH  LOC_smiles=MATCH
+[A7b] PC_smiles=MATCH  LOC_smiles=MATCH
+[A8] PC_smiles=MATCH  LOC_smiles=DIFF
+[A9] PC_smiles=MATCH  LOC_smiles=DIFF
+[A10] PC_smiles=MATCH  LOC_smiles=MATCH
+[A11] PC_smiles=MATCH  LOC_smiles=DIFF
+[A12] PC_smiles=DIFF  LOC_smiles=DIFF
+[A13a] PC_smiles=MATCH  LOC_smiles=MATCH
+[A13b] PC_smiles=MATCH  LOC_smiles=MATCH
+[A14] PC_smiles=MATCH  LOC_smiles=MATCH
+[A15] PC_smiles=MATCH  LOC_smiles=DIFF
+[A16] PC_smiles=-  LOC_smiles=DIFF
+[A17a] PC_smiles=MATCH  LOC_smiles=MATCH
+[A17b] PC_smiles=MATCH  LOC_smiles=MATCH
+[A18] PC_smiles=MATCH  LOC_smiles=DIFF
+[A19a] input not parseable by OB; outputs: PC_smiles=null  LOC_smiles="(JSME produced empty molfile)"
+[A19b] input not parseable by OB; outputs: PC_smiles=null  LOC_smiles="(JSME produced empty molfile)"
+[A20] PC_smiles=-  LOC_smiles=DIFF

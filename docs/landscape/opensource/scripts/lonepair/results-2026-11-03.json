@@ -1,0 +1,1501 @@
+[
+ {
+  "id": "A1",
+  "ref": "CCO",
+  "mismatch": {},
+  "ref_formula": "C2 H6 O",
+  "ref_mw": 46.069,
+  "ref_exact": 46.0419,
+  "lp_formula": "C2H6O",
+  "lp_mw": 46.069,
+  "lp_exact": 46.0419,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 3,
+   "bonds": 2,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "O"
+   ]
+  },
+  "t_load_s": 0.159,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A2",
+  "ref": "c1ccccc1",
+  "mismatch": {},
+  "ref_formula": "C6 H6",
+  "ref_mw": 78.114,
+  "ref_exact": 78.047,
+  "lp_formula": "C6H6",
+  "lp_mw": 78.114,
+  "lp_exact": 78.0469,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 6,
+   "bonds": 6,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.006,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A3",
+  "ref": "c1ccccc1",
+  "mismatch": {},
+  "ref_formula": "C6 H6",
+  "ref_mw": 78.114,
+  "ref_exact": 78.047,
+  "lp_formula": "C6H6",
+  "lp_mw": 78.114,
+  "lp_exact": 78.0469,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 6,
+   "bonds": 6,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A4",
+  "ref": "c1cccc2ccccc21",
+  "mismatch": {},
+  "ref_formula": "C10 H8",
+  "ref_mw": 128.174,
+  "ref_exact": 128.0626,
+  "lp_formula": "C10H8",
+  "lp_mw": 128.174,
+  "lp_exact": 128.0626,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 10,
+   "bonds": 11,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A5",
+  "ref": "c1ccc[nH]1",
+  "mismatch": {},
+  "ref_formula": "C4 H5 N",
+  "ref_mw": 67.091,
+  "ref_exact": 67.0422,
+  "lp_formula": "C4H5N",
+  "lp_mw": 67.091,
+  "lp_exact": 67.0422,
+  "layout": {
+   "minNonBonded": 1.618,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 5,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "N"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A6",
+  "ref": "C[C@H](N)C(O)=O",
+  "mismatch": {},
+  "ref_formula": "C3 H7 N O2",
+  "ref_mw": 89.094,
+  "ref_exact": 89.0477,
+  "lp_formula": "C3H7NO2",
+  "lp_mw": 89.094,
+  "lp_exact": 89.0477,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 6,
+   "bonds": 5,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [
+    "hash"
+   ],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "N",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.005,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A7a",
+  "ref": "F/C=C/F",
+  "mismatch": {},
+  "ref_formula": "C2 H2 F2",
+  "ref_mw": 64.034,
+  "ref_exact": 64.0125,
+  "lp_formula": "C2H2F2",
+  "lp_mw": 64.034,
+  "lp_exact": 64.0125,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 4,
+   "bonds": 3,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "F",
+    "F"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A7b",
+  "ref": "F/C=C\\F",
+  "mismatch": {},
+  "ref_formula": "C2 H2 F2",
+  "ref_mw": 64.034,
+  "ref_exact": 64.0125,
+  "lp_formula": "C2H2F2",
+  "lp_mw": 64.034,
+  "lp_exact": 64.0125,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 4,
+   "bonds": 3,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "F",
+    "F"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A8",
+  "ref": "[NH4+].[Cl-]",
+  "mismatch": {},
+  "ref_formula": "Cl H4 N",
+  "ref_mw": 53.489,
+  "ref_exact": 53.0032,
+  "lp_formula": "H4NCl",
+  "lp_mw": 53.492,
+  "lp_exact": 53.0032,
+  "layout": {
+   "minNonBonded": 1.4,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 2,
+   "bonds": 0,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [
+    "N1",
+    "Cl-1"
+   ],
+   "labels": [
+    "N",
+    "Cl"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A9",
+  "ref": "C[N+]([O-])=O",
+  "mismatch": {},
+  "ref_formula": "C H3 N O2",
+  "ref_mw": 61.04,
+  "ref_exact": 61.0164,
+  "lp_formula": "CH3NO2",
+  "lp_mw": 61.04,
+  "lp_exact": 61.0164,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 4,
+   "bonds": 3,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [
+    "N1",
+    "O-1"
+   ],
+   "labels": [
+    "N",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A10",
+  "ref": "CS(C)(=O)=O",
+  "mismatch": {},
+  "ref_formula": "C2 H6 O2 S",
+  "ref_mw": 94.128,
+  "ref_exact": 94.0089,
+  "lp_formula": "C2H6O2S",
+  "lp_mw": 94.134,
+  "lp_exact": 94.0088,
+  "layout": {
+   "minNonBonded": 1,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 4,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "S",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A11",
+  "ref": "[13CH4]",
+  "mismatch": {
+   "rt_cml": "C",
+   "rt_mrv": "C"
+  },
+  "ref_formula": "C H4",
+  "ref_mw": 17.035,
+  "ref_exact": 17.0347,
+  "lp_formula": "CH4",
+  "lp_mw": 17.035,
+  "lp_exact": 17.0347,
+  "layout": {
+   "minNonBonded": null,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 1,
+   "bonds": 0,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A12",
+  "ref": "[CH3]",
+  "mismatch": {},
+  "ref_formula": "C H3",
+  "ref_mw": 15.035,
+  "ref_exact": 15.0235,
+  "lp_formula": "CH3",
+  "lp_mw": 15.035,
+  "lp_exact": 15.0235,
+  "layout": {
+   "minNonBonded": null,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 1,
+   "bonds": 0,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 1,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A13a",
+  "ref": "C1CC1",
+  "mismatch": {},
+  "ref_formula": "C3 H6",
+  "ref_mw": 42.081,
+  "ref_exact": 42.047,
+  "lp_formula": "C3H6",
+  "lp_mw": 42.081,
+  "lp_exact": 42.047,
+  "layout": {
+   "minNonBonded": 1000000000,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 3,
+   "bonds": 3,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.002,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A13b",
+  "ref": "C1CCCCCCCCCCC1",
+  "mismatch": {},
+  "ref_formula": "C12 H24",
+  "ref_mw": 168.324,
+  "ref_exact": 168.1878,
+  "lp_formula": "C12H24",
+  "lp_mw": 168.323,
+  "lp_exact": 168.1878,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 12,
+   "bonds": 12,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A14",
+  "ref": "C12C3C4C1C1C2C3C14",
+  "mismatch": {},
+  "ref_formula": "C8 H8",
+  "ref_mw": 104.152,
+  "ref_exact": 104.0626,
+  "lp_formula": "C8H8",
+  "lp_mw": 104.152,
+  "lp_exact": 104.0626,
+  "layout": {
+   "minNonBonded": 0.741,
+   "closePairs": 0,
+   "crossings": 2
+  },
+  "drawn": {
+   "atoms": 8,
+   "bonds": 12,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.006,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A15",
+  "ref": "[Fe+2].[cH-]1cccc1.[cH-]1cccc1",
+  "mismatch": {},
+  "ref_formula": "C10 H10 Fe",
+  "ref_mw": 186.035,
+  "ref_exact": 186.0132,
+  "lp_formula": "C10H10Fe",
+  "lp_mw": 186.034,
+  "lp_exact": 186.0132,
+  "layout": {
+   "minNonBonded": 1.4,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 11,
+   "bonds": 10,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [
+    "Fe2",
+    "C-1",
+    "C-1"
+   ],
+   "labels": [
+    "Fe"
+   ]
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A16",
+  "ref": "CC(O)=O.CC(=O)Oc1ccccc1C(O)=O",
+  "mismatch": {},
+  "ref_formula": "C11 H12 O6",
+  "ref_mw": 240.211,
+  "ref_exact": 240.0634,
+  "lp_formula": "C11H12O6",
+  "lp_mw": 240.21,
+  "lp_exact": 240.0634,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 17,
+   "bonds": 16,
+   "arrows": 1,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "O",
+    "O",
+    "O",
+    "O",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.005,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A17a",
+  "ref": "Cc1ccccc1",
+  "mismatch": {},
+  "ref_formula": "C7 H8",
+  "ref_mw": 92.141,
+  "ref_exact": 92.0626,
+  "lp_formula": "C7H8",
+  "lp_mw": 92.141,
+  "lp_exact": 92.0626,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 7,
+   "bonds": 7,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A17b",
+  "ref": "Cc1ccccc1",
+  "mismatch": {},
+  "ref_formula": "C7 H8",
+  "ref_mw": 92.141,
+  "ref_exact": 92.0626,
+  "lp_formula": "C7H8",
+  "lp_mw": 92.141,
+  "lp_exact": 92.0626,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 7,
+   "bonds": 7,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A18",
+  "ref": "OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O",
+  "mismatch": {},
+  "ref_formula": "C6 H12 O6",
+  "ref_mw": 180.156,
+  "ref_exact": 180.0634,
+  "lp_formula": "C6H12O6",
+  "lp_mw": 180.155,
+  "lp_exact": 180.0634,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 12,
+   "bonds": 12,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [
+    "hash",
+    "wedge",
+    "hash",
+    "wedge"
+   ],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "O",
+    "O",
+    "O",
+    "O",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A19a",
+  "note": null,
+  "loaded": false
+ },
+ {
+  "id": "A19b",
+  "note": null,
+  "loaded": false
+ },
+ {
+  "id": "A19c",
+  "ref": "c1cccc1",
+  "mismatch": {
+   "analysis_smiles": "C1=CC=C[CH]1",
+   "export_smiles": "C1=CC=C[CH]1",
+   "export_mol": "C1=CC=C[CH]1",
+   "export_molV3": "C1=CC=C[CH]1",
+   "rt_mol_import": "C1=CC=C[CH]1",
+   "rt_molV3_import": "C1=CC=C[CH]1",
+   "rt_cdxml": "C1=CC=C[CH]1",
+   "rt_cdx": "C1=CC=C[CH]1",
+   "rt_cml": "C1=CC=C[CH]1",
+   "rt_mrv": "C1=CC=C[CH]1"
+  },
+  "ref_formula": "C5 H5",
+  "ref_mw": 65.095,
+  "ref_exact": 65.0391,
+  "lp_formula": "C5H5",
+  "lp_mw": 65.095,
+  "lp_exact": 65.0391,
+  "inchikey": {
+   "ref": "ERR",
+   "lp": "HPYIUKIBUJFXII-UHFFFAOYSA-N"
+  },
+  "layout": {
+   "minNonBonded": 1.618,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 5,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 1,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A19d",
+  "ref": "c1cccc[nH]1",
+  "mismatch": {
+   "analysis_smiles": "C1=CNC=C[CH]1",
+   "export_smiles": "C1=CNC=C[CH]1",
+   "export_mol": "C1=CNC=C[CH]1",
+   "export_molV3": "C1=CNC=C[CH]1",
+   "rt_mol_import": "C1=CNC=C[CH]1",
+   "rt_molV3_import": "C1=CNC=C[CH]1",
+   "rt_cdxml": "C1=CNC=C[CH]1",
+   "rt_cdx": "C1=CNC=C[CH]1",
+   "rt_cml": "C1=CNC=C[CH]1",
+   "rt_mrv": "C1=CNC=C[CH]1"
+  },
+  "ref_formula": "C5 H6 N",
+  "ref_mw": 80.11,
+  "ref_exact": 80.05,
+  "lp_formula": "C5H6N",
+  "lp_mw": 80.11,
+  "lp_exact": 80.05,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 6,
+   "bonds": 6,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 1,
+   "charges": [],
+   "labels": [
+    "N"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "A20",
+  "ref": "C[C@H](N)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](C)C(=O)NCC(O)=O",
+  "mismatch": {},
+  "ref_formula": "C105 H170 N42 O43",
+  "ref_mw": 2708.766,
+  "ref_exact": 2707.2407,
+  "lp_formula": "C105H170N42O43",
+  "lp_mw": 2708.756,
+  "lp_exact": 2707.2407,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 190,
+   "bonds": 189,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash",
+    "hash"
+   ],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.069,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "D1",
+  "ref": "CN1C(=O)c2c([n]c[n]2C)N(C)C1=O",
+  "mismatch": {},
+  "ref_formula": "C8 H10 N4 O2",
+  "ref_mw": 194.194,
+  "ref_exact": 194.0804,
+  "lp_formula": "C8H10N4O2",
+  "lp_mw": 194.193,
+  "lp_exact": 194.0804,
+  "layout": {
+   "minNonBonded": 1.618,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 14,
+   "bonds": 15,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "N",
+    "N",
+    "O",
+    "N",
+    "O",
+    "N"
+   ]
+  },
+  "t_load_s": 0.006,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "D5",
+  "ref": "CC(=O)Oc1ccccc1C(O)=O",
+  "mismatch": {},
+  "ref_formula": "C9 H8 O4",
+  "ref_mw": 180.159,
+  "ref_exact": 180.0423,
+  "lp_formula": "C9H8O4",
+  "lp_mw": 180.159,
+  "lp_exact": 180.0423,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 13,
+   "bonds": 13,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "O",
+    "O",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X1",
+  "ref": "CC[C@@H](C)O",
+  "mismatch": {},
+  "ref_formula": "C4 H10 O",
+  "ref_mw": 74.123,
+  "ref_exact": 74.0732,
+  "lp_formula": "C4H10O",
+  "lp_mw": 74.122,
+  "lp_exact": 74.0732,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 4,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [
+    "wedge"
+   ],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "O"
+   ]
+  },
+  "t_load_s": 0.002,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X2",
+  "ref": "OC(=O)/C=C\\C(O)=O",
+  "mismatch": {},
+  "ref_formula": "C4 H4 O4",
+  "ref_mw": 116.072,
+  "ref_exact": 116.011,
+  "lp_formula": "C4H4O4",
+  "lp_mw": 116.072,
+  "lp_exact": 116.011,
+  "layout": {
+   "minNonBonded": 1,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 8,
+   "bonds": 7,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "O",
+    "O",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X3",
+  "ref": "C[S@](=O)c1ccccc1",
+  "mismatch": {},
+  "ref_formula": "C7 H8 O S",
+  "ref_mw": 140.2,
+  "ref_exact": 140.0296,
+  "lp_formula": "C7H8OS",
+  "lp_mw": 140.206,
+  "lp_exact": 140.0296,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 9,
+   "bonds": 9,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [
+    "wedge"
+   ],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "S",
+    "O"
+   ]
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X4",
+  "ref": "[O-][n+]1ccccc1",
+  "mismatch": {},
+  "ref_formula": "C5 H5 N O",
+  "ref_mw": 95.101,
+  "ref_exact": 95.0371,
+  "lp_formula": "C5H5NO",
+  "lp_mw": 95.101,
+  "lp_exact": 95.0371,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 7,
+   "bonds": 7,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [
+    "O-1",
+    "N1"
+   ],
+   "labels": [
+    "O",
+    "N"
+   ]
+  },
+  "t_load_s": 0.004,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X5",
+  "ref": "N#N",
+  "mismatch": {},
+  "ref_formula": "N2",
+  "ref_mw": 28.014,
+  "ref_exact": 28.0061,
+  "lp_formula": "N2",
+  "lp_mw": 28.014,
+  "lp_exact": 28.0061,
+  "layout": {
+   "minNonBonded": 1000000000,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 2,
+   "bonds": 1,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "N",
+    "N"
+   ]
+  },
+  "t_load_s": 0.002,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X6",
+  "ref": "[2H]C([2H])([2H])O",
+  "mismatch": {
+   "rt_cml": "CO",
+   "rt_mrv": "CO"
+  },
+  "ref_formula": "C H4 O",
+  "ref_mw": 35.06,
+  "ref_exact": 35.045,
+  "lp_formula": "CHOD3",
+  "lp_mw": 35.06,
+  "lp_exact": 35.0447,
+  "layout": {
+   "minNonBonded": 1,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 4,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "H",
+    "H",
+    "H",
+    "O"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X7",
+  "ref": "[NH3][Pt]([NH3])(Cl)Cl",
+  "mismatch": {
+   "analysis_smiles": "N[Pt](N)(Cl)Cl",
+   "export_smiles": "N[Pt](N)(Cl)Cl",
+   "export_mol": "N[Pt](N)(Cl)Cl",
+   "export_molV3": "N[Pt](N)(Cl)Cl",
+   "rt_mol_import": "N[Pt](N)(Cl)Cl",
+   "rt_molV3_import": "N[Pt](N)(Cl)Cl",
+   "rt_cdxml": "N[Pt](N)(Cl)Cl",
+   "rt_cdx": "N[Pt](N)(Cl)Cl",
+   "rt_cml": "N[Pt](N)(Cl)Cl",
+   "rt_mrv": "N[Pt](N)(Cl)Cl"
+  },
+  "ref_formula": "Cl2 H6 N2 Pt",
+  "ref_mw": 300.042,
+  "ref_exact": 298.9556,
+  "lp_formula": "H4N2Cl2Pt",
+  "lp_mw": 298.032,
+  "lp_exact": 296.9399,
+  "inchikey": {
+   "ref": "LXZZYRPGZAFOLE-UHFFFAOYSA-L",
+   "lp": "DQLATGHUWYMOKM-UHFFFAOYSA-L"
+  },
+  "layout": {
+   "minNonBonded": 1,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 4,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "Cl",
+    "Pt",
+    "Cl",
+    "N",
+    "N"
+   ]
+  },
+  "t_load_s": 0.002,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X8",
+  "ref": "C1C2CCC1CC2",
+  "mismatch": {},
+  "ref_formula": "C7 H12",
+  "ref_mw": 96.173,
+  "ref_exact": 96.0939,
+  "lp_formula": "C7H12",
+  "lp_mw": 96.172,
+  "lp_exact": 96.0939,
+  "layout": {
+   "minNonBonded": 0.827,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 7,
+   "bonds": 8,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X9",
+  "ref": "C1C2CC3CC1CC(C2)C3",
+  "mismatch": {},
+  "ref_formula": "C10 H16",
+  "ref_mw": 136.238,
+  "ref_exact": 136.1252,
+  "lp_formula": "C10H16",
+  "lp_mw": 136.237,
+  "lp_exact": 136.1252,
+  "layout": {
+   "minNonBonded": 0.5,
+   "closePairs": 1,
+   "crossings": 1
+  },
+  "drawn": {
+   "atoms": 10,
+   "bonds": 12,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.005,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X10",
+  "ref": "c1cc2ccccc2c2ccccc21",
+  "mismatch": {},
+  "ref_formula": "C14 H10",
+  "ref_mw": 178.234,
+  "ref_exact": 178.0783,
+  "lp_formula": "C14H10",
+  "lp_mw": 178.233,
+  "lp_exact": 178.0782,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 14,
+   "bonds": 16,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X11",
+  "ref": "CO[Si](C)(C)C(C)(C)C",
+  "mismatch": {},
+  "ref_formula": "C7 H18 O Si",
+  "ref_mw": 146.305,
+  "ref_exact": 146.1127,
+  "lp_formula": "C7H18OSi",
+  "lp_mw": 146.305,
+  "lp_exact": 146.1127,
+  "layout": {
+   "minNonBonded": 1,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 9,
+   "bonds": 8,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": [
+    "Si",
+    "O"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X12",
+  "ref": "C=C=C",
+  "mismatch": {},
+  "ref_formula": "C3 H4",
+  "ref_mw": 40.065,
+  "ref_exact": 40.0313,
+  "lp_formula": "C3H4",
+  "lp_mw": 40.065,
+  "lp_exact": 40.0313,
+  "layout": {
+   "minNonBonded": 2,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 3,
+   "bonds": 2,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.002,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X13",
+  "ref": "C[C@H]1CC[C@@H](C)CC1",
+  "mismatch": {},
+  "ref_formula": "C8 H16",
+  "ref_mw": 112.216,
+  "ref_exact": 112.1252,
+  "lp_formula": "C8H16",
+  "lp_mw": 112.215,
+  "lp_exact": 112.1252,
+  "layout": {
+   "minNonBonded": 1.732,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 8,
+   "bonds": 8,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [
+    "hash",
+    "hash"
+   ],
+   "radicals": 0,
+   "charges": [],
+   "labels": []
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "X14",
+  "ref": "[Na+].CC([O-])=O",
+  "mismatch": {},
+  "ref_formula": "C2 H3 Na O2",
+  "ref_mw": 82.034,
+  "ref_exact": 82.0031,
+  "lp_formula": "C2H3O2Na",
+  "lp_mw": 82.034,
+  "lp_exact": 82.0031,
+  "layout": {
+   "minNonBonded": 1.4,
+   "closePairs": 0,
+   "crossings": 0
+  },
+  "drawn": {
+   "atoms": 5,
+   "bonds": 3,
+   "arrows": 0,
+   "pluses": 0,
+   "texts": 0,
+   "wedges": [],
+   "radicals": 0,
+   "charges": [
+    "Na1",
+    "O-1"
+   ],
+   "labels": [
+    "Na",
+    "O",
+    "O"
+   ]
+  },
+  "t_load_s": 0.003,
+  "console": [],
+  "toast": ""
+ },
+ {
+  "id": "C1-rdkit-ala",
+  "note": "CC(C(O)=O)N",
+  "loaded": null
+ },
+ {
+  "id": "C1-rdkit-glucose",
+  "note": "OC[C@H]([C@H]([C@@H]([C@H]1O)O)O)OC1O",
+  "loaded": null
+ },
+ {
+  "id": "C1-rdkit-ala_v3",
+  "note": "C[C@@H](C(O)=O)N",
+  "loaded": null
+ }
+]

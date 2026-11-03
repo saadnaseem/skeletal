@@ -1,0 +1,74 @@
+jsmeOnLoad called: true  JSApplet defined: object  ctor error: none
+[A1] CCO
+   smiles=CCO  atoms=3 mols=1 76ms
+   molRT=same  svgBytes=597   
+[A2] c1ccccc1
+   smiles=c1ccccc1  atoms=6 mols=1 35ms
+   molRT=same  svgBytes=988   
+[A3] C1=CC=CC=C1
+   smiles=c1ccccc1  atoms=6 mols=1 32ms
+   molRT=same  svgBytes=988   
+[A4] c1ccc2ccccc2c1
+   smiles=c2ccc1ccccc1c2  atoms=10 mols=1 39ms
+   molRT=same  svgBytes=1562   
+[A5] c1cc[nH]c1
+   smiles=c1cc[nH]c1  atoms=5 mols=1 28ms
+   molRT=same  svgBytes=1008   
+[A6] C[C@H](N)C(=O)O
+   smiles=C[C@H](N)C(=O)O  atoms=6 mols=1 30ms
+   molRT=same  svgBytes=2081   
+[A7a] F/C=C/F
+   smiles=F/C=C/F  atoms=4 mols=1 26ms
+   molRT=same  svgBytes=964   
+[A7b] F/C=C\F
+   smiles=F/C=C\F  atoms=4 mols=1 33ms
+   molRT=same  svgBytes=964   
+[A8] [NH4+].[Cl-]
+   smiles=[NH4+].[Cl-]  atoms=2 mols=2 31ms
+   molRT=same  svgBytes=773   
+[A9] C[N+](=O)[O-]
+   smiles=CN(=O)=O  atoms=4 mols=1 25ms
+   molRT=same  svgBytes=1207   
+[A10] CS(=O)(=O)C
+   smiles=CS(C)(=O)=O  atoms=5 mols=1 27ms
+   molRT=same  svgBytes=1299   
+[A11] [13CH4]
+   smiles=[13CH4]  atoms=1 mols=1 33ms
+   molRT=same  svgBytes=537   
+[A12] [CH3]
+   smiles=C  atoms=1 mols=1 22ms
+   molRT=same  svgBytes=495   
+[A13a] C1CC1
+   smiles=C1CC1  atoms=3 mols=1 25ms
+   molRT=same  svgBytes=496   
+[A13b] C1CCCCCCCCCCC1
+   smiles=C1CCCCCCCCCCC1  atoms=12 mols=1 35ms
+   molRT=same  svgBytes=1234   
+[A14] C12C3C4C1C5C2C3C45
+   smiles=C12C3C4C1C5C2C3C45  atoms=8 mols=1 36ms
+   molRT=same  svgBytes=1234   
+[A15] [Fe+2].c1cc[cH-]c1.c1cc[cH-]c1
+   smiles=[Fe+2].c1cc[cH-]c1.c1cc[cH-]c1  atoms=11 mols=3 33ms
+   molRT=same  svgBytes=2140   
+[A16] CC(=O)Oc1ccccc1C(=O)O>>CC(=O)O
+   smiles=CC(=O)Oc1ccccc1C(=O)O>>CC(=O)O  atoms=17 mols=2 63ms
+   molRT=same  svgBytes=3421   
+[A17a] CC1=CC=CC=C1
+   smiles=Cc1ccccc1  atoms=7 mols=1 30ms
+   molRT=same  svgBytes=1070   
+[A17b] Cc1ccccc1
+   smiles=Cc1ccccc1  atoms=7 mols=1 28ms
+   molRT=same  svgBytes=1070   
+[A18] OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O
+   smiles=OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O  atoms=12 mols=1 36ms
+   molRT=same  svgBytes=3799   
+[A19a] xyz
+   smiles=  atoms=0 mols=0 3100ms
+   molRT=same  svgBytes=250   
+[A19b] C1CC
+   smiles=  atoms=0 mols=0 3119ms
+   molRT=same  svgBytes=250   
+[A20] N[C@@H](C)C(=O)NCC(=O)N[C@@H](CO)C(=O)N[...
+   smiles=CC(C)C[C@H](NC(=O)[C@H](CO)NC(=O)CNC(=O)[C@H](C)N)C(=O)N[C@@H](Cc1ccccc1)C(=O)N[C@@H](C)C(=O)NCC(=O)N[C@@H](CO)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](Cc2ccccc2)C(=O)N  atoms=282 mols=1 4381ms
+   molRT=same  svgBytes=60266   
+jsdom errors (first 8): []
