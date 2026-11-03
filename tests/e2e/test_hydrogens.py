@@ -297,25 +297,25 @@ def test_the_dialog_takes_element_hydrogens_only_where_labels_do(page):
     assert page.evaluate("[tool.el, tool.lab||null]") == ["Na", None]
 
 
-def test_hover_c_labels_a_carbon_then_shows_its_h_then_a_vertex(page):
+def test_hover_c_shows_a_carbons_h_then_a_bare_c_then_a_vertex(page):
     draw(page, "CCC")
     page.mouse.move(*atom_xy(page, 1)); page.wait_for_timeout(50)
     steps = []
     for _ in range(3):
         page.keyboard.press("c"); steps.append(shown(page)[1])
-    assert steps == ["C", "CH2", ""]
+    assert steps == ["CH2", "C", ""]
     assert page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).formula") == "C3H8"
     page.keyboard.press("c"); page.keyboard.press("Control+z")
     assert shown(page)[1] == ""  # one undo step per press
     page.keyboard.press("n"); assert shown(page)[1] == "NH"
     page.keyboard.press("c"); assert shown(page)[1] == ""  # C on another atom makes it a carbon vertex, as before
-    page.keyboard.press("Shift+C"); assert shown(page)[1] == "C"
+    page.keyboard.press("Shift+C"); assert shown(page)[1] == "CH2"
 
 
 def test_a_labeled_c_is_saved_and_beats_the_drawing_wide_h(page):
     draw(page, "CCC")
     page.mouse.move(*atom_xy(page, 1)); page.wait_for_timeout(50)
-    page.keyboard.press("c")
+    page.keyboard.press("c"); page.keyboard.press("c")
     page.evaluate("doc.showCH='all'; changed();")
     assert shown(page) == ["CH3", "C", "CH3"]
     assert page.evaluate("sanitizeDoc(JSON.parse(JSON.stringify(doc))).atoms[1].lc") is True
@@ -339,3 +339,22 @@ def test_typing_straight_after_the_double_click_goes_into_the_label(page):
         page.wait_for_timeout(300)
         assert shown(page)[i] == want, shown(page)
     assert page.evaluate("doc.atoms.map(a=>a.el)") == ["C"] * 4
+
+
+def test_hover_c_on_a_ring_carbon_shows_ch2_first(page):
+    draw(page, "C1CCCCCN1")
+    page.mouse.move(*atom_xy(page, 0)); page.wait_for_timeout(50)
+    page.keyboard.press("c")
+    assert shown(page)[0] == "CH2"
+    assert page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).formula") == "C6H13N"
+
+
+def test_hover_c_skips_ch_when_the_carbon_has_no_h_or_already_shows_it(page):
+    draw(page, "CC(C)(C)C")
+    page.mouse.move(*atom_xy(page, 1)); page.wait_for_timeout(50)
+    page.keyboard.press("c"); assert shown(page)[1] == "C"  # a quaternary carbon has no H to show
+    page.keyboard.press("c"); assert shown(page)[1] == ""
+    page.evaluate("doc.showCH='end'; changed();")
+    page.mouse.move(*atom_xy(page, 0)); page.wait_for_timeout(50)
+    assert shown(page)[0] == "CH3"
+    page.keyboard.press("c"); assert shown(page)[0] == "C"  # already shown as CH3, so the press is not lost

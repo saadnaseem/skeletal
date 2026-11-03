@@ -3524,11 +3524,13 @@ function setLabel(a, {el, hs, lc, hl, charge}){ a.el=el; if (hs) a.hs=true; else
 const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && !!a.lc===!!l.lc && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
 // the C key on a carbon steps through how it is drawn: a vertex, then labeled C, then with its hydrogens (CH2), then a vertex again;
 // on any other atom it makes it a carbon vertex
+// hover + C on a carbon steps through CH₂ (its H shown), a bare C and a plain vertex; a carbon with no H, or one the drawing already shows with its H, goes straight to the bare C
 function nextCarbonLabel(a){
   if (a.el!=='C') return {el:'C'};
-  if (a.hs || typedH(a)!=null) return {el:'C'};
-  if (!a.lc) return {el:'C', lc:true};
-  return implicitH(a, bondSum(ix,a.id)) ? {el:'C', hs:true} : {el:'C'};
+  if (a.lc) return {el:'C'};
+  if (a.hs || typedH(a)!=null) return {el:'C', lc:true};
+  const shown=carbonShown(doc, a, (ix.adj.get(a.id)||[]).length);
+  return implicitH(a, bondSum(ix,a.id)) && !shown ? {el:'C', hs:true} : {el:'C', lc:true};
 }
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
@@ -4291,7 +4293,7 @@ window.addEventListener('keydown', e=>{
     const a=ix.atom.get(hover.id); if(!a) return;
     const kl=k.toLowerCase();
     if (kl==='c' && k.length===1){ const lab=nextCarbonLabel(a); if (sameLabel(a,lab)) return; pushUndo(); setLabel(a, lab); changed();
-      if (lab.lc) toast('Labeled C. Press C again to show its H, again for a plain vertex'); return; }
+      if (lab.hs) toast('Showing its H. Press C again for a bare C, again for a plain vertex'); return; }
     if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: HOTKEY_EL[kl]}); changed(); return; }
     if (k==='+'||k==='='){ pushUndo(); a.charge=(a.charge||0)+1; changed(); return; }
     if (k==='-'){ pushUndo(); a.charge=(a.charge||0)-1; changed(); return; }
