@@ -20,23 +20,35 @@ const MS = (()=>{
     I:[[126.904473,1]], Pt:[[194.9647911,0.338],[193.9626803,0.329],[195.9649515,0.252],[197.967893,0.07356],[191.9610380,0.00782],[189.959932,0.00014]],
     Au:[[196.9665687,1]], Hg:[[201.970643,0.2986],[199.968326,0.231],[198.968280,0.1687],[200.970302,0.1318],[197.966769,0.0997],[203.973494,0.0687],[195.965833,0.0015]],
   };
-  const known = el => Object.hasOwn(ISO, el);
-  const mono = el => ISO[el][0][0];
+  // isotope labels drawn on atoms ([2H], [13C], …) are their own formula keys: D, T, ¹³C, ¹⁵N … with the exact isotope mass
+  const SUP='⁰¹²³⁴⁵⁶⁷⁸⁹', sup=n=>String(n).replace(/\d/g,d=>SUP[d]);
+  const LABEL={D:2.0141017778, T:3.0160492777, '¹¹C':11.0114336, '¹⁴C':14.0032419884, '¹⁸F':18.0009380, '³²P':31.97390727, '³⁵S':34.96903216, '¹²⁵I':124.9046302, '¹³¹I':130.9061246};
+  for (const [el,isos] of Object.entries(ISO)) for (const [m] of isos) if (el!=='H') LABEL[sup(Math.round(m))+el]=m;
+  const baseEl = k => k==='D'||k==='T' ? 'H' : k.replace(/^[⁰-⁹¹²³]+/,'');
+  const known = el => Object.hasOwn(ISO, el) || Object.hasOwn(LABEL, el);
+  const mono = el => Object.hasOwn(LABEL, el) ? LABEL[el] : ISO[el][0][0];
+  // formula key of atom i: its element, or its isotope label when one is drawn
+  function keyOf(mol, i){ const el=mol.getAtomLabel(i), m=mol.getAtomMass(i); if (!m) return el;
+    if (el==='H') return m===2 ? 'D' : m===3 ? 'T' : m===1 ? 'H' : sup(m)+'H';
+    return sup(m)+el; }
+  // Hill order, with each labelled isotope right after its element (C, ¹³C, H, D, then the rest alphabetically)
+  function order(counts){ const ks=Object.keys(counts).filter(k=>counts[k]>0);
+    const rank=k=>{ const b=baseEl(k); return counts.C||counts['¹³C']||counts['¹⁴C'] ? (b==='C'?'0':b==='H'?'1':'2'+b) : b; };
+    return ks.sort((a,b)=>{ const ra=rank(a), rb=rank(b); return ra<rb?-1:ra>rb?1:(a===baseEl(a)?-1:b===baseEl(b)?1:a<b?-1:1); }); }
 
   // element counts and charge of an OCL molecule (implicit and explicit H included)
   function composition(mol){
     mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
     const c={}; let charge=0, radicals=0;
-    for (let i=0;i<mol.getAllAtoms();i++){ const el=mol.getAtomLabel(i); c[el]=(c[el]||0)+1;
+    for (let i=0;i<mol.getAllAtoms();i++){ const el=mol.getAtomLabel(i), k=keyOf(mol,i); c[k]=(c[k]||0)+1;
       if (el!=='H'){ const h=mol.getImplicitHydrogens(i); if (h) c.H=(c.H||0)+h; }
       charge+=mol.getAtomCharge(i); if (mol.getAtomRadical(i)) radicals++; }
     return {counts:c, charge, radicals};
   }
   function massOf(counts){ let m=0; for (const [el,n] of Object.entries(counts)){ if (!known(el)) return NaN; m+=n*mono(el); } return m; }
-  function hill(counts){ const ks=Object.keys(counts).filter(k=>counts[k]>0); const order = counts.C ? ['C','H',...ks.filter(k=>k!=='C'&&k!=='H').sort()] : ks.sort();
-    return order.filter(k=>counts[k]>0).map(k=>k+(counts[k]>1?counts[k]:'')).join(''); }
+  function hill(counts){ return order(counts).map(k=>k+(counts[k]>1?counts[k]:'')).join(''); }
   function add(a,b,s=1){ const o={...a}; for (const [k,v] of Object.entries(b)) o[k]=(o[k]||0)+s*v; return o; }
-  const parse = f => { const o={}; for (const [,el,n] of f.matchAll(/([A-Z][a-z]?)(\d*)/g)) o[el]=(o[el]||0)+(n?+n:1); return o; };
+  const parse = f => { const o={}; for (const [,el,n] of f.matchAll(/([⁰-⁹¹²³]*[A-Z][a-z]?)(\d*)/g)) o[el]=(o[el]||0)+(n?+n:1); return o; };
 
   // adduct ions; M is the neutral monoisotopic mass
   const ADDUCTS = [
@@ -62,7 +74,7 @@ const MS = (()=>{
     const prune=ps=>{ ps.sort((x,y)=>x[0]-y[0]); const m=[]; for (const p of ps){ const l=m[m.length-1]; if (l && p[0]-l[0]<res){ const w=l[1]+p[1]; l[0]=(l[0]*l[1]+p[0]*p[1])/w; l[1]=w; } else m.push([...p]); }
       const mx=Math.max(...m.map(p=>p[1])); return m.filter(p=>p[1]>mx*1e-5); };
     for (const [el,n] of Object.entries(counts)){ if (n<=0) continue; if (!known(el)) return [];
-      let base=ISO[el].map(x=>[x[0],x[1]]), k=n, acc=null; // binary exponentiation
+      let base=Object.hasOwn(LABEL,el) ? [[LABEL[el],1]] : ISO[el].map(x=>[x[0],x[1]]), k=n, acc=null; // binary exponentiation
       while (k){ if (k&1) acc = acc? conv(acc,base) : base; k>>=1; if (k) base=conv(base,base); }
       dist=conv(dist,acc); }
     const az=Math.abs(z)||1, mx=Math.max(...dist.map(p=>p[1]));
@@ -84,7 +96,8 @@ const MS = (()=>{
     const n=mol.getAtoms(), nb=mol.getBonds();
     if (n<2) return {precursor:null, peaks:[]};
     const comp=composition(mol); if (comp.charge) return {precursor:null, peaks:[], note:'MS/MS needs a neutral structure'};
-    const el=i=>mol.getAtomLabel(i), hz=i=>mol.getAllHydrogens(i);
+    // hydrogens on atom i, less the H/D atoms drawn explicitly (those are atoms of their own below n)
+    const el=i=>mol.getAtomLabel(i), hz=i=>{ let h=mol.getAllHydrogens(i); if (el(i)!=='H') for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (o<n && el(o)==='H') h--; } return h; };
     const M=massOf(comp.counts); if (!Number.isFinite(M)) return {precursor:null, peaks:[], note:'Unsupported element'};
     const sign = mode==='pos' ? 1 : -1;
     const precursor = {mz: M + sign*PROTON, formula: hill(add(comp.counts,{H:sign})) + (sign>0?'+':'-'), label: sign>0?'[M+H]⁺':'[M−H]⁻'};
@@ -127,7 +140,7 @@ const MS = (()=>{
         parts.push(part); }
       return parts;
     }
-    const countsOf=atoms=>{ const c={}; for (const i of atoms){ c[el(i)]=(c[el(i)]||0)+1; c.H=(c.H||0)+hz(i); } return c; };
+    const countsOf=atoms=>{ const c={}; for (const i of atoms){ const k=keyOf(mol,i); c[k]=(c[k]||0)+1; if (el(i)!=='H') c.H=(c.H||0)+hz(i); } return c; };
     const raw=[];
     // a piece X (atoms with their H, as a radical) gives even-electron ions: X⁺ when the other piece takes the proton,
     // [X+2H]⁺ when X keeps the proton and takes one H; in negative mode X⁻ or [X−2H]⁻
@@ -202,9 +215,9 @@ const MS = (()=>{
   const AW={H:1.008,Li:6.94,B:10.81,C:12.011,N:14.007,O:15.999,F:18.998,Na:22.990,Mg:24.305,Al:26.982,Si:28.085,P:30.974,S:32.06,Cl:35.45,K:39.098,Ca:40.078,
     Fe:55.845,Co:58.933,Ni:58.693,Cu:63.546,Zn:65.38,As:74.922,Se:78.971,Br:79.904,Ru:101.07,Rh:102.91,Pd:106.42,Ag:107.87,Sn:118.71,I:126.90,Pt:195.08,Au:196.97,Hg:200.59};
   function elemental(counts){
-    let tot=0; for (const [el,n] of Object.entries(counts)){ if (!Object.hasOwn(AW,el)) return null; tot+=n*AW[el]; }
-    const ks=Object.keys(counts).filter(k=>counts[k]>0); const order=counts.C ? ['C','H',...ks.filter(k=>k!=='C'&&k!=='H').sort()] : ks.sort();
-    return {mw:tot, rows:order.filter(k=>counts[k]>0).map(el=>({el, pct:100*counts[el]*AW[el]/tot}))};
+    const aw=el=>Object.hasOwn(AW,el) ? AW[el] : Object.hasOwn(LABEL,el) ? LABEL[el] : NaN;
+    let tot=0; for (const [el,n] of Object.entries(counts)){ if (!Number.isFinite(aw(el))) return null; tot+=n*aw(el); }
+    return {mw:tot, rows:order(counts).map(el=>({el, pct:100*counts[el]*aw(el)/tot}))};
   }
   return {composition, massOf, hill, adducts, isotopes, nominal, msms, hrmsLine, elemental, ELECTRON:E, PROTON};
 })();

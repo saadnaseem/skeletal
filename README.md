@@ -2,7 +2,7 @@
 
 A chemical structure editor that runs entirely in the browser. Draw molecules, reactions and arrow-pushing mechanisms in ACS journal style, then copy them into PowerPoint or Word or export them as PNG, SVG or PDF. Built-in tools estimate ¹H/¹³C NMR spectra, pKa values and bond dissociation energies, and look up NMR solvent and impurity peaks.
 
-The whole app is one HTML file (about 2.4 MB). It needs no server, no install and no account, and works offline. The only exceptions are the name/CAS lookup and the database search, which you start yourself.
+The whole app is one HTML file (about 2.4 MB). It needs no server, no install and no account, and works offline. The only exceptions are the name/CAS lookup, the database search, and inserting a structure by name, which you start yourself.
 
 ![Editor with a reaction scheme](docs/editor.png)
 
@@ -30,7 +30,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - The Text tool on an atom edits its label in place: type OMe, Ph, a name such as phenyl or methoxy, or a label with a superscript such as R¹ (Ctrl/⌘ + Shift + =). To change a label without opening it, click the structure, click the atom again to select just that atom, then press x₂ or x² in the Text panel or the same keys: R1 becomes R¹ or R₁. On an atom with no number (R, O) they open its label with the mode on, so the next characters you type are a subscript or superscript. Ctrl/⌘ + , and Ctrl/⌘ + . (as in Google Docs) also work, for Safari, where ⌘ + = can zoom the page instead. Double-clicking an atom does the same. On a bond, a click near either end labels that atom; a click near the middle adds a caption to the bond (hν, a, Δ) that moves, turns and is copied with it, and is deleted with it.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
-- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 18 built-in templates, including both chairs of cyclohexane. On a chair, a click with the bond tool adds the axial bond and then the equatorial one, a dragged bond snaps to them, and Clean up keeps the chair. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
+- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 18 built-in templates, including both chairs of cyclohexane. On a chair, a click with the bond tool adds the axial bond and then the equatorial one, a dragged bond snaps to them, and Clean up keeps the chair. You can also type a compound name or CAS number, which is looked up on PubChem. Anything you type there that isn't a valid SMILES, InChI or molfile (a typo included) is sent to PubChem as a name. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
 - **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
 - **Enhanced stereochemistry:** right-click a stereocenter to label it abs, &1 (racemic) or or1 (relative), as in ChemDraw. The labels are saved in V3000 molfiles and ChemDraw files.
 - **TLC plates:** draw lanes, spots and streaks with Rf values and the eluent. They're drawn in the page style and can be edited by double-clicking.
@@ -93,7 +93,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
   - The Analysis panel also shows m/z for [M+H]⁺.
 - **3D view:** a conformer from OpenChemLib, refined with MMFF94s, in ball-and-stick, space-filling or stick style. You can rotate and zoom it, and export it as XYZ, PDB, 3D SDF or PNG. It works offline.
 - **Find in databases:** sends the structure to PubChem (exact, similarity, substructure or superstructure search), RCSB PDB ligands, ChEMBL, or Google and Google Scholar by InChIKey.
-- **Name and CAS lookup:** finds the name, IUPAC name, CAS Registry Number, InChIKey and PubChem record for the selected structure, with links to verify the CAS number on CAS Common Chemistry or search the web. This is the only feature that uses the internet. It sends only the structure's SMILES to PubChem, and only when you click it.
+- **Name and CAS lookup:** finds the name, IUPAC name, CAS Registry Number, InChIKey and PubChem record for the selected structure, with links to verify the CAS number on CAS Common Chemistry or search the web. It sends only the structure's SMILES to PubChem, and only when you click it. Apart from this, only inserting a structure by name and Find in databases use the internet.
 - **Analysis panel:** SMILES, InChI, InChIKey, formula, MW, exact mass, cLogP, tPSA, H-bond donors and acceptors, rotatable bonds, stereocenters and molfile, plus reaction SMILES built from the drawn arrow.
 - **NMR prediction:**
   - ¹H and ¹³C shifts written on the structure, a simulated spectrum and a peak table with multiplicity, J and integration.
@@ -272,7 +272,7 @@ CI runs both the file and the served-site test passes on every push.
 
 ## Browser notes
 
-- Name and CAS lookup needs an internet connection, and PubChem must be reachable from your network. Everything else works offline.
+- Name and CAS lookup, inserting a structure by name, and Find in databases need an internet connection, and PubChem must be reachable from your network. Everything else works offline.
 - Copying to the clipboard needs a secure context (HTTPS or a local file). When a browser blocks it, Lone Pair shows the image so you can right-click it and choose Copy image.
 - Autosave uses `localStorage`, which is separate for each browser and can be cleared. Save the project as HTML to keep it permanently.
 - Labels render in Arial/Helvetica so they match Office and journal fonts.

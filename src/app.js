@@ -122,6 +122,7 @@ async function renderRecent(){
 // a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
   const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
+  if (t==='D' || t==='T') return {el:'H', iso: t==='D' ? 2 : 3}; // deuterium and tritium are hydrogen with a mass
   if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
     const charge=p.charge!=null ? p.charge : p.h!=null ? 0 : atom.charge||0, out={el:p.el}; if (p.charge!=null || p.h!=null) out.charge=charge;
     if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
@@ -130,8 +131,9 @@ function typedLabel(text, atom){
     return out; }
   return {el: normalizeLabel(t) || 'C'};
 }
-function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
-const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+function setLabel(a, {el, hs, hl, charge, iso}){ const wasDT=a.el==='H' && a.iso>1; a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge;
+  if (iso) a.iso=iso; else if (wasDT) delete a.iso; } // retyping a D or T label drops its mass; other isotope labels are kept
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge) && (!l.iso || a.iso===l.iso);
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -996,6 +998,25 @@ function layoutSmiles(smi){
   const mol=smilesMol(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
+// every record of an SD file, laid out 5 to a row as one inserted block
+const SDF_MAX=200;
+function openSdf(t){
+  // drop the line break after each $$$$ so every record starts on its own header line
+  const recs=t.split(/^\$\$\$\$[ \t]*\r?$/m).map((r,i)=>i? r.replace(/^\r?\n/,'') : r).filter(r=>/M\s+END/.test(r)), frags=[];
+  for (const r of recs.slice(0,SDF_MAX)){ try{ const mol=OCL.Molecule.fromMolfile(r); if (!mol.getAllAtoms()) continue;
+    let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
+    if (!hasXY) mol.inventCoordinates(); frags.push(molToFragment(mol)); }catch(e){} }
+  if (!frags.length){ toast('Could not read this file'); return; }
+  const boxes=frags.map(fragBBox), cw=Math.max(...boxes.map(b=>b.x1-b.x0))+L*2, rh=Math.max(...boxes.map(b=>b.y1-b.y0))+L*2, all={atoms:[],bonds:[]};
+  frags.forEach((f,k)=>{ const b=boxes[k], ox=(k%5)*cw-b.x0, oy=Math.floor(k/5)*rh-b.y0, base=all.atoms.length;
+    for (const a of f.atoms) all.atoms.push({...a, x:a.x+ox, y:a.y+oy});
+    for (const bd of f.bonds) all.bonds.push({...bd, a:bd.a+base, b:bd.b+base}); });
+  insertFragments([{kind:'frag',f:all}]);
+  if (recs.length>1 || frags.length<recs.length) toast(recs.length>SDF_MAX ? `Opened the first ${frags.length} of ${recs.length} structures` : frags.length<recs.length ? `Opened ${frags.length} of ${recs.length} structures; the rest could not be read` : `Opened ${frags.length} structures`);
+}
+const SMILES_MAX=3000;
+// biggest structure first; on a tie the one with more carbons (the organic ion of a salt rather than its counterion)
+function largestFirst(comps, index=ix){ const nC=c=>c.reduce((t,id)=>t+(index.atom.get(id)?.el==='C'),0); return comps.sort((a,b)=>b.length-a.length || nC(b)-nC(a)); }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
   pushUndo();
   const db=contentBBox(doc);
@@ -1030,6 +1051,7 @@ function tryLoadText(txt, quiet){
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
+      if ((txt.match(/M\s+END/g)||[]).length>1 && /^\$\$\$\$/m.test(txt)){ openSdf(txt); return true; }
       const mol=OCL.Molecule.fromMolfile(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
@@ -1044,6 +1066,7 @@ function tryLoadText(txt, quiet){
     if (line.includes('>')){
       const [r,a,p]= line.split('>'); if (p===undefined) throw 0;
       const parts=[]; const rs=r.split('.').filter(Boolean), ps=p.split('.').filter(Boolean);
+      if (!rs.length && !ps.length) throw 0; // ">>" alone has no structures to draw
       rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
       parts.push({kind:'arrow'});
       ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
@@ -1886,7 +1909,7 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
     case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
     case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
     case 'json': return {data:JSON.stringify(project)};
-    case 'xyz': case 'pdb': case 'sdf3d': { const comps=components(d,dix).sort((a,b)=>b.length-a.length); const r=toOCL(d,dix,comps[0],{skipH:true}); if (r.generic) throw new Error('Generic labels have no 3D geometry');
+    case 'xyz': case 'pdb': case 'sdf3d': { const comps=largestFirst(components(d,dix),dix); const r=toOCL(d,dix,comps[0],{skipH:true}); if (r.generic) throw new Error('Generic labels have no 3D geometry');
       const m3=await VIEW3D.conformer(r.mol); return {data: id==='xyz'? VIEW3D.xyz(m3) : id==='pdb'? VIEW3D.pdb(m3) : m3.mol.toMolfile()+'$$$$\n'}; }
   }
   const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
@@ -1927,7 +1950,7 @@ async function openFile(f, handle){
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
-    if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
+    if (/\.sdf$/i.test(f.name)){ openSdf(t); return; }
     if (!tryLoadText(t.trim())) toast('Could not read this file');
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
@@ -2034,7 +2057,7 @@ function syncTools(){
 
 /* ================= dialogs & toast ================= */
 const modal=$('#modal'), dialog=$('#dialog');
-function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog); const f=dialog.querySelector('textarea,input'); if (f) setTimeout(()=>f.focus(),30); }
+function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog); const f=dialog.querySelector('textarea,input'); setTimeout(()=>(f||dialog).focus({preventScroll:true}),30); } // focus inside, so Esc closes it
 function closeDialog(){ modal.classList.remove('open'); dialog.innerHTML=''; dialog.classList.remove('wide'); }
 modal.addEventListener('pointerdown', e=>{ if (e.target===modal) closeDialog(); });
 dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
@@ -2046,6 +2069,10 @@ function openSmilesDialog(){
   openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
   dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
   const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+    // OpenChemLib's SMILES parser slows sharply with size: refuse what would freeze the tab, and warn before a slow one
+    const smilesLike=!v.includes('\n') && !/^InChI=/.test(v);
+    if (smilesLike && v.length>SMILES_MAX){ $('#smErr').textContent=`That SMILES is ${v.length.toLocaleString()} characters long. Lone Pair can draw up to ${SMILES_MAX.toLocaleString()}; larger structures would freeze the page.`; return; }
+    if (smilesLike && v.length>500){ $('#smErr').textContent='Building a large structure. This can take a few seconds…'; await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0))); }
     if (tryLoadText(v,true)){ closeDialog(); return; }
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
     $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
@@ -2058,8 +2085,8 @@ function openElementDialog(){
   openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(tool.lab || (['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el))}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
   dialog.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ $('#elIn').value=b.dataset.e; go(); });
   const go=()=>{ const raw=$('#elIn').value.trim(), v=normalizeLabel(raw); if(!v) return; closeDialog();
-    const p=!ABBR[raw] && parseLabel(raw), lab = p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+
-    setTool('atom',{el: lab? p.el : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
+    const p=!ABBR[raw] && parseLabel(raw), dt=/^[DT]$/.test(raw), lab = dt || p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+, D
+    setTool('atom',{el: lab? (dt? 'H' : p.el) : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
 }
 /* ================= style & colors ================= */
@@ -2165,6 +2192,11 @@ $('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) 
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
+// toolbars that scroll sideways on small screens fade at the edge that has more buttons beyond it
+for (const el of document.querySelectorAll('header.top, nav.tools')){
+  const mark=()=>{ const max=el.scrollWidth-el.clientWidth; el.classList.toggle('more-l', max>1 && el.scrollLeft>1); el.classList.toggle('more-r', max>1 && el.scrollLeft<max-1); };
+  el.addEventListener('scroll', mark, {passive:true}); new ResizeObserver(mark).observe(el); mark();
+}
 
 /* ================= projects, pages, versions ================= */
 function normalizeProject(p){
@@ -2643,7 +2675,7 @@ function openNmrGuide(tab){
 let v3={seed:17, style:'ball', showH:true, labels:false, spin:true};
 async function open3d(){
   const selIds=selAtoms();
-  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  const comps=largestFirst(components(doc,ix, selIds.length? selIds : null));
   if (!comps.length){ toast('Draw or select a structure first'); return; }
   const {mol,generic}=toOCL(doc,ix,comps[0],{skipH:true});
   if (generic){ toast('Structures with R, X or custom labels have no 3D geometry'); return; }
@@ -2683,13 +2715,13 @@ async function open3d(){
 let msState=null;
 function openMs(tab){
   const selIds=selAtoms();
-  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  const comps=largestFirst(components(doc,ix, selIds.length? selIds : null));
   if (!comps.length){ toast('Draw or select a structure first'); return; }
   const comp=comps[0];
   const {mol, owner, generic}=toOCL(doc,ix,comp,{skipH:true});
   if (generic){ toast('Structures with R, X or custom labels have no defined mass'); return; }
   mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
-  msState={comp, mol, owner, multi:comps.length>1, tab:tab||(msState&&msState.tab)||'mz', mode:(msState&&msState.mode)||'pos', energy:(msState&&msState.energy)||'medium', pick:null};
+  msState={comp, mol, owner, multi:comps.length>1, count:comps.length, tab:tab||(msState&&msState.tab)||'mz', mode:(msState&&msState.mode)||'pos', energy:(msState&&msState.energy)||'medium', pick:null};
   renderMs();
 }
 function msStickSVG(peaks, opts={}){ // peaks: [{mz, rel, label?, i?}]
@@ -2757,7 +2789,7 @@ function renderMs(){
       st._r=r;
     }
   }
-  const notes = st.multi ? '<p class="note">Showing the largest structure. Select a structure to analyze another one.</p>' : '';
+  const notes = st.multi ? `<p class="note">Showing the largest of ${st.count} structures (${esc(MS.hill(MS.composition(st.mol).counts))}). Select a structure to analyze another one.</p>` : '';
   openDialog(`<div class="dialog-inner"><h3>Mass spectrum</h3>${tabs}${body}${notes}<div class="actions" style="flex-wrap:wrap"><button class="tb" id="msNmr">Predict NMR</button>${actions}<button class="tb primary" data-close>Done</button></div></div>`);
   dialog.classList.add('wide');
   dialog.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{ st.tab=b.dataset.mt; st.pick=null; renderMs(); });

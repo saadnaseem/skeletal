@@ -34,15 +34,16 @@ const NMR = (()=>{
     NHCOR:[2.08,-0.57,-0.72], 'N+':[1.5,0.4,0.3], NO2:[1.87,1.32,0.62], F:[1.54,-0.40,-1.02], Cl:[1.08,0.18,0.13], Br:[1.07,0.45,0.55], I:[1.14,0.81,0.88],
     SR:[1.11,-0.29,-0.13], SH:[1.0,-0.2,-0.1], SO2R:[1.55,1.16,0.93], SOR:[1.27,0.67,0.41], CF3:[0.66,0.61,0.32], Si:[0.9,0.9,0.6], X:[0.5,0,0] };
 
-  let m, H, isSp3C, nb;
+  let m, H, Hp, isSp3C, nb;
   const Z=i=>m.getAtomicNo(i);
   function setup(mol){
     m=mol; m.ensureHelperArrays(OCL.Molecule.cHelperSymmetrySimple);
-    const n=m.getAtoms(); H=[]; nb=[]; isSp3C=[];
+    const n=m.getAtoms(); H=[]; Hp=[]; nb=[]; isSp3C=[];
     for (let i=0;i<n;i++){
-      H[i]=m.getAllHydrogens(i);
-      const list=[]; for (let k=0;k<m.getConnAtoms(i);k++) list.push({a:m.getConnAtom(i,k), o:m.getConnBondOrder(i,k), b:m.getConnBond(i,k)});
-      nb[i]=list;
+      // explicit H/D atoms are hydrogens, not substituents: H counts them all (for shift rules), Hp only ¹H (for ¹H signals)
+      H[i]=m.getAllHydrogens(i); let d=0;
+      const list=[]; for (let k=0;k<m.getConnAtoms(i);k++){ const a=m.getConnAtom(i,k); if (m.getAtomicNo(a)===1 && m.getAtomicNo(i)!==1){ if (m.getAtomMass(a)>1) d++; continue; } list.push({a, o:m.getConnBondOrder(i,k), b:m.getConnBond(i,k)}); }
+      nb[i]=list; Hp[i]=Math.max(0,H[i]-d);
     }
     for (let i=0;i<n;i++) isSp3C[i] = Z(i)===6 && !m.isAromaticAtom(i) && nb[i].every(x=>x.o===1 && !m.isAromaticBond(x.b));
   }
@@ -274,7 +275,7 @@ const NMR = (()=>{
     if (z!==6) return out;
     if (m.isAromaticAtom(T)){
       const ring=aromRing(T)||[]; const n5=ring.length===5;
-      for (const y of nb[T]) if (ring.includes(y.a) && Z(y.a)===6 && H[y.a]>0 && m.getSymmetryRank(y.a)!==rT){
+      for (const y of nb[T]) if (ring.includes(y.a) && Z(y.a)===6 && Hp[y.a]>0 && m.getSymmetryRank(y.a)!==rT){
         const nearN = nb[T].some(w=>Z(w.a)===7&&ring.includes(w.a)) || nb[y.a].some(w=>Z(w.a)===7&&ring.includes(w.a));
         out.push(n5?3.5: nearN?4.9:7.8); }
       return out;
@@ -282,24 +283,24 @@ const NMR = (()=>{
     const alkP=nb[T].find(y=>Z(y.a)===6 && y.o===2 && !m.isAromaticBond(y.b));
     if (alkP){
       const P=alkP.a;
-      if (H[P]>0){
+      if (Hp[P]>0){
         // hydrogens on partner: work out on which side they sit
         const subP=nb[P].filter(y=>y.a!==T); const occ=subP.map(y=>sideOf(T,P,y.a));
-        const pSides = H[P]>=2 ? [1,-1] : [occ.length? -occ[0] : 1];
+        const pSides = Hp[P]>=2 ? [1,-1] : [occ.length? -occ[0] : 1];
         for (const ps of pSides) out.push(ps===side ? 10.5 : 17.0);
       }
-      if (H[T]>=2) out.push(1.5);
-      for (const y of nb[T]) if (y.a!==P && isSp3C[y.a] && H[y.a]>0) for (let k=0;k<H[y.a];k++) out.push(6.8);
+      if (Hp[T]>=2) out.push(1.5);
+      for (const y of nb[T]) if (y.a!==P && isSp3C[y.a] && Hp[y.a]>0) for (let k=0;k<Hp[y.a];k++) out.push(6.8);
       return out;
     }
-    if (dbl(T,8)){ for (const y of nb[T]) if (Z(y.a)===6 && H[y.a]>0){ const sp3=isSp3C[y.a]; for (let k=0;k<H[y.a];k++) out.push(sp3?1.8:7.8); } return out; }
+    if (dbl(T,8)){ for (const y of nb[T]) if (Z(y.a)===6 && Hp[y.a]>0){ const sp3=isSp3C[y.a]; for (let k=0;k<Hp[y.a];k++) out.push(sp3?1.8:7.8); } return out; }
     if (isSp3C[T]){
       for (const y of nb[T]){
-        if (Z(y.a)!==6 || H[y.a]===0 || m.getSymmetryRank(y.a)===rT) continue;
+        if (Z(y.a)!==6 || Hp[y.a]===0 || m.getSymmetryRank(y.a)===rT) continue;
         if (m.isAromaticAtom(y.a)) continue;
         if (dbl(y.a,8)){ out.push(1.8); continue; }
         const sp2 = nb[y.a].some(w=>w.o===2);
-        for (let k=0;k<H[y.a];k++) out.push(sp2?6.8:7.0);
+        for (let k=0;k<Hp[y.a];k++) out.push(sp2?6.8:7.0);
       }
     }
     return out;
@@ -323,26 +324,26 @@ const NMR = (()=>{
         let s=null; try{ s=c13(i); }catch(e){}
         if (s!=null){ const k='c'+rank; const g=carbons.get(k)||{shift:s, atoms:[], H:H[i]}; g.atoms.push(i); carbons.set(k,g); }
       }
-      if (H[i]>0){
+      if (Hp[i]>0){
         if (z===6){
           let entries;
-          if (m.isAromaticAtom(i)) entries=[{side:0, shift:h1arom(i), n:H[i]}];
-          else if (nb[i].some(y=>Z(y.a)===6 && y.o===2 && !m.isAromaticBond(y.b))) entries=h1alkene(i).map(e=>({...e,n: H[i]>=2?1:H[i]}));
+          if (m.isAromaticAtom(i)) entries=[{side:0, shift:h1arom(i), n:Hp[i]}];
+          else if (nb[i].some(y=>Z(y.a)===6 && y.o===2 && !m.isAromaticBond(y.b))) entries=h1alkene(i).map(e=>({...e,n: Hp[i]>=2?1:Hp[i]}));
           else if (dbl(i,8)){ const others=nb[i].filter(y=>!(Z(y.a)===8&&y.o===2)); const o=others[0];
-            const s = !o ? 9.6 : Z(o.a)===8 ? 8.05 : Z(o.a)===7 ? 8.1 : m.isAromaticAtom(o.a) ? 9.95 : nb[o.a].some(w=>w.o===2) ? 9.5 : 9.75; entries=[{side:0,shift:s,n:H[i]}]; }
-          else if (dbl(i,7)) entries=[{side:0,shift:8.2,n:H[i]}];
-          else if (nb[i].some(y=>y.o===3)){ const t=nb[i].find(y=>y.o===3).a; const o=nb[t].find(w=>w.a!==i); entries=[{side:0, shift: o && (m.isAromaticAtom(o.a)||dbl(o.a,8)) ? 3.05 : 1.95, n:H[i]}]; }
-          else entries=[{side:0, shift:h1sp3(i), n:H[i]}];
+            const s = !o ? 9.6 : Z(o.a)===8 ? 8.05 : Z(o.a)===7 ? 8.1 : m.isAromaticAtom(o.a) ? 9.95 : nb[o.a].some(w=>w.o===2) ? 9.5 : 9.75; entries=[{side:0,shift:s,n:Hp[i]}]; }
+          else if (dbl(i,7)) entries=[{side:0,shift:8.2,n:Hp[i]}];
+          else if (nb[i].some(y=>y.o===3)){ const t=nb[i].find(y=>y.o===3).a; const o=nb[t].find(w=>w.a!==i); entries=[{side:0, shift: o && (m.isAromaticAtom(o.a)||dbl(o.a,8)) ? 3.05 : 1.95, n:Hp[i]}]; }
+          else entries=[{side:0, shift:h1sp3(i), n:Hp[i]}];
           for (const e of entries){
             const js=couplings(i,e.side); const mu=multiplet(js);
             const k='h'+rank+'_'+e.side;
-            const g=protons.get(k)||{shift:e.shift, n:0, atoms:[], mult:mu.m, J:mu.J, groups:mu.groups, exch:false, kind: H[i]===3?'CH3':H[i]===2?'CH2':'CH'};
+            const g=protons.get(k)||{shift:e.shift, n:0, atoms:[], mult:mu.m, J:mu.J, groups:mu.groups, exch:false, kind: Hp[i]===3?'CH3':Hp[i]===2?'CH2':'CH'};
             g.n+=e.n; g.atoms.push(i); protons.set(k,g);
           }
         } else {
           const ex=exchange(i); const k='x'+rank;
           const g=protons.get(k)||{shift:ex.s, n:0, atoms:[], mult:'br s', J:[], groups:[], exch:true, kind:ex.t};
-          g.n+=H[i]; g.atoms.push(i); protons.set(k,g);
+          g.n+=Hp[i]; g.atoms.push(i); protons.set(k,g);
         }
       }
     }

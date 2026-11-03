@@ -187,6 +187,7 @@ kbd{font:600 11.5px/1 var(--ui); border:1px solid var(--line); border-bottom-wid
 
 .modal{position:fixed; inset:0; background:rgba(10,16,24,.42); display:none; place-items:center; z-index:20; padding:16px}
 .modal.open{display:grid}
+.dialog:focus{outline:none}
 .dialog{background:var(--panel); color:var(--ink); border-radius:12px; width:min(520px,100%); max-height:90vh; overflow:auto; padding:18px; box-shadow:0 18px 50px rgba(0,0,0,.25)}
 .dialog h3{margin:0 0 6px; font-size:16px}
 .dialog p{margin:0 0 12px; color:var(--ink-2); font-size:13px}
@@ -250,6 +251,12 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   .only-mobile{display:inline-flex}
   .hide-mobile{display:none}
   header.top{overflow-x:auto; padding:6px 8px; gap:4px}
+  /* scroll strips: keep buttons full size (no flex squeeze), 40px tap targets, and fade the edge that has more to scroll to */
+  header.top > *, nav.tools > *{flex:none}
+  header.top .tb{height:40px} header.top .tb.icon{width:40px}
+  .more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent)}
+  .more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to left,#000 calc(100% - 28px),transparent)}
+  .more-l.more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 28px,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to right,transparent,#000 28px,#000 calc(100% - 28px),transparent)}
   .brand{display:none}
   header.top .sep{display:none}
   #bSmiles span{display:none} #bSmiles{padding:0 8px}
@@ -485,7 +492,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <button role="menuitem" data-cmd="ungroup" data-need="sel"><span>Ungroup</span><kbd>Ctrl Shift G</kbd></button>
   <button role="menuitem" data-cmd="delete" data-need="sel"><span>Delete</span><kbd>Del</kbd></button>
 </div>
-<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog"></div></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog" tabindex="-1"></div></div>
 <div class="nudge" id="signinNudge" hidden data-sk role="dialog" aria-label="Sign in invitation">
   <p><b>Enjoying Lone Pair?</b> Sign in with Google to hear about new features. It's optional; your drawings stay on your computer.</p>
   <div class="row"><button class="tb primary" id="nudgeIn">Sign in with Google</button><button class="tb" id="nudgeNo">Not now</button><a class="note" href="/privacy.html" target="_blank" rel="noopener">Privacy</a></div>
@@ -1289,7 +1296,7 @@ function toOCL(d, ix, atomIds, opts={}){
   const ids = atomIds || d.atoms.map(a=>a.id), set=new Set(ids);
   for (const id of ids){
     const a=ix.atom.get(id), k=kindOf(a.el);
-    if (opts.skipH && a.el==='H' && !a.charge && (ix.adj.get(id)||[]).length===1) continue;
+    if (opts.skipH && a.el==='H' && !a.charge && !(a.iso>1) && (ix.adj.get(id)||[]).length===1) continue; // D and T stay: they change the mass and the ¹H spectrum
     if (k==='element' || opts.placeholders){
       const z = k==='element' ? M.getAtomicNoFromLabel(a.el) : 6;
       const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,a.y/L); // OCL's y axis points down, like ours
@@ -1432,15 +1439,16 @@ const NMR = (()=>{
     NHCOR:[2.08,-0.57,-0.72], 'N+':[1.5,0.4,0.3], NO2:[1.87,1.32,0.62], F:[1.54,-0.40,-1.02], Cl:[1.08,0.18,0.13], Br:[1.07,0.45,0.55], I:[1.14,0.81,0.88],
     SR:[1.11,-0.29,-0.13], SH:[1.0,-0.2,-0.1], SO2R:[1.55,1.16,0.93], SOR:[1.27,0.67,0.41], CF3:[0.66,0.61,0.32], Si:[0.9,0.9,0.6], X:[0.5,0,0] };
 
-  let m, H, isSp3C, nb;
+  let m, H, Hp, isSp3C, nb;
   const Z=i=>m.getAtomicNo(i);
   function setup(mol){
     m=mol; m.ensureHelperArrays(OCL.Molecule.cHelperSymmetrySimple);
-    const n=m.getAtoms(); H=[]; nb=[]; isSp3C=[];
+    const n=m.getAtoms(); H=[]; Hp=[]; nb=[]; isSp3C=[];
     for (let i=0;i<n;i++){
-      H[i]=m.getAllHydrogens(i);
-      const list=[]; for (let k=0;k<m.getConnAtoms(i);k++) list.push({a:m.getConnAtom(i,k), o:m.getConnBondOrder(i,k), b:m.getConnBond(i,k)});
-      nb[i]=list;
+      // explicit H/D atoms are hydrogens, not substituents: H counts them all (for shift rules), Hp only ¹H (for ¹H signals)
+      H[i]=m.getAllHydrogens(i); let d=0;
+      const list=[]; for (let k=0;k<m.getConnAtoms(i);k++){ const a=m.getConnAtom(i,k); if (m.getAtomicNo(a)===1 && m.getAtomicNo(i)!==1){ if (m.getAtomMass(a)>1) d++; continue; } list.push({a, o:m.getConnBondOrder(i,k), b:m.getConnBond(i,k)}); }
+      nb[i]=list; Hp[i]=Math.max(0,H[i]-d);
     }
     for (let i=0;i<n;i++) isSp3C[i] = Z(i)===6 && !m.isAromaticAtom(i) && nb[i].every(x=>x.o===1 && !m.isAromaticBond(x.b));
   }
@@ -1672,7 +1680,7 @@ const NMR = (()=>{
     if (z!==6) return out;
     if (m.isAromaticAtom(T)){
       const ring=aromRing(T)||[]; const n5=ring.length===5;
-      for (const y of nb[T]) if (ring.includes(y.a) && Z(y.a)===6 && H[y.a]>0 && m.getSymmetryRank(y.a)!==rT){
+      for (const y of nb[T]) if (ring.includes(y.a) && Z(y.a)===6 && Hp[y.a]>0 && m.getSymmetryRank(y.a)!==rT){
         const nearN = nb[T].some(w=>Z(w.a)===7&&ring.includes(w.a)) || nb[y.a].some(w=>Z(w.a)===7&&ring.includes(w.a));
         out.push(n5?3.5: nearN?4.9:7.8); }
       return out;
@@ -1680,24 +1688,24 @@ const NMR = (()=>{
     const alkP=nb[T].find(y=>Z(y.a)===6 && y.o===2 && !m.isAromaticBond(y.b));
     if (alkP){
       const P=alkP.a;
-      if (H[P]>0){
+      if (Hp[P]>0){
         // hydrogens on partner: work out on which side they sit
         const subP=nb[P].filter(y=>y.a!==T); const occ=subP.map(y=>sideOf(T,P,y.a));
-        const pSides = H[P]>=2 ? [1,-1] : [occ.length? -occ[0] : 1];
+        const pSides = Hp[P]>=2 ? [1,-1] : [occ.length? -occ[0] : 1];
         for (const ps of pSides) out.push(ps===side ? 10.5 : 17.0);
       }
-      if (H[T]>=2) out.push(1.5);
-      for (const y of nb[T]) if (y.a!==P && isSp3C[y.a] && H[y.a]>0) for (let k=0;k<H[y.a];k++) out.push(6.8);
+      if (Hp[T]>=2) out.push(1.5);
+      for (const y of nb[T]) if (y.a!==P && isSp3C[y.a] && Hp[y.a]>0) for (let k=0;k<Hp[y.a];k++) out.push(6.8);
       return out;
     }
-    if (dbl(T,8)){ for (const y of nb[T]) if (Z(y.a)===6 && H[y.a]>0){ const sp3=isSp3C[y.a]; for (let k=0;k<H[y.a];k++) out.push(sp3?1.8:7.8); } return out; }
+    if (dbl(T,8)){ for (const y of nb[T]) if (Z(y.a)===6 && Hp[y.a]>0){ const sp3=isSp3C[y.a]; for (let k=0;k<Hp[y.a];k++) out.push(sp3?1.8:7.8); } return out; }
     if (isSp3C[T]){
       for (const y of nb[T]){
-        if (Z(y.a)!==6 || H[y.a]===0 || m.getSymmetryRank(y.a)===rT) continue;
+        if (Z(y.a)!==6 || Hp[y.a]===0 || m.getSymmetryRank(y.a)===rT) continue;
         if (m.isAromaticAtom(y.a)) continue;
         if (dbl(y.a,8)){ out.push(1.8); continue; }
         const sp2 = nb[y.a].some(w=>w.o===2);
-        for (let k=0;k<H[y.a];k++) out.push(sp2?6.8:7.0);
+        for (let k=0;k<Hp[y.a];k++) out.push(sp2?6.8:7.0);
       }
     }
     return out;
@@ -1721,26 +1729,26 @@ const NMR = (()=>{
         let s=null; try{ s=c13(i); }catch(e){}
         if (s!=null){ const k='c'+rank; const g=carbons.get(k)||{shift:s, atoms:[], H:H[i]}; g.atoms.push(i); carbons.set(k,g); }
       }
-      if (H[i]>0){
+      if (Hp[i]>0){
         if (z===6){
           let entries;
-          if (m.isAromaticAtom(i)) entries=[{side:0, shift:h1arom(i), n:H[i]}];
-          else if (nb[i].some(y=>Z(y.a)===6 && y.o===2 && !m.isAromaticBond(y.b))) entries=h1alkene(i).map(e=>({...e,n: H[i]>=2?1:H[i]}));
+          if (m.isAromaticAtom(i)) entries=[{side:0, shift:h1arom(i), n:Hp[i]}];
+          else if (nb[i].some(y=>Z(y.a)===6 && y.o===2 && !m.isAromaticBond(y.b))) entries=h1alkene(i).map(e=>({...e,n: Hp[i]>=2?1:Hp[i]}));
           else if (dbl(i,8)){ const others=nb[i].filter(y=>!(Z(y.a)===8&&y.o===2)); const o=others[0];
-            const s = !o ? 9.6 : Z(o.a)===8 ? 8.05 : Z(o.a)===7 ? 8.1 : m.isAromaticAtom(o.a) ? 9.95 : nb[o.a].some(w=>w.o===2) ? 9.5 : 9.75; entries=[{side:0,shift:s,n:H[i]}]; }
-          else if (dbl(i,7)) entries=[{side:0,shift:8.2,n:H[i]}];
-          else if (nb[i].some(y=>y.o===3)){ const t=nb[i].find(y=>y.o===3).a; const o=nb[t].find(w=>w.a!==i); entries=[{side:0, shift: o && (m.isAromaticAtom(o.a)||dbl(o.a,8)) ? 3.05 : 1.95, n:H[i]}]; }
-          else entries=[{side:0, shift:h1sp3(i), n:H[i]}];
+            const s = !o ? 9.6 : Z(o.a)===8 ? 8.05 : Z(o.a)===7 ? 8.1 : m.isAromaticAtom(o.a) ? 9.95 : nb[o.a].some(w=>w.o===2) ? 9.5 : 9.75; entries=[{side:0,shift:s,n:Hp[i]}]; }
+          else if (dbl(i,7)) entries=[{side:0,shift:8.2,n:Hp[i]}];
+          else if (nb[i].some(y=>y.o===3)){ const t=nb[i].find(y=>y.o===3).a; const o=nb[t].find(w=>w.a!==i); entries=[{side:0, shift: o && (m.isAromaticAtom(o.a)||dbl(o.a,8)) ? 3.05 : 1.95, n:Hp[i]}]; }
+          else entries=[{side:0, shift:h1sp3(i), n:Hp[i]}];
           for (const e of entries){
             const js=couplings(i,e.side); const mu=multiplet(js);
             const k='h'+rank+'_'+e.side;
-            const g=protons.get(k)||{shift:e.shift, n:0, atoms:[], mult:mu.m, J:mu.J, groups:mu.groups, exch:false, kind: H[i]===3?'CH3':H[i]===2?'CH2':'CH'};
+            const g=protons.get(k)||{shift:e.shift, n:0, atoms:[], mult:mu.m, J:mu.J, groups:mu.groups, exch:false, kind: Hp[i]===3?'CH3':Hp[i]===2?'CH2':'CH'};
             g.n+=e.n; g.atoms.push(i); protons.set(k,g);
           }
         } else {
           const ex=exchange(i); const k='x'+rank;
           const g=protons.get(k)||{shift:ex.s, n:0, atoms:[], mult:'br s', J:[], groups:[], exch:true, kind:ex.t};
-          g.n+=H[i]; g.atoms.push(i); protons.set(k,g);
+          g.n+=Hp[i]; g.atoms.push(i); protons.set(k,g);
         }
       }
     }
@@ -2783,23 +2791,24 @@ const FORMATS = (()=>{
     if (marvin){
       const cols=k=>d.atoms.map(k).join(' ');
       const atomArray=E('atomArray',{atomID:cols(a=>aid.get(a.id)), elementType:cols(a=>kindOf(a.el)==='element'?a.el:'R'), x2:cols(X), y2:cols(Y),
-        formalCharge: d.atoms.some(a=>a.charge)? cols(a=>String(a.charge||0)) : undefined, radical: d.atoms.some(a=>a.rad)? cols(a=>a.rad?'monovalent':'0') : undefined});
+        formalCharge: d.atoms.some(a=>a.charge)? cols(a=>String(a.charge||0)) : undefined, radical: d.atoms.some(a=>a.rad)? cols(a=>a.rad?'monovalent':'0') : undefined, isotope: d.atoms.some(a=>a.iso)? cols(a=>String(a.iso||0)) : undefined});
       const bonds=d.bonds.map((b,i)=>E('bond',{id:'b'+(i+1), atomRefs2:aid.get(b.a)+' '+aid.get(b.b), order:String(b.order)}, b.order===1&&(b.stereo==='wedge'||b.stereo==='hash')? [E('bondStereo',{},[],b.stereo==='wedge'?'W':'H')] : []));
       return '<?xml version="1.0" encoding="UTF-8"?>\n'+xmlWrite(E('cml',{xmlns:'http://www.chemaxon.com', version:'ChemAxon file format v20.20.0, generated by Lone Pair'},[E('MDocument',{},[E('MChemicalStruct',{},[E('molecule',{molID:'m1'},[atomArray,E('bondArray',{},bonds)])])])]))+'\n';
     }
-    const atoms=d.atoms.map(a=>E('atom',{id:aid.get(a.id), elementType:kindOf(a.el)==='element'?a.el:'R', x2:X(a), y2:Y(a), formalCharge:a.charge?String(a.charge):undefined, spinMultiplicity:a.rad?'2':undefined, hydrogenCount:a.rad&&kindOf(a.el)==='element'?String(implicitH(a,bondSum(ix,a.id))):undefined}));
+    const atoms=d.atoms.map(a=>E('atom',{id:aid.get(a.id), elementType:kindOf(a.el)==='element'?a.el:'R', x2:X(a), y2:Y(a), formalCharge:a.charge?String(a.charge):undefined, isotopeNumber:a.iso?String(a.iso):undefined, spinMultiplicity:a.rad?'2':undefined, hydrogenCount:a.rad&&kindOf(a.el)==='element'?String(implicitH(a,bondSum(ix,a.id))):undefined}));
     const bonds=d.bonds.map((b,i)=>E('bond',{id:'b'+(i+1), atomRefs2:aid.get(b.a)+' '+aid.get(b.b), order:String(b.order)}, b.order===1&&(b.stereo==='wedge'||b.stereo==='hash')? [E('bondStereo',{},[],b.stereo==='wedge'?'W':'H')] : []));
     return '<?xml version="1.0" encoding="UTF-8"?>\n'+xmlWrite(E('cml',{xmlns:'http://www.xml-cml.org/schema'},[E('molecule',{id:'m1'},[E('atomArray',{},atoms),E('bondArray',{},bonds)])]))+'\n';
   }
+  const setIso=(a,v)=>{ const n=+v; if (Number.isInteger(n) && n>0 && n<300) a.iso=n; };
   function cmlRead(text){
     const root=xmlParse(text), atoms=[], bonds=[]; let nid=1; const ref=new Map();
     walk(root, n=>{
       if (n.name!=='atomArray') return;
       if (n.attrs.atomID){ // Marvin/CML array form
-        const col=k=>(n.attrs[k]||'').trim().split(/\s+/), ids=col('atomID'), el=col('elementType'), x=col('x2'), y=col('y2'), ch=n.attrs.formalCharge?col('formalCharge'):[], rad=n.attrs.radical?col('radical'):[];
-        ids.forEach((id,i)=>{ const a={id:nid++, x:+x[i]/ANG*L, y:-(+y[i])/ANG*L, el:el[i]==='R'?'R':el[i], charge:+(ch[i]||0)||0, lp:0, rad:rad[i]&&rad[i]!=='0'?1:0}; atoms.push(a); ref.set(id,a.id); });
+        const col=k=>(n.attrs[k]||'').trim().split(/\s+/), ids=col('atomID'), el=col('elementType'), x=col('x2'), y=col('y2'), ch=n.attrs.formalCharge?col('formalCharge'):[], rad=n.attrs.radical?col('radical'):[], iso=n.attrs.isotope?col('isotope'):[];
+        ids.forEach((id,i)=>{ const a={id:nid++, x:+x[i]/ANG*L, y:-(+y[i])/ANG*L, el:el[i]==='R'?'R':el[i], charge:+(ch[i]||0)||0, lp:0, rad:rad[i]&&rad[i]!=='0'?1:0}; setIso(a,iso[i]); atoms.push(a); ref.set(id,a.id); });
       } else for (const c of kids(n,'atom')){ const A=c.attrs, x=+(A.x2??A.x3??0), y=+(A.y2??A.y3??0);
-        const a={id:nid++, x:x/ANG*L, y:-y/ANG*L, el:A.elementType||'C', charge:+(A.formalCharge||0)||0, lp:0, rad:A.spinMultiplicity==='2'?1:0}; atoms.push(a); ref.set(A.id,a.id); }
+        const a={id:nid++, x:x/ANG*L, y:-y/ANG*L, el:A.elementType||'C', charge:+(A.formalCharge||0)||0, lp:0, rad:A.spinMultiplicity==='2'?1:0}; setIso(a,A.isotopeNumber??A.isotope); atoms.push(a); ref.set(A.id,a.id); }
     });
     walk(root, n=>{
       if (n.name!=='bond' || !n.attrs.atomRefs2) return;
@@ -2935,23 +2944,35 @@ const MS = (()=>{
     I:[[126.904473,1]], Pt:[[194.9647911,0.338],[193.9626803,0.329],[195.9649515,0.252],[197.967893,0.07356],[191.9610380,0.00782],[189.959932,0.00014]],
     Au:[[196.9665687,1]], Hg:[[201.970643,0.2986],[199.968326,0.231],[198.968280,0.1687],[200.970302,0.1318],[197.966769,0.0997],[203.973494,0.0687],[195.965833,0.0015]],
   };
-  const known = el => Object.hasOwn(ISO, el);
-  const mono = el => ISO[el][0][0];
+  // isotope labels drawn on atoms ([2H], [13C], …) are their own formula keys: D, T, ¹³C, ¹⁵N … with the exact isotope mass
+  const SUP='⁰¹²³⁴⁵⁶⁷⁸⁹', sup=n=>String(n).replace(/\d/g,d=>SUP[d]);
+  const LABEL={D:2.0141017778, T:3.0160492777, '¹¹C':11.0114336, '¹⁴C':14.0032419884, '¹⁸F':18.0009380, '³²P':31.97390727, '³⁵S':34.96903216, '¹²⁵I':124.9046302, '¹³¹I':130.9061246};
+  for (const [el,isos] of Object.entries(ISO)) for (const [m] of isos) if (el!=='H') LABEL[sup(Math.round(m))+el]=m;
+  const baseEl = k => k==='D'||k==='T' ? 'H' : k.replace(/^[⁰-⁹¹²³]+/,'');
+  const known = el => Object.hasOwn(ISO, el) || Object.hasOwn(LABEL, el);
+  const mono = el => Object.hasOwn(LABEL, el) ? LABEL[el] : ISO[el][0][0];
+  // formula key of atom i: its element, or its isotope label when one is drawn
+  function keyOf(mol, i){ const el=mol.getAtomLabel(i), m=mol.getAtomMass(i); if (!m) return el;
+    if (el==='H') return m===2 ? 'D' : m===3 ? 'T' : m===1 ? 'H' : sup(m)+'H';
+    return sup(m)+el; }
+  // Hill order, with each labelled isotope right after its element (C, ¹³C, H, D, then the rest alphabetically)
+  function order(counts){ const ks=Object.keys(counts).filter(k=>counts[k]>0);
+    const rank=k=>{ const b=baseEl(k); return counts.C||counts['¹³C']||counts['¹⁴C'] ? (b==='C'?'0':b==='H'?'1':'2'+b) : b; };
+    return ks.sort((a,b)=>{ const ra=rank(a), rb=rank(b); return ra<rb?-1:ra>rb?1:(a===baseEl(a)?-1:b===baseEl(b)?1:a<b?-1:1); }); }
 
   // element counts and charge of an OCL molecule (implicit and explicit H included)
   function composition(mol){
     mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
     const c={}; let charge=0, radicals=0;
-    for (let i=0;i<mol.getAllAtoms();i++){ const el=mol.getAtomLabel(i); c[el]=(c[el]||0)+1;
+    for (let i=0;i<mol.getAllAtoms();i++){ const el=mol.getAtomLabel(i), k=keyOf(mol,i); c[k]=(c[k]||0)+1;
       if (el!=='H'){ const h=mol.getImplicitHydrogens(i); if (h) c.H=(c.H||0)+h; }
       charge+=mol.getAtomCharge(i); if (mol.getAtomRadical(i)) radicals++; }
     return {counts:c, charge, radicals};
   }
   function massOf(counts){ let m=0; for (const [el,n] of Object.entries(counts)){ if (!known(el)) return NaN; m+=n*mono(el); } return m; }
-  function hill(counts){ const ks=Object.keys(counts).filter(k=>counts[k]>0); const order = counts.C ? ['C','H',...ks.filter(k=>k!=='C'&&k!=='H').sort()] : ks.sort();
-    return order.filter(k=>counts[k]>0).map(k=>k+(counts[k]>1?counts[k]:'')).join(''); }
+  function hill(counts){ return order(counts).map(k=>k+(counts[k]>1?counts[k]:'')).join(''); }
   function add(a,b,s=1){ const o={...a}; for (const [k,v] of Object.entries(b)) o[k]=(o[k]||0)+s*v; return o; }
-  const parse = f => { const o={}; for (const [,el,n] of f.matchAll(/([A-Z][a-z]?)(\d*)/g)) o[el]=(o[el]||0)+(n?+n:1); return o; };
+  const parse = f => { const o={}; for (const [,el,n] of f.matchAll(/([⁰-⁹¹²³]*[A-Z][a-z]?)(\d*)/g)) o[el]=(o[el]||0)+(n?+n:1); return o; };
 
   // adduct ions; M is the neutral monoisotopic mass
   const ADDUCTS = [
@@ -2977,7 +2998,7 @@ const MS = (()=>{
     const prune=ps=>{ ps.sort((x,y)=>x[0]-y[0]); const m=[]; for (const p of ps){ const l=m[m.length-1]; if (l && p[0]-l[0]<res){ const w=l[1]+p[1]; l[0]=(l[0]*l[1]+p[0]*p[1])/w; l[1]=w; } else m.push([...p]); }
       const mx=Math.max(...m.map(p=>p[1])); return m.filter(p=>p[1]>mx*1e-5); };
     for (const [el,n] of Object.entries(counts)){ if (n<=0) continue; if (!known(el)) return [];
-      let base=ISO[el].map(x=>[x[0],x[1]]), k=n, acc=null; // binary exponentiation
+      let base=Object.hasOwn(LABEL,el) ? [[LABEL[el],1]] : ISO[el].map(x=>[x[0],x[1]]), k=n, acc=null; // binary exponentiation
       while (k){ if (k&1) acc = acc? conv(acc,base) : base; k>>=1; if (k) base=conv(base,base); }
       dist=conv(dist,acc); }
     const az=Math.abs(z)||1, mx=Math.max(...dist.map(p=>p[1]));
@@ -2999,7 +3020,8 @@ const MS = (()=>{
     const n=mol.getAtoms(), nb=mol.getBonds();
     if (n<2) return {precursor:null, peaks:[]};
     const comp=composition(mol); if (comp.charge) return {precursor:null, peaks:[], note:'MS/MS needs a neutral structure'};
-    const el=i=>mol.getAtomLabel(i), hz=i=>mol.getAllHydrogens(i);
+    // hydrogens on atom i, less the H/D atoms drawn explicitly (those are atoms of their own below n)
+    const el=i=>mol.getAtomLabel(i), hz=i=>{ let h=mol.getAllHydrogens(i); if (el(i)!=='H') for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (o<n && el(o)==='H') h--; } return h; };
     const M=massOf(comp.counts); if (!Number.isFinite(M)) return {precursor:null, peaks:[], note:'Unsupported element'};
     const sign = mode==='pos' ? 1 : -1;
     const precursor = {mz: M + sign*PROTON, formula: hill(add(comp.counts,{H:sign})) + (sign>0?'+':'-'), label: sign>0?'[M+H]⁺':'[M−H]⁻'};
@@ -3042,7 +3064,7 @@ const MS = (()=>{
         parts.push(part); }
       return parts;
     }
-    const countsOf=atoms=>{ const c={}; for (const i of atoms){ c[el(i)]=(c[el(i)]||0)+1; c.H=(c.H||0)+hz(i); } return c; };
+    const countsOf=atoms=>{ const c={}; for (const i of atoms){ const k=keyOf(mol,i); c[k]=(c[k]||0)+1; if (el(i)!=='H') c.H=(c.H||0)+hz(i); } return c; };
     const raw=[];
     // a piece X (atoms with their H, as a radical) gives even-electron ions: X⁺ when the other piece takes the proton,
     // [X+2H]⁺ when X keeps the proton and takes one H; in negative mode X⁻ or [X−2H]⁻
@@ -3117,9 +3139,9 @@ const MS = (()=>{
   const AW={H:1.008,Li:6.94,B:10.81,C:12.011,N:14.007,O:15.999,F:18.998,Na:22.990,Mg:24.305,Al:26.982,Si:28.085,P:30.974,S:32.06,Cl:35.45,K:39.098,Ca:40.078,
     Fe:55.845,Co:58.933,Ni:58.693,Cu:63.546,Zn:65.38,As:74.922,Se:78.971,Br:79.904,Ru:101.07,Rh:102.91,Pd:106.42,Ag:107.87,Sn:118.71,I:126.90,Pt:195.08,Au:196.97,Hg:200.59};
   function elemental(counts){
-    let tot=0; for (const [el,n] of Object.entries(counts)){ if (!Object.hasOwn(AW,el)) return null; tot+=n*AW[el]; }
-    const ks=Object.keys(counts).filter(k=>counts[k]>0); const order=counts.C ? ['C','H',...ks.filter(k=>k!=='C'&&k!=='H').sort()] : ks.sort();
-    return {mw:tot, rows:order.filter(k=>counts[k]>0).map(el=>({el, pct:100*counts[el]*AW[el]/tot}))};
+    const aw=el=>Object.hasOwn(AW,el) ? AW[el] : Object.hasOwn(LABEL,el) ? LABEL[el] : NaN;
+    let tot=0; for (const [el,n] of Object.entries(counts)){ if (!Number.isFinite(aw(el))) return null; tot+=n*aw(el); }
+    return {mw:tot, rows:order(counts).map(el=>({el, pct:100*counts[el]*aw(el)/tot}))};
   }
   return {composition, massOf, hill, adducts, isotopes, nominal, msms, hrmsLine, elemental, ELECTRON:E, PROTON};
 })();
@@ -3507,6 +3529,7 @@ async function renderRecent(){
 // a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
   const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
+  if (t==='D' || t==='T') return {el:'H', iso: t==='D' ? 2 : 3}; // deuterium and tritium are hydrogen with a mass
   if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
     const charge=p.charge!=null ? p.charge : p.h!=null ? 0 : atom.charge||0, out={el:p.el}; if (p.charge!=null || p.h!=null) out.charge=charge;
     if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
@@ -3515,8 +3538,9 @@ function typedLabel(text, atom){
     return out; }
   return {el: normalizeLabel(t) || 'C'};
 }
-function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
-const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+function setLabel(a, {el, hs, hl, charge, iso}){ const wasDT=a.el==='H' && a.iso>1; a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge;
+  if (iso) a.iso=iso; else if (wasDT) delete a.iso; } // retyping a D or T label drops its mass; other isotope labels are kept
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge) && (!l.iso || a.iso===l.iso);
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -4381,6 +4405,25 @@ function layoutSmiles(smi){
   const mol=smilesMol(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
+// every record of an SD file, laid out 5 to a row as one inserted block
+const SDF_MAX=200;
+function openSdf(t){
+  // drop the line break after each $$$$ so every record starts on its own header line
+  const recs=t.split(/^\$\$\$\$[ \t]*\r?$/m).map((r,i)=>i? r.replace(/^\r?\n/,'') : r).filter(r=>/M\s+END/.test(r)), frags=[];
+  for (const r of recs.slice(0,SDF_MAX)){ try{ const mol=OCL.Molecule.fromMolfile(r); if (!mol.getAllAtoms()) continue;
+    let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
+    if (!hasXY) mol.inventCoordinates(); frags.push(molToFragment(mol)); }catch(e){} }
+  if (!frags.length){ toast('Could not read this file'); return; }
+  const boxes=frags.map(fragBBox), cw=Math.max(...boxes.map(b=>b.x1-b.x0))+L*2, rh=Math.max(...boxes.map(b=>b.y1-b.y0))+L*2, all={atoms:[],bonds:[]};
+  frags.forEach((f,k)=>{ const b=boxes[k], ox=(k%5)*cw-b.x0, oy=Math.floor(k/5)*rh-b.y0, base=all.atoms.length;
+    for (const a of f.atoms) all.atoms.push({...a, x:a.x+ox, y:a.y+oy});
+    for (const bd of f.bonds) all.bonds.push({...bd, a:bd.a+base, b:bd.b+base}); });
+  insertFragments([{kind:'frag',f:all}]);
+  if (recs.length>1 || frags.length<recs.length) toast(recs.length>SDF_MAX ? `Opened the first ${frags.length} of ${recs.length} structures` : frags.length<recs.length ? `Opened ${frags.length} of ${recs.length} structures; the rest could not be read` : `Opened ${frags.length} structures`);
+}
+const SMILES_MAX=3000;
+// biggest structure first; on a tie the one with more carbons (the organic ion of a salt rather than its counterion)
+function largestFirst(comps, index=ix){ const nC=c=>c.reduce((t,id)=>t+(index.atom.get(id)?.el==='C'),0); return comps.sort((a,b)=>b.length-a.length || nC(b)-nC(a)); }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
   pushUndo();
   const db=contentBBox(doc);
@@ -4415,6 +4458,7 @@ function tryLoadText(txt, quiet){
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
+      if ((txt.match(/M\s+END/g)||[]).length>1 && /^\$\$\$\$/m.test(txt)){ openSdf(txt); return true; }
       const mol=OCL.Molecule.fromMolfile(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
@@ -4429,6 +4473,7 @@ function tryLoadText(txt, quiet){
     if (line.includes('>')){
       const [r,a,p]= line.split('>'); if (p===undefined) throw 0;
       const parts=[]; const rs=r.split('.').filter(Boolean), ps=p.split('.').filter(Boolean);
+      if (!rs.length && !ps.length) throw 0; // ">>" alone has no structures to draw
       rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
       parts.push({kind:'arrow'});
       ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
@@ -5271,7 +5316,7 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
     case 'smiles': return {data:mol().toIsomericSmiles()+'\n'};
     case 'inchi': case 'inchikey': { const v=await inchiOf(mol().toMolfile()); /* drawn coordinates carry the wedges: no re-layout */ if (!v.inchi) throw new Error('InChI could not be computed for this structure'); return {data:(id==='inchi'?v.inchi:v.key)+'\n'}; }
     case 'json': return {data:JSON.stringify(project)};
-    case 'xyz': case 'pdb': case 'sdf3d': { const comps=components(d,dix).sort((a,b)=>b.length-a.length); const r=toOCL(d,dix,comps[0],{skipH:true}); if (r.generic) throw new Error('Generic labels have no 3D geometry');
+    case 'xyz': case 'pdb': case 'sdf3d': { const comps=largestFirst(components(d,dix),dix); const r=toOCL(d,dix,comps[0],{skipH:true}); if (r.generic) throw new Error('Generic labels have no 3D geometry');
       const m3=await VIEW3D.conformer(r.mol); return {data: id==='xyz'? VIEW3D.xyz(m3) : id==='pdb'? VIEW3D.pdb(m3) : m3.mol.toMolfile()+'$$$$\n'}; }
   }
   const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
@@ -5312,7 +5357,7 @@ async function openFile(f, handle){
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
-    if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
+    if (/\.sdf$/i.test(f.name)){ openSdf(t); return; }
     if (!tryLoadText(t.trim())) toast('Could not read this file');
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
@@ -5419,7 +5464,7 @@ function syncTools(){
 
 /* ================= dialogs & toast ================= */
 const modal=$('#modal'), dialog=$('#dialog');
-function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog); const f=dialog.querySelector('textarea,input'); if (f) setTimeout(()=>f.focus(),30); }
+function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog); const f=dialog.querySelector('textarea,input'); setTimeout(()=>(f||dialog).focus({preventScroll:true}),30); } // focus inside, so Esc closes it
 function closeDialog(){ modal.classList.remove('open'); dialog.innerHTML=''; dialog.classList.remove('wide'); }
 modal.addEventListener('pointerdown', e=>{ if (e.target===modal) closeDialog(); });
 dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
@@ -5431,6 +5476,10 @@ function openSmilesDialog(){
   openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
   dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
   const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+    // OpenChemLib's SMILES parser slows sharply with size: refuse what would freeze the tab, and warn before a slow one
+    const smilesLike=!v.includes('\n') && !/^InChI=/.test(v);
+    if (smilesLike && v.length>SMILES_MAX){ $('#smErr').textContent=`That SMILES is ${v.length.toLocaleString()} characters long. Lone Pair can draw up to ${SMILES_MAX.toLocaleString()}; larger structures would freeze the page.`; return; }
+    if (smilesLike && v.length>500){ $('#smErr').textContent='Building a large structure. This can take a few seconds…'; await new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0))); }
     if (tryLoadText(v,true)){ closeDialog(); return; }
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
     $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
@@ -5443,8 +5492,8 @@ function openElementDialog(){
   openDialog(`<h3>Element or group</h3><p>Type any element symbol, a nickname like OMe or Boc, or a generic label like R1. Nicknames count toward formula and mass.</p><input type="text" id="elIn" value="${esc(tool.lab || (['C','N','O','S','P','F','Cl','Br','I','H'].includes(tool.el)?'':tool.el))}" placeholder="e.g. OMe"><div class="examples">${sug.map(s=>`<button class="mini" data-e="${esc(s)}">${esc(s)}</button>`).join('')}</div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="elGo">Use this label</button></div>`);
   dialog.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ $('#elIn').value=b.dataset.e; go(); });
   const go=()=>{ const raw=$('#elIn').value.trim(), v=normalizeLabel(raw); if(!v) return; closeDialog();
-    const p=!ABBR[raw] && parseLabel(raw), lab = p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+
-    setTool('atom',{el: lab? p.el : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
+    const p=!ABBR[raw] && parseLabel(raw), dt=/^[DT]$/.test(raw), lab = dt || p && (p.h!=null || p.charge!=null) ? raw : undefined; // as typedLabel takes it: CH3, H2N, NH3+, D
+    setTool('atom',{el: lab? (dt? 'H' : p.el) : v, lab}); toast(`Click atoms to label them ${lab||v}`); };
   $('#elGo').onclick=go; $('#elIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
 }
 /* ================= style & colors ================= */
@@ -5550,6 +5599,11 @@ $('#bAcsAll').onclick=()=>{ const st=doc.style; for (const pg of project.pages) 
 $('#bPanel').onclick=()=>{ const p=$('#panel'); const o=p.classList.toggle('open'); $('#bPanel').setAttribute('aria-expanded',o); };
 function closePanelMobile(){ $('#panel').classList.remove('open'); $('#bPanel').setAttribute('aria-expanded','false'); }
 window.addEventListener('resize', ()=>{ render(); positionTed(); });
+// toolbars that scroll sideways on small screens fade at the edge that has more buttons beyond it
+for (const el of document.querySelectorAll('header.top, nav.tools')){
+  const mark=()=>{ const max=el.scrollWidth-el.clientWidth; el.classList.toggle('more-l', max>1 && el.scrollLeft>1); el.classList.toggle('more-r', max>1 && el.scrollLeft<max-1); };
+  el.addEventListener('scroll', mark, {passive:true}); new ResizeObserver(mark).observe(el); mark();
+}
 
 /* ================= projects, pages, versions ================= */
 function normalizeProject(p){
@@ -6028,7 +6082,7 @@ function openNmrGuide(tab){
 let v3={seed:17, style:'ball', showH:true, labels:false, spin:true};
 async function open3d(){
   const selIds=selAtoms();
-  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  const comps=largestFirst(components(doc,ix, selIds.length? selIds : null));
   if (!comps.length){ toast('Draw or select a structure first'); return; }
   const {mol,generic}=toOCL(doc,ix,comps[0],{skipH:true});
   if (generic){ toast('Structures with R, X or custom labels have no 3D geometry'); return; }
@@ -6068,13 +6122,13 @@ async function open3d(){
 let msState=null;
 function openMs(tab){
   const selIds=selAtoms();
-  const comps=components(doc,ix, selIds.length? selIds : null).sort((a,b)=>b.length-a.length);
+  const comps=largestFirst(components(doc,ix, selIds.length? selIds : null));
   if (!comps.length){ toast('Draw or select a structure first'); return; }
   const comp=comps[0];
   const {mol, owner, generic}=toOCL(doc,ix,comp,{skipH:true});
   if (generic){ toast('Structures with R, X or custom labels have no defined mass'); return; }
   mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
-  msState={comp, mol, owner, multi:comps.length>1, tab:tab||(msState&&msState.tab)||'mz', mode:(msState&&msState.mode)||'pos', energy:(msState&&msState.energy)||'medium', pick:null};
+  msState={comp, mol, owner, multi:comps.length>1, count:comps.length, tab:tab||(msState&&msState.tab)||'mz', mode:(msState&&msState.mode)||'pos', energy:(msState&&msState.energy)||'medium', pick:null};
   renderMs();
 }
 function msStickSVG(peaks, opts={}){ // peaks: [{mz, rel, label?, i?}]
@@ -6142,7 +6196,7 @@ function renderMs(){
       st._r=r;
     }
   }
-  const notes = st.multi ? '<p class="note">Showing the largest structure. Select a structure to analyze another one.</p>' : '';
+  const notes = st.multi ? `<p class="note">Showing the largest of ${st.count} structures (${esc(MS.hill(MS.composition(st.mol).counts))}). Select a structure to analyze another one.</p>` : '';
   openDialog(`<div class="dialog-inner"><h3>Mass spectrum</h3>${tabs}${body}${notes}<div class="actions" style="flex-wrap:wrap"><button class="tb" id="msNmr">Predict NMR</button>${actions}<button class="tb primary" data-close>Done</button></div></div>`);
   dialog.classList.add('wide');
   dialog.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{ st.tab=b.dataset.mt; st.pick=null; renderMs(); });
