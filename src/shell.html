@@ -187,6 +187,7 @@ kbd{font:600 11.5px/1 var(--ui); border:1px solid var(--line); border-bottom-wid
 
 .modal{position:fixed; inset:0; background:rgba(10,16,24,.42); display:none; place-items:center; z-index:20; padding:16px}
 .modal.open{display:grid}
+.dialog:focus{outline:none}
 .dialog{background:var(--panel); color:var(--ink); border-radius:12px; width:min(520px,100%); max-height:90vh; overflow:auto; padding:18px; box-shadow:0 18px 50px rgba(0,0,0,.25)}
 .dialog h3{margin:0 0 6px; font-size:16px}
 .dialog p{margin:0 0 12px; color:var(--ink-2); font-size:13px}
@@ -250,6 +251,12 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   .only-mobile{display:inline-flex}
   .hide-mobile{display:none}
   header.top{overflow-x:auto; padding:6px 8px; gap:4px}
+  /* scroll strips: keep buttons full size (no flex squeeze), 40px tap targets, and fade the edge that has more to scroll to */
+  header.top > *, nav.tools > *{flex:none}
+  header.top .tb{height:40px} header.top .tb.icon{width:40px}
+  .more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent)}
+  .more-l{-webkit-mask-image:linear-gradient(to left,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to left,#000 calc(100% - 28px),transparent)}
+  .more-l.more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 28px,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to right,transparent,#000 28px,#000 calc(100% - 28px),transparent)}
   .brand{display:none}
   header.top .sep{display:none}
   #bSmiles span{display:none} #bSmiles{padding:0 8px}
@@ -485,7 +492,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
   <button role="menuitem" data-cmd="ungroup" data-need="sel"><span>Ungroup</span><kbd>Ctrl Shift G</kbd></button>
   <button role="menuitem" data-cmd="delete" data-need="sel"><span>Delete</span><kbd>Del</kbd></button>
 </div>
-<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog"></div></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="dialog" id="dialog" tabindex="-1"></div></div>
 <div class="nudge" id="signinNudge" hidden data-sk role="dialog" aria-label="Sign in invitation">
   <p><b>Enjoying Lone Pair?</b> Sign in with Google to hear about new features. It's optional; your drawings stay on your computer.</p>
   <div class="row"><button class="tb primary" id="nudgeIn">Sign in with Google</button><button class="tb" id="nudgeNo">Not now</button><a class="note" href="/privacy.html" target="_blank" rel="noopener">Privacy</a></div>

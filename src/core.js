@@ -758,7 +758,7 @@ function toOCL(d, ix, atomIds, opts={}){
   const ids = atomIds || d.atoms.map(a=>a.id), set=new Set(ids);
   for (const id of ids){
     const a=ix.atom.get(id), k=kindOf(a.el);
-    if (opts.skipH && a.el==='H' && !a.charge && (ix.adj.get(id)||[]).length===1) continue;
+    if (opts.skipH && a.el==='H' && !a.charge && !(a.iso>1) && (ix.adj.get(id)||[]).length===1) continue; // D and T stay: they change the mass and the ¹H spectrum
     if (k==='element' || opts.placeholders){
       const z = k==='element' ? M.getAtomicNoFromLabel(a.el) : 6;
       const i=mol.addAtom(z||6); mol.setAtomX(i,a.x/L); mol.setAtomY(i,a.y/L); // OCL's y axis points down, like ours
