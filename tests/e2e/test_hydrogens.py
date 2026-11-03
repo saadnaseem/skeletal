@@ -36,7 +36,8 @@ def label(page, i, text):
     page.click(TEXT)
     page.mouse.click(*atom_xy(page, i))
     focused(page)
-    page.keyboard.type(text)
+    if text == "Backspace": page.keyboard.press("Backspace")
+    else: page.keyboard.type(text)
     page.keyboard.press("Enter")
     page.wait_for_timeout(450)
 
@@ -52,10 +53,13 @@ def test_typing_ch3_ch2_ch_on_carbons_shows_them(page):
     assert shown(page) == ["CH3", "CH2", "CH", "O"]
     assert bad(page) == [False] * 4
     assert page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).formula") == "C3H6O"
-    label(page, 1, "C")  # a bare C is a plain vertex again
-    assert shown(page)[1] == ""
+    label(page, 1, "C")  # a bare C is drawn as C, its H implied
+    assert shown(page)[1] == "C"
+    assert page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).formula") == "C3H6O"
     page.keyboard.press("Control+z")
     assert shown(page)[1] == "CH2"
+    label(page, 1, "Backspace")  # an emptied label is a plain vertex again
+    assert shown(page)[1] == ""
 
 
 def test_a_wrong_count_is_kept_as_typed_and_flagged(page):
@@ -291,3 +295,35 @@ def test_the_dialog_takes_element_hydrogens_only_where_labels_do(page):
     page.evaluate("openElementDialog()")
     page.fill("#elIn", "NaH"); page.keyboard.press("Enter")
     assert page.evaluate("[tool.el, tool.lab||null]") == ["Na", None]
+
+
+def test_hover_c_labels_a_carbon_then_shows_its_h_then_a_vertex(page):
+    draw(page, "CCC")
+    page.mouse.move(*atom_xy(page, 1)); page.wait_for_timeout(50)
+    steps = []
+    for _ in range(3):
+        page.keyboard.press("c"); steps.append(shown(page)[1])
+    assert steps == ["C", "CH2", ""]
+    assert page.evaluate("analysisFor(doc.atoms.map(a=>a.id)).formula") == "C3H8"
+    page.keyboard.press("c"); page.keyboard.press("Control+z")
+    assert shown(page)[1] == ""  # one undo step per press
+    page.keyboard.press("n"); assert shown(page)[1] == "NH"
+    page.keyboard.press("c"); assert shown(page)[1] == ""  # C on another atom makes it a carbon vertex, as before
+    page.keyboard.press("Shift+C"); assert shown(page)[1] == "C"
+
+
+def test_a_labeled_c_is_saved_and_beats_the_drawing_wide_h(page):
+    draw(page, "CCC")
+    page.mouse.move(*atom_xy(page, 1)); page.wait_for_timeout(50)
+    page.keyboard.press("c")
+    page.evaluate("doc.showCH='all'; changed();")
+    assert shown(page) == ["CH3", "C", "CH3"]
+    assert page.evaluate("sanitizeDoc(JSON.parse(JSON.stringify(doc))).atoms[1].lc") is True
+
+
+def test_typing_c_over_a_vertex_labels_it(page):
+    draw(page, "CCC")
+    label(page, 1, "C")  # the editor opens showing C; typing C over it is still a label
+    assert shown(page)[1] == "C"
+    page.keyboard.press("Control+z")
+    assert shown(page)[1] == ""

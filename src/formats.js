@@ -371,7 +371,7 @@ const FORMATS = (()=>{
         }
         const a={id:nid++, x:p.x, y:p.y, el, charge:+(n.attrs.Charge||0)||0, lp:0, rad: n.attrs.Radical==='Doublet'?1:0, h: n.attrs.NumHydrogens!=null? +n.attrs.NumHydrogens : 0};
         const iso=+n.attrs.Isotope; if (Number.isInteger(iso) && iso>0 && iso<300 && ELEMENTS.includes(el)) a.iso=iso;
-        if (el==='C' && CLABEL.test(label)) a.hs=true; // a carbon ChemDraw shows with its label (CH3, H3C, CH2+) keeps it
+        if (el==='C' && CLABEL.test(label)){ if (/^C\d*[+-]?$/.test(label)) a.lc=true; else a.hs=true; } // a carbon ChemDraw shows with its label keeps it: a bare C, or with its H (CH3, H3C, CH2+)
         setColor(a, n.attrs.color ?? (lab && (kids(lab,'s')[0]||{attrs:{}}).attrs.color));
         const sz=lab && parseFloat((kids(lab,'s')[0]||{attrs:{}}).attrs.size); if (sz>=4 && sz<=72) a._sz=sz;
         const est=n.attrs.EnhancedStereoType; if (est==='And'||est==='Or') a.stg=est.toLowerCase()+(+n.attrs.EnhancedStereoGroupNum||1); else if (est==='Absolute' && n.attrs.EnhancedStereoGroupNum) a.stg='abs';

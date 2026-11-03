@@ -139,7 +139,7 @@ function sanitizeDoc(d){
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
   out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined,
-    hs: a.hs ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','hl']));
+    hs: a.hs ? true : undefined, lc: a.lc && str(a.el,24)==='C' ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','lc','hl']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
@@ -249,13 +249,15 @@ function implicitH(atom, bsum){
   return 0;
 }
 // Hydrogens shown on an atom. A label typed with a count the bonds don't allow (CH3 on a carbon with two bonds) is kept as typed:
-// hl holds it, and only while its element is the atom's, so changing the atom drops it. hs shows a carbon's label with its hydrogens (CH2).
+// hl holds it, and only while its element is the atom's, so changing the atom drops it. hs shows a carbon's label with its hydrogens (CH2);
+// lc shows it as a bare C, its hydrogens left implied as on a vertex (hs, a typed count and Show H all win over it).
 function typedH(a){ const m=a.hl && /^([A-Z][a-z]?)H(\d*)$/.exec(a.hl); return m && m[1]===a.el ? (m[2]===''? 1 : +m[2]) : null; }
-function labelH(a, ix){ const t=typedH(a); return t!=null ? t : implicitH(a, bondSum(ix,a.id)); }
+const bareC=a=>a.el==='C' && !!a.lc && !a.hs;
+function labelH(a, ix){ const t=typedH(a); return t!=null ? t : bareC(a) ? 0 : implicitH(a, bondSum(ix,a.id)); }
 // once the bonds make a typed count right (a bond was added or removed), the label follows the bonds from then on
 function settleTypedH(d, ix){ for (const a of d.atoms) if (a.hl && (typedH(a)==null || typedH(a)===implicitH(a, bondSum(ix,a.id)))){ if (typedH(a)!=null && a.el==='C') a.hs=true; delete a.hl; } }
-// a carbon is drawn as a bare vertex unless it stands alone, has a mass number, is set to show its hydrogens, or the drawing shows them (doc.showCH: 'end' or 'all')
-function carbonShown(d, a, deg){ return deg===0 || !!a.iso || !!a.hs || typedH(a)!=null || (d && d.showCH==='all') || (d && d.showCH==='end' && deg===1); }
+// a carbon is drawn as a bare vertex unless it stands alone, has a mass number, is labeled C, is set to show its hydrogens, or the drawing shows them (doc.showCH: 'end' or 'all')
+function carbonShown(d, a, deg){ return deg===0 || !!a.iso || !!a.lc || !!a.hs || typedH(a)!=null || (d && d.showCH==='all') || (d && d.showCH==='end' && deg===1); }
 // halogens go past one bond only towards electronegative partners: ClO4-, BrF5, ICl3, PhI(OAc)2, IBX, Togni reagents
 const HYPER_LIG=new Set(['N','O','F','Cl']);
 // atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond

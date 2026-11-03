@@ -411,6 +411,7 @@ input.name{width:100%; height:32px; border:1px solid var(--line); border-radius:
         <summary>Shortcuts</summary>
         <div class="keys">
           <kbd>hover + N O S…</kbd><span>Change the atom under the cursor (L = Cl, B = Br)</span>
+          <kbd>hover + C</kbd><span>On a carbon: label it C, then CH2, then a plain vertex</span>
           <kbd>hover + + / −</kbd><span>Add charge</span>
           <kbd>hover bond + 1 2 3</kbd><span>Set bond order</span>
           <kbd>Click bond</kbd><span>Single tool cycles single, double, triple</span>
@@ -670,7 +671,7 @@ function sanitizeDoc(d){
     if (Object.keys(o).length) out.styleOv=o; }
   const arr=v=>Array.isArray(v)?v:[];
   out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined,
-    hs: a.hs ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','hl']));
+    hs: a.hs ? true : undefined, lc: a.lc && str(a.el,24)==='C' ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','lc','hl']));
   out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
@@ -780,13 +781,15 @@ function implicitH(atom, bsum){
   return 0;
 }
 // Hydrogens shown on an atom. A label typed with a count the bonds don't allow (CH3 on a carbon with two bonds) is kept as typed:
-// hl holds it, and only while its element is the atom's, so changing the atom drops it. hs shows a carbon's label with its hydrogens (CH2).
+// hl holds it, and only while its element is the atom's, so changing the atom drops it. hs shows a carbon's label with its hydrogens (CH2);
+// lc shows it as a bare C, its hydrogens left implied as on a vertex (hs, a typed count and Show H all win over it).
 function typedH(a){ const m=a.hl && /^([A-Z][a-z]?)H(\d*)$/.exec(a.hl); return m && m[1]===a.el ? (m[2]===''? 1 : +m[2]) : null; }
-function labelH(a, ix){ const t=typedH(a); return t!=null ? t : implicitH(a, bondSum(ix,a.id)); }
+const bareC=a=>a.el==='C' && !!a.lc && !a.hs;
+function labelH(a, ix){ const t=typedH(a); return t!=null ? t : bareC(a) ? 0 : implicitH(a, bondSum(ix,a.id)); }
 // once the bonds make a typed count right (a bond was added or removed), the label follows the bonds from then on
 function settleTypedH(d, ix){ for (const a of d.atoms) if (a.hl && (typedH(a)==null || typedH(a)===implicitH(a, bondSum(ix,a.id)))){ if (typedH(a)!=null && a.el==='C') a.hs=true; delete a.hl; } }
-// a carbon is drawn as a bare vertex unless it stands alone, has a mass number, is set to show its hydrogens, or the drawing shows them (doc.showCH: 'end' or 'all')
-function carbonShown(d, a, deg){ return deg===0 || !!a.iso || !!a.hs || typedH(a)!=null || (d && d.showCH==='all') || (d && d.showCH==='end' && deg===1); }
+// a carbon is drawn as a bare vertex unless it stands alone, has a mass number, is labeled C, is set to show its hydrogens, or the drawing shows them (doc.showCH: 'end' or 'all')
+function carbonShown(d, a, deg){ return deg===0 || !!a.iso || !!a.lc || !!a.hs || typedH(a)!=null || (d && d.showCH==='all') || (d && d.showCH==='end' && deg===1); }
 // halogens go past one bond only towards electronegative partners: ClO4-, BrF5, ICl3, PhI(OAc)2, IBX, Togni reagents
 const HYPER_LIG=new Set(['N','O','F','Cl']);
 // atoms with more bonds than their valence allows (charge and radicals counted, as in implicitH); nicknames take one bond
@@ -2677,7 +2680,7 @@ const FORMATS = (()=>{
         }
         const a={id:nid++, x:p.x, y:p.y, el, charge:+(n.attrs.Charge||0)||0, lp:0, rad: n.attrs.Radical==='Doublet'?1:0, h: n.attrs.NumHydrogens!=null? +n.attrs.NumHydrogens : 0};
         const iso=+n.attrs.Isotope; if (Number.isInteger(iso) && iso>0 && iso<300 && ELEMENTS.includes(el)) a.iso=iso;
-        if (el==='C' && CLABEL.test(label)) a.hs=true; // a carbon ChemDraw shows with its label (CH3, H3C, CH2+) keeps it
+        if (el==='C' && CLABEL.test(label)){ if (/^C\d*[+-]?$/.test(label)) a.lc=true; else a.hs=true; } // a carbon ChemDraw shows with its label keeps it: a bare C, or with its H (CH3, H3C, CH2+)
         setColor(a, n.attrs.color ?? (lab && (kids(lab,'s')[0]||{attrs:{}}).attrs.color));
         const sz=lab && parseFloat((kids(lab,'s')[0]||{attrs:{}}).attrs.size); if (sz>=4 && sz<=72) a._sz=sz;
         const est=n.attrs.EnhancedStereoType; if (est==='And'||est==='Or') a.stg=est.toLowerCase()+(+n.attrs.EnhancedStereoGroupNum||1); else if (est==='Absolute' && n.attrs.EnhancedStereoGroupNum) a.stg='abs';
@@ -3504,7 +3507,7 @@ async function renderRecent(){
 /* ================= model edits ================= */
 // a label typed for an atom: CH3, CH2, CH, NH2, OH (or as read leftward: H3C, H2N, HO) give the element with its hydrogens shown; a count
 // the bonds don't allow is kept as typed (see typedH). A charge written in it (NH3+, CH2+, O-, Fe2+) becomes the atom's charge.
-// a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
+// a bare C (or C+, C-) is drawn as a C; emptied, the label is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
   const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
   if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
@@ -3512,11 +3515,21 @@ function typedLabel(text, atom){
     if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
       if (p.el==='C') out.hs=true;
       if (p.h!==can && bs>0) out.hl=p.el+'H'+(p.h===1?'':p.h); } // an atom with no bonds yet (a methyl placed first) follows its bonds
+    else if (p.el==='C') out.lc=true;
     return out; }
-  return {el: normalizeLabel(t) || 'C'};
+  const el=normalizeLabel(t);
+  return el==='C' ? {el, lc:true} : {el: el || 'C'};
 }
-function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
-const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+function setLabel(a, {el, hs, lc, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (lc && el==='C') a.lc=true; else delete a.lc; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && !!a.lc===!!l.lc && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+// the C key on a carbon steps through how it is drawn: a vertex, then labeled C, then with its hydrogens (CH2), then a vertex again;
+// on any other atom it makes it a carbon vertex
+function nextCarbonLabel(a){
+  if (a.el!=='C') return {el:'C'};
+  if (a.hs || typedH(a)!=null) return {el:'C'};
+  if (!a.lc) return {el:'C', lc:true};
+  return implicitH(a, bondSum(ix,a.id)) ? {el:'C', hs:true} : {el:'C'};
+}
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -4080,7 +4093,7 @@ function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; con
   if (!e.shiftKey && (k===',' || k==='.')) return k==='.' ? 'sup' : 'sub';
   return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
-function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
+function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0; // a bare C opens as C
   const q=withCharge && a.charge && kindOf(a.el)==='element' ? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : ''; // with its charge, so retyping keeps it (CH2+)
   const text=(a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el)+q; // a carbon shown as CH3 opens as CH3
   startTextEdit({x:a.x, y:a.y, text, size:a.size||st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
@@ -4194,7 +4207,7 @@ function positionTed(){
   tedBar.style.left=Math.max(4,left)+'px'; tedBar.style.top=(top>40? top-34 : top+hh+6)+'px';
 }
 ted.addEventListener('beforeinput', e=>{
-  const t=e.inputType;
+  const t=e.inputType; if (editingText) editingText.typed=true; // typed over, even if to the same text: a vertex's C retyped as C labels it
   if (t==='insertText' || t==='insertReplacementText'){ const s=e.data ?? (e.dataTransfer && e.dataTransfer.getData('text/plain')); if (s==null) return; e.preventDefault(); tedInsert([...s].map(c=>({c}))); }
   else if (t==='insertParagraph' || t==='insertLineBreak'){ e.preventDefault(); tedInsert([{c:'\n',m:'n'}]); }
   else if (t==='insertFromPaste' || t==='insertFromDrop' || t.startsWith('format') || t.startsWith('history')) e.preventDefault(); // paste is handled below; styling applies to the whole text from the Text panel
@@ -4229,9 +4242,9 @@ tedBar.querySelectorAll('[data-m]').forEach(b=>{
   b.addEventListener('pointerdown', e=>e.preventDefault()); b.addEventListener('mousedown', e=>e.preventDefault()); // keep the caret in the text
   b.onclick=()=>tedToggle(b.dataset.m); });
 function commitText(){
-  if (!editingText) return; const {t,fresh,atom}=editingText; editingText=null;
+  if (!editingText) return; const {t,fresh,atom,typed}=editingText; editingText=null;
   let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true; if (document.activeElement===ted) ted.blur();
-  if (atom){ if (v===t.text){ changed(); return; } // left as it opened: nothing changes
+  if (atom){ if (v===t.text && !typed){ changed(); return; } // left as it opened: nothing changes
     const lab=typedLabel(v.replace(/\n/g,' '), atom); // an emptied label goes back to carbon
     if (ix.atom.get(atom.id)===atom && !sameLabel(atom,lab)){ pushUndo(); setLabel(atom,lab); } changed(); return; }
   const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
@@ -4275,7 +4288,9 @@ window.addEventListener('keydown', e=>{
   if (hover && hover.type==='atom'){
     const a=ix.atom.get(hover.id); if(!a) return;
     const kl=k.toLowerCase();
-    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: (kl==='c'&&e.shiftKey)? 'C' : HOTKEY_EL[kl]}); changed(); return; }
+    if (kl==='c' && k.length===1){ const lab=nextCarbonLabel(a); if (sameLabel(a,lab)) return; pushUndo(); setLabel(a, lab); changed();
+      if (lab.lc) toast('Labeled C. Press C again to show its H, again for a plain vertex'); return; }
+    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: HOTKEY_EL[kl]}); changed(); return; }
     if (k==='+'||k==='='){ pushUndo(); a.charge=(a.charge||0)+1; changed(); return; }
     if (k==='-'){ pushUndo(); a.charge=(a.charge||0)-1; changed(); return; }
     if (k==='.'){ pushUndo(); a.rad=a.rad?0:1; changed(); return; }
