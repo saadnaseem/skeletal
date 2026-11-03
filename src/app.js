@@ -728,7 +728,7 @@ function startTextEdit(t, fresh, atom){
   const cs=normalizeChars(textCharsAll(t.text)); tedRender(cs);
   syncTextUI();
   positionTed();
-  setTimeout(()=>{ ted.focus(); tedSetSel(0, cs.length); tedSyncBar(); },0);
+  setTimeout(()=>{ ted.focus(); if (editingText && !editingText.typed) tedSetSel(0, cs.length); tedSyncBar(); },0); // unless keys typed before it took the focus are already in
   render();
 }
 // formatted characters -> editor content; a digit kept normal after a letter is marked, as are automatic subscripts
@@ -871,6 +871,8 @@ let _nudge={depth:-1,t:0}; // consecutive arrow-key nudges share one undo step
 const HOTKEY_EL={c:'C',n:'N',o:'O',s:'S',p:'P',f:'F',l:'Cl',b:'Br',i:'I',h:'H'};
 window.addEventListener('keydown', e=>{
   if (e.target.closest && e.target.closest('input,textarea,select,.dialog,#texted')) return;
+  // a label editor that just opened and isn't focused yet (typing straight after the double-click): the key is typed into it, over its text, not taken as a hotkey
+  if (editingText && !ted.hidden && e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); ted.focus(); if (!editingText.typed) tedSetSel(0, tedChars().length); editingText.typed=true; tedInsert([{c:e.key}]); tedSyncBar(); return; }
   const mod=e.ctrlKey||e.metaKey;
   if (e.key===' ' ){ spaceDown=true; cv.classList.add('pan'); e.preventDefault(); return; }
   if (mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }

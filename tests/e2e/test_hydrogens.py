@@ -327,3 +327,15 @@ def test_typing_c_over_a_vertex_labels_it(page):
     assert shown(page)[1] == "C"
     page.keyboard.press("Control+z")
     assert shown(page)[1] == ""
+
+
+def test_typing_straight_after_the_double_click_goes_into_the_label(page):
+    draw(page, "CCCC")
+    for i, text, want in [(1, "C", "C"), (2, "CH2", "CH2")]:
+        page.mouse.move(*atom_xy(page, i))
+        page.mouse.dblclick(*atom_xy(page, i))
+        page.keyboard.type(text)  # no wait for the editor to take the focus
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(300)
+        assert shown(page)[i] == want, shown(page)
+    assert page.evaluate("doc.atoms.map(a=>a.el)") == ["C"] * 4
