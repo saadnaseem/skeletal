@@ -71,3 +71,21 @@ test('ChemDraw H3C (a methyl read leftward) and CH2+ open as carbons, and NumHyd
     assert.ok(back.atoms.some(a => a.hs), lab);
   }
 });
+
+test('a carbon labeled C shows a bare C, is saved, and ChemDraw keeps it', () => {
+  const d = docFromSmiles(get, 'CCC'); d.atoms[1].lc = true;
+  assert.deepEqual([0, 1, 2].map(i => shown(d, i)), ['', 'C', '']);
+  d.showCH = 'all';
+  assert.deepEqual([0, 1, 2].map(i => shown(d, i).replace('H3C', 'CH3')), ['CH3', 'C', 'CH3'], 'the label typed for the atom wins over the drawing-wide setting');
+  d.atoms[1].hs = true; assert.equal(shown(d, 1), 'CH2', 'Show H on it still shows its H');
+  delete d.atoms[1].hs; delete d.showCH;
+  const ix = buildIndex(d), { mol } = get('toOCL')(d, ix, d.atoms.map(a => a.id));
+  assert.equal(mol.getMolecularFormula().formula, 'C3H8', 'the H are implied, not lost');
+  const s = sanitizeDoc(JSON.parse(JSON.stringify(d)));
+  assert.equal(s.atoms[1].lc, true);
+  assert.equal(sanitizeDoc({ ...d, atoms: d.atoms.map(a => ({ ...a, el: 'N', lc: true })) }).atoms[1].lc, undefined, 'only on a carbon');
+  const cdxml = F.write('cdxml', d);
+  assert.ok(/>C</.test(cdxml) && !/>CH2</.test(cdxml), 'written as a C label');
+  const back = F.read('cdxml', cdxml);
+  assert.equal(back.atoms.filter(a => a.lc).length, 1); assert.ok(!back.atoms.some(a => a.hs));
+});

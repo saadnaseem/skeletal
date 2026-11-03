@@ -119,7 +119,7 @@ async function renderRecent(){
 /* ================= model edits ================= */
 // a label typed for an atom: CH3, CH2, CH, NH2, OH (or as read leftward: H3C, H2N, HO) give the element with its hydrogens shown; a count
 // the bonds don't allow is kept as typed (see typedH). A charge written in it (NH3+, CH2+, O-, Fe2+) becomes the atom's charge.
-// a bare C is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
+// a bare C (or C+, C-) is drawn as a C; emptied, the label is a plain vertex again; anything else is an element, nickname or generic label (normalizeLabel)
 function typedLabel(text, atom){
   const t=(text||'').trim(), p=!ABBR[t] && parseLabel(t);
   if (p){ // a label with its H written is the whole atom: no charge written means neutral (H2N typed over NH3+); a bare symbol keeps the charge
@@ -127,11 +127,21 @@ function typedLabel(text, atom){
     if (p.h!=null){ const bs=bondSum(ix,atom.id), can=implicitH({...atom, el:p.el, charge}, bs);
       if (p.el==='C') out.hs=true;
       if (p.h!==can && bs>0) out.hl=p.el+'H'+(p.h===1?'':p.h); } // an atom with no bonds yet (a methyl placed first) follows its bonds
+    else if (p.el==='C') out.lc=true;
     return out; }
-  return {el: normalizeLabel(t) || 'C'};
+  const el=normalizeLabel(t);
+  return el==='C' ? {el, lc:true} : {el: el || 'C'};
 }
-function setLabel(a, {el, hs, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
-const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+function setLabel(a, {el, hs, lc, hl, charge}){ a.el=el; if (hs) a.hs=true; else delete a.hs; if (lc && el==='C') a.lc=true; else delete a.lc; if (hl) a.hl=hl; else delete a.hl; if (charge!=null) a.charge=charge; }
+const sameLabel=(a,l)=>a.el===l.el && !!a.hs===!!l.hs && !!a.lc===!!l.lc && (a.hl||'')===(l.hl||'') && (l.charge==null || (a.charge||0)===l.charge);
+// the C key on a carbon steps through how it is drawn: a vertex, then labeled C, then with its hydrogens (CH2), then a vertex again;
+// on any other atom it makes it a carbon vertex
+function nextCarbonLabel(a){
+  if (a.el!=='C') return {el:'C'};
+  if (a.hs || typedH(a)!=null) return {el:'C'};
+  if (!a.lc) return {el:'C', lc:true};
+  return implicitH(a, bondSum(ix,a.id)) ? {el:'C', hs:true} : {el:'C'};
+}
 function addAtom(x,y,el='C'){ const a={id:nid(),x,y,el,charge:0,lp:0,rad:0}; doc.atoms.push(a); ix.atom.set(a.id,a); ix.adj.set(a.id,[]); return a; }
 function bondBetween(a,b){ for (const {b:bd,o} of ix.adj.get(a)||[]) if (o===b) return bd; return null; }
 function addBond(a,b,order=1,stereo='none'){
@@ -695,7 +705,7 @@ function scriptKey(e){ if (!(e.ctrlKey||e.metaKey) || e.altKey) return null; con
   if (!e.shiftKey && (k===',' || k==='.')) return k==='.' ? 'sup' : 'sub';
   return null; }
 // an atom label is edited in the same box: t is then a stand-in placed on the atom, in the label font
-function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0;
+function startLabelEdit(a, withCharge=true){ if (!a) return; const st=S(), h=a.el==='C' && layoutLabel(doc,ix,a).visible ? labelH(a,ix) : 0; // a bare C opens as C
   const q=withCharge && a.charge && kindOf(a.el)==='element' ? (Math.abs(a.charge)>1?Math.abs(a.charge):'')+(a.charge>0?'+':'-') : ''; // with its charge, so retyping keeps it (CH2+)
   const text=(a.hl && typedH(a)!=null ? a.hl : h ? 'CH'+(h>1?h:'') : a.el)+q; // a carbon shown as CH3 opens as CH3
   startTextEdit({x:a.x, y:a.y, text, size:a.size||st.fontSize, bold:st.fontWeight>=600, color:a.color}, false, a); }
@@ -718,7 +728,7 @@ function startTextEdit(t, fresh, atom){
   const cs=normalizeChars(textCharsAll(t.text)); tedRender(cs);
   syncTextUI();
   positionTed();
-  setTimeout(()=>{ ted.focus(); tedSetSel(0, cs.length); tedSyncBar(); },0);
+  setTimeout(()=>{ ted.focus(); if (editingText && !editingText.typed) tedSetSel(0, cs.length); tedSyncBar(); },0); // unless keys typed before it took the focus are already in
   render();
 }
 // formatted characters -> editor content; a digit kept normal after a letter is marked, as are automatic subscripts
@@ -809,7 +819,7 @@ function positionTed(){
   tedBar.style.left=Math.max(4,left)+'px'; tedBar.style.top=(top>40? top-34 : top+hh+6)+'px';
 }
 ted.addEventListener('beforeinput', e=>{
-  const t=e.inputType;
+  const t=e.inputType; if (editingText) editingText.typed=true; // typed over, even if to the same text: a vertex's C retyped as C labels it
   if (t==='insertText' || t==='insertReplacementText'){ const s=e.data ?? (e.dataTransfer && e.dataTransfer.getData('text/plain')); if (s==null) return; e.preventDefault(); tedInsert([...s].map(c=>({c}))); }
   else if (t==='insertParagraph' || t==='insertLineBreak'){ e.preventDefault(); tedInsert([{c:'\n',m:'n'}]); }
   else if (t==='insertFromPaste' || t==='insertFromDrop' || t.startsWith('format') || t.startsWith('history')) e.preventDefault(); // paste is handled below; styling applies to the whole text from the Text panel
@@ -844,9 +854,9 @@ tedBar.querySelectorAll('[data-m]').forEach(b=>{
   b.addEventListener('pointerdown', e=>e.preventDefault()); b.addEventListener('mousedown', e=>e.preventDefault()); // keep the caret in the text
   b.onclick=()=>tedToggle(b.dataset.m); });
 function commitText(){
-  if (!editingText) return; const {t,fresh,atom}=editingText; editingText=null;
+  if (!editingText) return; const {t,fresh,atom,typed}=editingText; editingText=null;
   let v=tedMarkup().replace(/\s+$/,''); ted.hidden=true; tedBar.hidden=true; if (document.activeElement===ted) ted.blur();
-  if (atom){ if (v===t.text){ changed(); return; } // left as it opened: nothing changes
+  if (atom){ if (v===t.text && !typed){ changed(); return; } // left as it opened: nothing changes
     const lab=typedLabel(v.replace(/\n/g,' '), atom); // an emptied label goes back to carbon
     if (ix.atom.get(atom.id)===atom && !sameLabel(atom,lab)){ pushUndo(); setLabel(atom,lab); } changed(); return; }
   const same=(a,b)=>JSON.stringify(textCharsAll(a).map(x=>[x.c,x.m]))===JSON.stringify(textCharsAll(b).map(x=>[x.c,x.m]));
@@ -861,6 +871,8 @@ let _nudge={depth:-1,t:0}; // consecutive arrow-key nudges share one undo step
 const HOTKEY_EL={c:'C',n:'N',o:'O',s:'S',p:'P',f:'F',l:'Cl',b:'Br',i:'I',h:'H'};
 window.addEventListener('keydown', e=>{
   if (e.target.closest && e.target.closest('input,textarea,select,.dialog,#texted')) return;
+  // a label editor that just opened and isn't focused yet (typing straight after the double-click): the key is typed into it, over its text, not taken as a hotkey
+  if (editingText && !ted.hidden && e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); ted.focus(); if (!editingText.typed) tedSetSel(0, tedChars().length); editingText.typed=true; tedInsert([{c:e.key}]); tedSyncBar(); return; }
   const mod=e.ctrlKey||e.metaKey;
   if (e.key===' ' ){ spaceDown=true; cv.classList.add('pan'); e.preventDefault(); return; }
   if (mod && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
@@ -890,7 +902,9 @@ window.addEventListener('keydown', e=>{
   if (hover && hover.type==='atom'){
     const a=ix.atom.get(hover.id); if(!a) return;
     const kl=k.toLowerCase();
-    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: (kl==='c'&&e.shiftKey)? 'C' : HOTKEY_EL[kl]}); changed(); return; }
+    if (kl==='c' && k.length===1){ const lab=nextCarbonLabel(a); if (sameLabel(a,lab)) return; pushUndo(); setLabel(a, lab); changed();
+      if (lab.lc) toast('Labeled C. Press C again to show its H, again for a plain vertex'); return; }
+    if (HOTKEY_EL[kl] && k.length===1){ pushUndo(); setLabel(a, {el: HOTKEY_EL[kl]}); changed(); return; }
     if (k==='+'||k==='='){ pushUndo(); a.charge=(a.charge||0)+1; changed(); return; }
     if (k==='-'){ pushUndo(); a.charge=(a.charge||0)-1; changed(); return; }
     if (k==='.'){ pushUndo(); a.rad=a.rad?0:1; changed(); return; }
