@@ -95,6 +95,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
   4. On the branch preview, by hand: paste a type-4 benzene and pyrrole, open a type-4 `.sdf`, and open a CDXML pyrrole with no N–H.
 - **Acceptance:** everything in `validation.md` is ticked.
 - **Depends on:** TG-02, TG-03
+- [x] complete (2026-11-04): Chromium bar ×3 green; WebKit can't launch locally (logged); preview checks M-1…M-4 pass; PR #38
 
 ## 6. Coverage check
 | Requirement | Task group(s) |

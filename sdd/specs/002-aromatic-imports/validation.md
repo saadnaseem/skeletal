@@ -1,15 +1,15 @@
 # Validation — 002-aromatic-imports
 
-> Status: in progress · Last updated: 2026-11-04
+> Status: done, in review (PR #38) · Last updated: 2026-11-04
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
-- [ ] TG-01 … TG-04 in `plan.md` ticked.
-- [ ] Every row of §2 has ✅ (or ⚠ with a reason) and evidence.
+- [x] TG-01 … TG-04 in `plan.md` ticked.
+- [x] Every row of §2 has ✅ (or ⚠ with a reason) and evidence.
 - [ ] The full bar (§4) passes **3 times in a row** locally, plus CI on the PR.
-- [ ] Numbers are no worse than `sdd/product/baseline.md`: unit 196 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
-- [ ] Manual checks M-1 … M-4 on the PR's Cloudflare preview pass.
-- [ ] `requirements.md` and `plan.md` describe what was built; deviations are in `sdd/product/decisions.md`.
+- [x] Numbers are no worse than `sdd/product/baseline.md`: unit 196 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
+- [x] Manual checks M-1 … M-4 on the PR's Cloudflare preview pass.
+- [x] `requirements.md` and `plan.md` describe what was built; deviations are in `sdd/product/decisions.md`.
 
 ## 2. Traceability matrix
 | ID | Requirement (short) | TG | Check | Type | Verdict | Evidence |
@@ -18,11 +18,11 @@
 | FR-002 | coordinates, charges, isotopes, H counts, wedges kept | TG-01 | CK-02 | automated | ✅ | `FR-002 charges, isotopes, coordinates and wedges are kept`, `FR-001, FR-002 pyrrole with its N–H drawn as an H atom` pass |
 | FR-003 | molfile ring that can't alternate is refused | TG-01, TG-02 | CK-03, CK-06 | automated | ✅ | CK-03 unit (1, 1, 2, 1 rings) pass; `test_FR_003_dialog_refuses_ring_that_cannot_alternate`, `test_FR_003_paste_and_file_show_the_reason` pass |
 | FR-004 | document files open with a ring count | TG-03 | CK-08 | automated | ✅ | `FR-004 ChemDraw and CML five-membered aromatic rings with no N–H are counted` (unit), `test_FR_004_cdxml_ring_that_cannot_alternate_opens_with_count` (e2e) pass |
-| FR-005 | Kekulé molfiles and alternating document files unchanged | TG-01, TG-03, TG-04 | CK-04, CK-08, CK-09 | automated | ⬜ | |
-| NFR-001 | no regression | TG-04 | CK-09 | automated ×3 | ⬜ | |
-| NFR-002 | plain messages | TG-04 | M-1 … M-4 | manual | ⬜ | |
+| FR-005 | Kekulé molfiles and alternating document files unchanged | TG-01, TG-03, TG-04 | CK-04, CK-08, CK-09 | automated | ✅ | `FR-005 Kekulé molfiles give exactly the fragment they gave before` (5 molecules, JSON-identical), `test_FR_005_kekule_molfile_unchanged`, all existing CDXML/CML tests pass. One intended change: a ChemDraw furan in C, C, C, O, C order now alternates (was wrong), see `decisions.md` |
+| NFR-001 | no regression | TG-04 | CK-09 | automated ×3 | ⚠ | Chromium ×3: unit 209/0, e2e 778 passed / 3 skipped / 7 xfailed / 0 failed, validate unchanged (¹H 0.08, ¹³C 0.73, pKa 0.40). WebKit still can't launch on this Mac (same bus error as spec 001), so not run |
+| NFR-002 | plain messages | TG-04 | M-1 … M-4 | manual | ✅ | Preview sdd-roadmap-after-001-lone-pair.saad455.workers.dev, gstack browse: M-1 pasted type-4 benzene → C6H6, 3 double bonds; M-2 type-4 pyrrole → nothing drawn, toast "This molfile has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H needs its H: draw it, or set the N’s hydrogen count to 1."; M-3 type-4 pyridine `.sdf` → C5H5N; M-4 CDXML pyrrole with no N–H → opens, "Opened pyrrole.cdxml. 1 aromatic ring couldn’t be given alternating double bonds; a ring N–H may be missing its H". At 390 px the toast wraps and fits. No console errors |
 | CON-001 | one converter (`kekulize`) | TG-01 | CK-01 | review + automated | ✅ | `kekulizeFragment` calls `FORMATS.kekulize`; no other converter added |
-| CON-002 | offline, no new dependencies | TG-04 | CK-10 | automated | ⬜ | |
+| CON-002 | offline, no new dependencies | TG-04 | CK-10 | automated | ✅ | `git diff origin/main -- package.json package-lock.json` empty |
 | CON-003 | SMILES and valence guard unchanged | TG-01, TG-02 | CK-04b, CK-07 | automated | ✅ | `CON-003 SMILES never gives a 1.5 bond`, `test_CON_003_over_valent_type4_still_offers_insert_anyway` pass; spec 001 suite unchanged and green |
 
 Verdicts: ⬜ not run · ✅ pass · ❌ fail · ⚠ accepted exception (with reason).
