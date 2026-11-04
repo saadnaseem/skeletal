@@ -1,6 +1,6 @@
 # Requirements — 002-aromatic-imports
 
-> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Shipped 2026-11-04 (PR #38) · Last updated: 2026-11-04
 > The **what & why**. Behaviour and constraints only.
 
 ## 1. Summary

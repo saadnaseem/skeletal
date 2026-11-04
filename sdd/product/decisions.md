@@ -22,3 +22,8 @@
 - **`kekulize` finds the best matching, not the first.** It used to keep the first pairing it found, even when that left atoms without a double bond. Furan written C, C, C, O, C paired C1=C2 and then left C3 and C5 single, so it opened as a dihydrofuran. It now tries for no unmatched atoms first, then one, and so on. This also changes ChemDraw/CML/MRV imports that hit the old bug (they now open correctly), which FR-005's "exactly as today" doesn't cover; it only applies to rings that were being drawn wrong.
 - **`fromOCL` skips its dative-bond step on atoms with aromatic (type-4) bonds.** That step compares OpenChemLib's H count with ours, and OCL's count there treats the aromatic bonds as single, so phenylboronic acid's C–B bond became dative (C6H9BO2). The bond orders are decided by `kekulizeFragment` instead.
 - **The molfile H-count column is blanked before OpenChemLib reads it**, when the file has type-4 bonds. The plan had this as a fallback; it is done up front because OCL treats a file with H counts as a query (every implicit H becomes 0). The counts are still used by `kekulize`.
+
+## 2026-11-04 — Spec 003: small choices made while building
+- **`LipSize` is not written** for saved half-brackets. ChemDraw's unit for it isn't clear from the real files (60 for brackets about 112 pt tall), and leaving it out lets ChemDraw use its default.
+- **Unpaired half-brackets are counted after the whole file is read**, so "bracket" can come later in the "left out" list than before. The counts are the same; one existing test now compares them without key order.
+- **The hashed bond's marks are 0.6 × the wedge width**, about as wide as the middle of a hashed wedge, so the two look different when zoomed in. Checked by eye on the preview.

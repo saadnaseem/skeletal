@@ -18,7 +18,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 ## Features
 
 ### Drawing
-- Single, double, triple, wedge, hashed, wavy and bold bonds, plus a chain tool with a live atom count.
+- Single, double, triple, wedge, hashed wedge, wavy, bold, dashed (a partial or forming bond) and plain hashed bonds, plus a chain tool with a live atom count. Dashed and hashed bonds count as single bonds.
 - Benzene and 3- to 7-membered rings. Click a bond to fuse a ring, or click an atom to make a spiro ring.
 - Any element, nicknames (OMe, Boc, Ph, CO₂H, Ts and about 50 more) and generic labels (R, R¹, X).
 - Nicknames count toward formula and mass, and flip automatically (MeO, HO₂C) when the bond comes from the right.
@@ -34,7 +34,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
 - **Enhanced stereochemistry:** right-click a stereocenter to label it abs, &1 (racemic) or or1 (relative), as in ChemDraw. The labels are saved in V3000 molfiles and ChemDraw files.
 - **TLC plates:** draw lanes, spots and streaks with Rf values and the eluent. They're drawn in the page style and can be edited by double-clicking.
-- **Brackets:** square, curly and round pairs. Select a structure and click a bracket tool, or drag across it; double-click to add a charge or ‡ (top right) or n (bottom right). They open and save in ChemDraw files.
+- **Brackets:** square, curly and round pairs. Select a structure and click a bracket tool, or drag across it; double-click to add a charge or ‡ (top right) or n (bottom right). They open and save in ChemDraw files: ChemDraw's half-brackets open as one pair, and pairs are saved as half-brackets linked together, as ChemDraw writes them.
 - **Groups** (Ctrl+G): a structure and its label select, move and align as one.
 - **Smart guides**: while you drag, the selection snaps to the centers and edges of other structures. Hold Alt to drag freely.
 - Right-click a structure to copy its SMILES or molfile, or to look up its name and CAS number.
@@ -199,7 +199,7 @@ A drawing is JSON. Coordinates are in points, with y pointing down.
 
 ```json
 { "atoms":  [{ "id": 1, "x": 0, "y": 0, "el": "C", "charge": 0, "lp": 0, "rad": 0 }],
-  "bonds":  [{ "id": 3, "a": 1, "b": 2, "order": 1, "stereo": "none|wedge|hash|wavy|bold" }],
+  "bonds":  [{ "id": 3, "a": 1, "b": 2, "order": 1, "stereo": "none|wedge|hash|wavy|bold|dashed|hashed" }],
   "arrows": [{ "id": 4, "type": "reaction|equilibrium|retro|resonance|dashed|nogo|curly|fishhook", "x1": 0, "y1": 0, "x2": 40, "y2": 0 }],
   "texts":  [{ "id": 5, "x": 0, "y": 20, "text": "H2SO4", "size": 10, "font": "sans|serif|mono" }],
   "pluses": [], "style": "acs|slides", "page": { "w": 612, "h": 792, "across": 1, "down": 1 } }
