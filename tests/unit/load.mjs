@@ -25,7 +25,7 @@ export function docFromSmiles(get, smiles) {
   const { atoms, bonds } = fromOCL(mol);
   const d = newDoc(); let id = 1;
   atoms.forEach(a => { a.id = id++; d.atoms.push(a); });
-  bonds.forEach(b => d.bonds.push({ id: id++, a: atoms[b.a].id, b: atoms[b.b].id, order: b.order, stereo: b.stereo }));
+  bonds.forEach(b => d.bonds.push({ id: id++, a: atoms[b.a].id, b: atoms[b.b].id, order: b.order, stereo: b.stereo, ...(b.kind ? { kind: b.kind } : {}) }));
   d.nid = id;
   return d;
 }
