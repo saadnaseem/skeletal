@@ -1,6 +1,6 @@
 # Requirements — 002-aromatic-imports
 
-> Status: draft · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
 > The **what & why**. Behaviour and constraints only.
 
 ## 1. Summary
@@ -78,8 +78,6 @@ No saved-data or file-format changes. Export is unchanged: molfiles are already 
 - Changing which tautomer the converter picks for rings that do alternate.
 
 ## 11. Open questions
-
-| Question | Owner | Needed by |
-|---|---|---|
-| Approve rewording roadmap item 2 from "MOL/CDXML invented radicals" (not reproduced) to this aromatic-bond fix? | user | this gate |
-| FR-003: refuse a molfile ring that can't alternate (recommended, matches SMILES), or insert it with a warning? | user | this gate |
+Resolved at the gate (user, 2026-11-04):
+- Roadmap item 2 is reworded to this aromatic-bond fix.
+- FR-003: refuse a molfile ring that can't alternate, with no Insert anyway (as for SMILES).
