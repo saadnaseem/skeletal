@@ -1923,15 +1923,42 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
     const out=FORMATS.write(id, d); return {data:out, mime: it.bin? 'application/octet-stream' : 'text/plain'}; }
   throw new Error('Unknown format');
 }
+// A structure file just written is read back with our own readers and compared with the drawing, part by part (structureKey).
+// Returns what the file would lose, in words, or '' when it reads back the same. The file is still saved: the loss is often the
+// format's (a molfile has no dative bonds), and the user should know, not be stopped.
+const READBACK={smiles:'SMILES string', mol:'molfile', molV3:'V3000 molfile', sdf:'SD file', cdxml:'ChemDraw XML file', cdx:'ChemDraw file', cml:'CML file', mrv:'Marvin file'};
+function exportCheck(id, data, d){
+  const name=READBACK[id]; if (!name || !d.atoms.length) return '';
+  const r=toOCL(d, buildIndex(d), d.atoms.map(a=>a.id)); if (r.generic) return ''; // R and X are written as unknown atoms on purpose
+  const want=r.mol, wantDative=d.bonds.filter(b=>b.kind==='dative').length;
+  let got, gotDative=0;
+  try{
+    if (id==='smiles') got=smilesMol(String(data).trim().split(/\s+/)[0]);
+    else if (id==='mol' || id==='molV3') got=molfileMol(data).mol;
+    else if (id==='sdf'){ got=new OCL.Molecule(8,8); for (const rec of String(data).split('$$$$')) if (/M\s+END/.test(rec)) got.addMolecule(molfileMol(rec.replace(/^\r?\n/,'')).mol); }
+    else { const {skipped, style, styleOv, labelSize, ...parts}=FORMATS.read(id, data), back=normalizeDoc({...newDoc(), ...parts});
+      got=toOCL(back, buildIndex(back), back.atoms.map(a=>a.id)).mol; gotDative=back.bonds.filter(b=>b.kind==='dative').length; }
+  }catch(e){ return `The ${name} was written, but it couldn’t be read back to check it.`; }
+  if (structureKey(want)!==structureKey(got)){
+    const fa=MS.hill(MS.composition(want).counts), fb=MS.hill(MS.composition(got).counts);
+    if (fa!==fb) return `The ${name} doesn’t keep everything in the drawing: it reads back as ${fb}, not ${fa}.`;
+    if (structureKey(want,false)===structureKey(got,false)) return `The ${name} doesn’t keep the stereochemistry as drawn.`;
+    return `The ${name} reads back with different bonds than the drawing.`;
+  }
+  if (gotDative<wantDative) return `The ${name} leaves out the dative bonds (the arrows), so those parts are written unconnected. ChemDraw files keep them.`;
+  return '';
+}
 async function exportAs(id, copy){
   if (id==='png') return downloadPng(); if (id==='svg') return downloadSvg(); if (id==='pdf'){ closeDialog(); return exportPdfDialog(); } if (id==='html') return saveHtml();
   const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
   try{
     const {data}=await exportData(id);
-    if (copy){ copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); return; }
+    let warn=''; try{ warn=exportCheck(id, data, exportDoc()); }catch(e){ console.warn(e); }
+    if (copy){ await copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); if (warn) toast(it.n+' copied. '+warn, 9000); return; }
     const lost = id==='eps' ? PDF.takeMissing() : [];
     await saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
     warnMissingChars('EPS', lost);
+    if (warn) toast(warn, 9000);
   }catch(err){ toast(err.message||'Export failed'); }
 }
 function openSaveAs(){
