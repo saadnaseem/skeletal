@@ -5282,9 +5282,10 @@ async function copyImage(){
     $('#dlFromCopy').onclick=()=>{ closeDialog(); downloadPng(); };
   }
 }
+// true when the text reached the clipboard; otherwise it is shown in a dialog to copy by hand
 async function copyText(t, msg){
-  try{ await navigator.clipboard.writeText(t); toast(msg||'Copied'); }
-  catch(e){ const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(_){} ta.remove(); if (ok) toast(msg||'Copied'); else openDialog(`<h3>Copy text</h3><p>Select the text and copy it.</p><textarea readonly>${esc(t)}</textarea><div class="actions"><button class="tb primary" data-close>Done</button></div>`); }
+  try{ await navigator.clipboard.writeText(t); toast(msg||'Copied'); return true; }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(_){} ta.remove(); if (ok) toast(msg||'Copied'); else openDialog(`<h3>Copy text</h3><p>Select the text and copy it.</p><textarea readonly>${esc(t)}</textarea><div class="actions"><button class="tb primary" data-close>Done</button></div>`); return ok; }
 }
 // PNG chunk helpers (dpi + embedded drawing for reopening)
 const CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
@@ -5385,12 +5386,13 @@ function exportCheck(id, data, d){
   const want=r.mol, wantDative=d.bonds.filter(b=>b.kind==='dative').length;
   let got, gotDative=0;
   try{
-    if (id==='smiles') got=smilesMol(String(data).trim().split(/\s+/)[0]);
+    if (id==='smiles') got=OCL.Molecule.fromSmiles(String(data).trim().split(/\s+/)[0]); // not smilesMol: its [1H] marks a drawn H, which the drawing's H has no mass for
     else if (id==='mol' || id==='molV3') got=molfileMol(data).mol;
     else if (id==='sdf'){ got=new OCL.Molecule(8,8); for (const rec of String(data).split('$$$$')) if (/M\s+END/.test(rec)) got.addMolecule(molfileMol(rec.replace(/^\r?\n/,'')).mol); }
     else { const {skipped, style, styleOv, labelSize, ...parts}=FORMATS.read(id, data), back=normalizeDoc({...newDoc(), ...parts});
       got=toOCL(back, buildIndex(back), back.atoms.map(a=>a.id)).mol; gotDative=back.bonds.filter(b=>b.kind==='dative').length; }
-  }catch(e){ return `The ${name} was written, but it couldn’t be read back to check it.`; }
+  }catch(e){ got=null; }
+  if (!got || !got.getAllAtoms()) return `The ${name} was written, but it couldn’t be read back to check it.`; // a reader that finds nothing is no comparison
   if (structureKey(want)!==structureKey(got)){
     const fa=MS.hill(MS.composition(want).counts), fb=MS.hill(MS.composition(got).counts);
     if (fa!==fb) return `The ${name} doesn’t keep everything in the drawing: it reads back as ${fb}, not ${fa}.`;
@@ -5406,7 +5408,7 @@ async function exportAs(id, copy){
   try{
     const {data}=await exportData(id);
     let warn=''; try{ warn=exportCheck(id, data, exportDoc()); }catch(e){ console.warn(e); }
-    if (copy){ await copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); if (warn) toast(it.n+' copied. '+warn, 9000); return; }
+    if (copy){ const ok=await copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); if (warn) toast((ok? it.n+' copied. ' : '')+warn, 9000); return; }
     const lost = id==='eps' ? PDF.takeMissing() : [];
     await saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
     warnMissingChars('EPS', lost);
