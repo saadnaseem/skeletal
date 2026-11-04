@@ -859,6 +859,24 @@ function findChairs(d, ix){
 }
 // SMILES with its explicit hydrogens kept as atoms ([H]C([H])([H])O draws its H): OpenChemLib drops plain [H], so they go in as [1H]
 function smilesMol(smi){ return OCL.Molecule.fromSmiles(String(smi).replace(/\[H\]/g,'[1H]')); }
+// A molfile, with its wedges read as drawn. In V2000, chiral flag 0 strictly means "racemic", and OpenChemLib reads it that way;
+// but RDKit and many other programs write 0 in every file, and RDKit, Indigo and ChemDraw read the wedges as one enantiomer.
+// So a flag-0 file with wedge or hash bonds is read as chiral, and asDrawn says so (the user can still mark a centre &1).
+// Text that was trimmed (paste, file open) loses a blank name line and the counts line's leading spaces; both are put back.
+function molfileMol(txt){
+  let lines=String(txt).split(/\r?\n/);
+  const k=lines.findIndex(l=>/V[23]000\s*$/.test(l));
+  if (k>=0 && k<3) lines=[...Array(3-k).fill(''), ...lines];
+  if (k>=0 && /V2000/.test(lines[3])) lines[3]=lines[3].replace(/^\s*(\d+)\s+(\d+)/, (m,a,b)=>a.padStart(3)+b.padStart(3));
+  const c=lines[3]||'';
+  let asDrawn=false;
+  if (/V2000/.test(c) && c.slice(12,15).trim()==='0'){
+    const na=+c.slice(0,3), nb=+c.slice(3,6);
+    const wedged=lines.slice(4+na, 4+na+nb).some(l=>{ const s=l.slice(9,12).trim(); return s==='1'||s==='6'; });
+    if (wedged){ lines[3]=c.slice(0,12)+'  1'+c.slice(15); asDrawn=true; }
+  }
+  return {mol:OCL.Molecule.fromMolfile(lines.join('\n')), asDrawn};
+}
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)
   const n=mol.getAllBonds(); if(!n) return;
