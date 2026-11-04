@@ -15,7 +15,7 @@
 5. Tick it here, update the score, move on.
 
 ## Current phase
-Phase 1 — chemistry correctness. The #29–#34 stack merged on 2026-11-03 (edge-case suite, molfile wedges, ligand H, invented radicals, isotopes). Item 1 is built and in PR review.
+Phase 1 — chemistry correctness. The #29–#34 stack merged on 2026-11-03 (edge-case suite, molfile wedges, ligand H, invented radicals, isotopes). Item 1 shipped 2026-11-04 (PR #37). Next: item 2 follow-up (MOL/CDXML radicals) or item 4.
 
 ## Phase 1 — Chemistry correctness
 Goal: the app is never silently wrong about what was drawn or imported.
@@ -24,7 +24,7 @@ Exit criterion: every Phase 1 row is `done` and the edge-case suite runs on `mai
 | # | Item (rubric pts) | Verified on main 30203e3 | Size | Depends on | Spec / PR | Status |
 |---|---|---|---|---|---|---|
 | 0 | Land the open correctness stack | #29 edge-case suite, #30 molfile wedges, #31 ligand H + `N->[BH3]`, #32 invented radicals — all CI green | S | — | PRs #29–#34 | done (merged 2026-11-03) |
-| 1 | Block structures that break valence rules (+1.8) | ✅ `C(C)(C)(C)(C)C` is inserted with only a red "C has 5 bonds" warning; analysis then reports C6H15. SF6 correctly accepted. | M | — | `sdd/specs/001-valence-guard` | **built (TG-01…TG-04), in PR review** |
+| 1 | Block structures that break valence rules (+1.8) | ✅ `C(C)(C)(C)(C)C` is inserted with only a red "C has 5 bonds" warning; analysis then reports C6H15. SF6 correctly accepted. | M | — | `sdd/specs/001-valence-guard` | **shipped 2026-11-04 (PR #37, merge 1bf2980)** |
 | 2 | Refuse radicals the input didn't ask for (+1.8) | ✅🔀 `c1ccnc1` → `[CH]1N=CC=C1` (C4H4N), `c1cccc1` → radical; `c1cc[nH]c1` fine. SMILES fixed in #32; **MOL and CDXML imports not covered**. | S | 0 | #32 merged; MOL/CDXML follow-up | partly done |
 | 3 | Keep hydrogens in metal complexes (+1.8) | ✅🔀 Cisplatin `Cl[Pt](Cl)([NH3])[NH3]` → H4N2Cl2Pt, 298.03 (should be H6, 300.05). Ferrocene (C10H10Fe) and Wilkinson's (C54H45ClP3Rh) already right. Grubbs II not yet tested. | S | 0 | #31 merged (cisplatin now H6N2Cl2Pt); add Grubbs II test | done |
 | 4 | CDXML bond styles and arrow direction (+2.2) | 🟡 Wedged hash, wedge, wavy, bold import and export correctly. **Plain `Dash` and `Hash` bonds import as plain lines** (confirmed). Modern `<arrow Head3D/Tail3D>` reads in the right direction; the legacy `<graphic ArrowType>` path swaps BoundingBox ends — needs a real ChemDraw file to confirm which is right. | M | 0 | `002-cdxml-fidelity` | planned |
