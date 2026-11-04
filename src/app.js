@@ -1623,10 +1623,10 @@ function analysisFor(ids){
   const {mol,generic}=toOCL(doc,ix,ids);
   if (!mol.getAllAtoms()) return null;
   const smiles=mol.toIsomericSmiles();
-  const f=mol.getMolecularFormula();
+  const f=mol.getMolecularFormula(), formula=MS.hill(MS.composition(mol).counts); // Hill order, isotopes kept (¹³C, D); OCL's string is neither
   let props=null; try{ props=new OCL.MoleculeProperties(mol); }catch(e){}
   let molfile=''; try{ const m2=mol.getCompactCopy? mol.getCompactCopy(): mol; molfile=m2.toMolfile(); }catch(e){}
-  return {smiles, formula:f.formula, mw:f.relativeWeight, exact:f.absoluteWeight, props, generic, molfile};
+  return {smiles, formula, mw:f.relativeWeight, exact:f.absoluteWeight, props, generic, molfile};
 }
 let lastAnalysis=null;
 function analyzeNow(){
