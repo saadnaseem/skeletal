@@ -1445,12 +1445,16 @@ function smilesReason(smi, err){
   let r;
   if ((r=/dangling ring closure: (\d+)/.exec(msg))) return `Ring bond ${r[1]} is opened but never closed. Each ring number appears twice, once where the ring opens and once where it closes, as in cyclohexane: C1CCCCC1.`;
   if (/Closing '\)'/.test(msg)) return `The “)” ${at(p)} has no “(” before it.`;
-  if (/closing bracket/.test(msg)) return `The “]” ${at(p)} has no “[” before it.`;
+  if (/closing bracket/.test(msg)){ // OCL says this for a stray ']' (C]C) and for brackets with no element inside (C[], C[13])
+    const o=s.lastIndexOf('[', p-1);
+    return o<0 || s.lastIndexOf(']', p-1)>o ? `The “]” ${at(p)} has no “[” before it.` : `The brackets ${at(o)} have no element in them, as in [CH4] or [13C].`;
+  }
   if (/inside brackets/.test(msg)){ const o=s.lastIndexOf('['); if (o>s.lastIndexOf(']')) return `The “[” ${at(o)} is never closed with “]”.`; }
   if (/Unknown atom label/.test(msg)){ const b=/^\[[^\]]*\]/.exec(s.slice(p)); if (b) return `“${b[0]}” is not an element.`; }
   if (/unknown element label/.test(msg)){
-    const two = /[a-z]/.test(s[p]||'') && p>0 ? s.slice(p-1,p+1) : s.slice(p,p+2);
-    if (/^[A-Z][a-z]$/.test(two) && ELSET.has(two)) return `“${two}” has to be written in brackets, as in [${two}]. Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings).`;
+    const two = /[a-z]/.test(s[p]||'') && p>0 ? s.slice(p-1,p+1) : /^[A-Z][a-z]/.test(s.slice(p,p+2)) && ELSET.has(s.slice(p,p+2)) ? s.slice(p,p+2) : s[p]||'';
+    // Na, Mn; or H, K, U: elements, but written without the brackets they need
+    if (/^[A-Z][a-z]?$/.test(two) && ELSET.has(two)) return `“${two}” has to be written in brackets, as in [${two}]. Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings).`;
     return `“${s[p]}” ${at(p)} is not an atom. Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings); other elements go in brackets, as in [Na+] or [Si].`;
   }
   if (/dangling open bond/.test(msg) && p>=s.length) return `The SMILES ends with “${s.slice(-1)}”, with no atom after it.`;
