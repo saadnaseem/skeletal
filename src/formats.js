@@ -125,7 +125,7 @@ const FORMATS = (()=>{
         const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)}; bondId.set(b.id, at.id);
         if (b.kind) at.Order=b.kind==='hbond'?'hydrogen':'dative';
         else if (b.order>1) at.Order=String(b.order);
-        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold'}[b.stereo];
+        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold',dashed:'Dash',hashed:'Hash'}[b.stereo];
         if (b.order===2 && b.dbPos && b.dbPos!=='auto') at.DoublePosition={center:'Center',left:'Left',right:'Right'}[b.dbPos];
         if (b.color) at.color=colorIdx(b.color);
         fr.children.push(E('b',at)); }
@@ -413,7 +413,7 @@ const FORMATS = (()=>{
         const dsp=b.attrs.Display||'Solid'; let stereo='none', a1=A, a2=Bb;
         if (dsp==='WedgeBegin') stereo='wedge'; else if (dsp==='WedgeEnd'){ stereo='wedge'; a1=Bb; a2=A; }
         else if (dsp==='WedgedHashBegin') stereo='hash'; else if (dsp==='WedgedHashEnd'){ stereo='hash'; a1=Bb; a2=A; }
-        else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold';
+        else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold'; else if (dsp==='Dash') stereo='dashed'; else if (dsp==='Hash') stereo='hashed';
         const bd={id:nid++, a:a1, b:a2, order, stereo: kind? 'none' : stereo}; const dp=b.attrs.DoublePosition; if (dp) bd.dbPos={Center:'center',Left:'left',Right:'right'}[dp];
         if (kind) bd.kind=kind;
         bonds.push(setColor(bd, b.attrs.color));

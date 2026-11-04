@@ -19,8 +19,8 @@
 | FR-003 | unpaired halves still counted | TG-01 | CK-02 | automated | ✅ | `FR-003 a lone curly brace is counted…`; existing `single brackets are reported` test unchanged and passing |
 | FR-004 | corner text attaches to pairs | TG-01 | CK-03 | automated | ✅ | `FR-004 a charge at the top right and a count at the bottom right…` pass |
 | FR-005 | brackets save as halves + group | TG-02 | CK-04, M-5 | automated + optional manual | ✅ (ChemDraw check pending) | `FR-005 each bracket is written as two half-brackets and a bracketedgroup…`, `FR-005 brackets, nested ones included, come back the same through CDXML and CDX`, `brackets and their labels round-trip…` pass |
-| FR-006 | dashed and hashed bond tool styles, single for chemistry | TG-03 | CK-05, CK-07 | automated | ⬜ | |
-| FR-007 | `Dash`/`Hash` read and written | TG-03 | CK-06 | automated | ⬜ | |
+| FR-006 | dashed and hashed bond tool styles, single for chemistry | TG-03 | CK-05, CK-07 | automated | ✅ | `test_FR_006_draw_save_reopen_undo` [dashed, hashed] (real mouse drag, formula C2H6), `test_FR_006_pressing_2_…`, unit `FR-006, FR-008 … single bonds for formula, SMILES and molfile` pass |
+| FR-007 | `Dash`/`Hash` read and written | TG-03 | CK-06 | automated | ✅ | unit `FR-007 ChemDraw Dash and Hash bonds …` (CDXML and CDX), `test_FR_007_008_chemdraw_round_trip_and_exports` pass |
 | FR-008 | drawn in every export; plain single elsewhere | TG-03 | CK-05, CK-07, M-2 | automated + manual | ⬜ | |
 | FR-009 | arrow direction pinned | TG-04 | CK-08 | automated | ⬜ | |
 | NFR-001 | no regression | TG-05 | CK-09 | automated ×3 | ⬜ | |
@@ -29,7 +29,7 @@
 | CON-001 | user's files only read locally | all | review | review | ⬜ | |
 | CON-002 | offline, no new dependencies | TG-05 | CK-11 | automated | ⬜ | |
 | CON-003 | wedges, wavy, bold, arrows, `SquarePair` unchanged | TG-01, TG-04 | CK-02b, CK-08, existing tests | automated | ⬜ | |
-| CON-004 | old projects open; unknown style falls back | TG-03 | CK-05b | automated | ⬜ | |
+| CON-004 | old projects open; unknown style falls back | TG-03 | CK-05b | automated | ✅ | `CON-004 the sanitizer keeps dashed and hashed; an unknown style still falls back to none` pass |
 
 Verdicts: ⬜ not run · ✅ pass · ❌ fail · ⚠ accepted exception (with reason).
 

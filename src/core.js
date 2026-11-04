@@ -140,7 +140,7 @@ function sanitizeDoc(d){
   const arr=v=>Array.isArray(v)?v:[];
   out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined,
     hs: a.hs ? true : undefined, lc: a.lc && str(a.el,24)==='C' ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','lc','hl']));
-  out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
+  out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold','dashed','hashed'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
@@ -459,6 +459,15 @@ function renderBond(d, ix, b, labels, out){
       return;
     }
     if (b.stereo==='bold'){ out.push(strokeLine(p,q,st.boldWidth,col,'butt')); return; }
+    // a dashed bond (a partial or forming bond): longer dashes than a hydrogen bond's, so the two are told apart
+    if (b.stereo==='dashed'){ out.push(strokeLine(p,q,lw,col,'butt',` stroke-dasharray="${f2(lw*7)} ${f2(lw*4.5)}"`)); return; }
+    // a plain hashed bond: the hashed wedge's marks, all the same length
+    if (b.stereo==='hashed'){
+      const L2=dist(p,q), cnt=Math.max(3,Math.round(L2/st.hashSpacing)), hw=st.wedge*0.3; let dd='';
+      for (let i=1;i<cnt;i++){ const c=add(p,mul(sub(q,p),i/cnt)); dd+=`M${f2(c.x+n.x*hw)} ${f2(c.y+n.y*hw)}L${f2(c.x-n.x*hw)} ${f2(c.y-n.y*hw)}`; }
+      out.push(`<path d="${dd}" stroke="${col}" stroke-width="${lw}" fill="none"/>`);
+      return;
+    }
     out.push(strokeLine(p,q,lw,col)); return;
   }
   if (b.order===3){

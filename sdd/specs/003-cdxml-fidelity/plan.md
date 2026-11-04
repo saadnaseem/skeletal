@@ -82,6 +82,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
   - e2e: choose each style in the bond tool and draw a bond; it renders, survives save and reopen and undo; pressing 2 on it makes a plain double bond; SVG and PNG export run with no errors.
 - **Acceptance:** the new tests pass; the full e2e suite passes.
 - **Verify:** `npm run build && npm test && npm run test:e2e`
+- [x] complete (2026-11-04): unit 222 pass; e2e 782 passed + the toolbar-count test updated to 51 (it failed only on the count), 3 skipped, 7 xfailed, 0 failed
 
 ### TG-04: arrows pinned   [S]   [satisfies: FR-009]
 - **Objective:** the arrow direction the real files showed is held by tests.

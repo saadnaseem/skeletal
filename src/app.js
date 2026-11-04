@@ -2019,6 +2019,8 @@ const TOOLS = [
     {id:'bond', o:{bond:{order:1,stereo:'hash'}}, t:'Hashed wedge bond', i:ic('<path d="M7 17l.8.8M9 14.5l1.8 1.8M11 12l2.8 2.8M13 9.5l3.8 3.8M15 7l4.8 4.8" stroke-width="1.5"/>')},
     {id:'bond', o:{bond:{order:1,stereo:'wavy'}}, t:'Wavy bond (undefined stereo)', i:ic('<path d="M4 18q2-4 4-2t4-2 4-2 4-6"/>')},
     {id:'bond', o:{bond:{order:1,stereo:'bold'}}, t:'Bold bond', i:ic('<path d="M5 19L19 5" stroke-width="4" stroke-linecap="butt"/>')},
+    {id:'bond', o:{bond:{order:1,stereo:'dashed'}}, t:'Dashed bond (partial or forming bond)', i:ic('<path d="M5 19L19 5" stroke-dasharray="4 3" stroke-linecap="butt"/>')},
+    {id:'bond', o:{bond:{order:1,stereo:'hashed'}}, t:'Hashed bond', i:ic('<path d="M6.6 14.6l2.8 2.8M9.4 11.8l2.8 2.8M12.2 9l2.8 2.8M15 6.2l2.8 2.8"/>')},
     {id:'chain', t:'Chain. Drag to set the length', i:ic('<path d="M3 15l4.5-6 4.5 6 4.5-6 4.5 6"/>')},
   ]},
   {g:'rings', items:[

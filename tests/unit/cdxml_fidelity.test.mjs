@@ -120,3 +120,43 @@ test('FR-005 brackets, nested ones included, come back the same through CDXML an
     if (f === 'cdxml') same(back.brackets.map(q => [q.sup || '', q.sub || '']), [['2–', ''], ['', 'n'], ['‡', '']], f);
   }
 });
+
+// ---------- FR-006 … FR-008, CON-004: dashed and hashed bond styles ----------
+const sanitizeDoc = get('sanitizeDoc'), renderDoc = get('renderDoc'), buildIndex = get('buildIndex'), toOCL = get('toOCL'), MS = get('MS');
+const styled = st => { const d = docFromSmiles(get, 'CC(C)CO'); d.bonds[1].stereo = st; return d; };
+
+test('CON-004 the sanitizer keeps dashed and hashed; an unknown style still falls back to none', () => {
+  same(sanitizeDoc(styled('dashed')).bonds[1].stereo, 'dashed');
+  same(sanitizeDoc(styled('hashed')).bonds[1].stereo, 'hashed');
+  same(sanitizeDoc(styled('zigzag')).bonds[1].stereo, 'none');
+});
+
+test('FR-008 dashed draws a dashed line, distinct from a hydrogen bond; hashed draws even hash marks', () => {
+  const svgOf = d => renderDoc(d, buildIndex(d)).svg;
+  const dashed = svgOf(styled('dashed')), hb = (() => { const d = styled('none'); d.bonds[1].kind = 'hbond'; return svgOf(d); })();
+  const dash = s => [...s.matchAll(/stroke-dasharray="([\d.]+) ([\d.]+)"/g)].map(m => [+m[1], +m[2]]);
+  assert.equal(dash(dashed).length, 1);
+  assert.ok(dash(dashed)[0][0] > dash(hb)[0][0] * 1.5, 'longer dashes than a hydrogen bond');
+  const hashed = svgOf(styled('hashed')), plain = svgOf(styled('none')), wedge = svgOf(styled('hash'));
+  assert.notEqual(hashed, plain); assert.notEqual(hashed, wedge);
+  const marks = s => { const m = [...s.matchAll(/<path d="((?:M[-\d.]+ [-\d.]+L[-\d.]+ [-\d.]+)+)"/g)].map(x => x[1]); return m.length ? [...m[0].matchAll(/M([-\d.]+) ([-\d.]+)L([-\d.]+) ([-\d.]+)/g)].map(q => Math.hypot(q[3] - q[1], q[4] - q[2])) : []; };
+  const hm = marks(hashed), wm = marks(wedge);
+  assert.ok(hm.length >= 3, 'several marks');
+  assert.ok(Math.max(...hm) - Math.min(...hm) < 0.05, 'all marks the same length');
+  assert.ok(Math.max(...wm) - Math.min(...wm) > 0.5, 'a hashed wedge widens (the fixture is right)');
+});
+
+test('FR-006, FR-008 dashed and hashed bonds are single bonds for formula, SMILES and molfile', () => {
+  const plain = styled('none'), smi = d => { const m = toOCL(d, buildIndex(d)).mol; return [m.toIsomericSmiles(), MS.hill(MS.composition(m).counts), m.toMolfile().split('\n').slice(4).join('\n')]; };
+  for (const st of ['dashed', 'hashed']) same(smi(styled(st)), smi(plain), st);
+});
+
+test('FR-007 ChemDraw Dash and Hash bonds open as the styles and are written back, in CDXML and CDX', () => {
+  const x = cdxml(`<fragment id="1"><n id="2" p="0 0"/><n id="3" p="14.4 0"/><n id="4" p="21.6 12.47"/><b id="5" B="2" E="3" Display="Dash"/><b id="6" B="3" E="4" Display="Hash"/></fragment>`);
+  same(F.read('cdxml', x).bonds.map(b => b.stereo), ['dashed', 'hashed']);
+  for (const f of ['cdxml', 'cdx']){
+    const d = { ...get('newDoc')(), ...F.read('cdxml', x) };
+    same(F.read(f, F.write(f, d)).bonds.map(b => b.stereo), ['dashed', 'hashed'], f);
+  }
+  assert.match(F.write('cdxml', { ...get('newDoc')(), ...F.read('cdxml', x) }), /Display="Dash"[\s\S]*Display="Hash"/);
+});
