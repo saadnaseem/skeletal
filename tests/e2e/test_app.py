@@ -1,4 +1,5 @@
 import base64, json, struct, time
+import pytest
 
 def atom_xy(page, js_pred):
     box = page.locator("#cv").bounding_box()
@@ -739,6 +740,11 @@ def test_feedback_form(page):
         link = page.locator("#fbErr a")
         assert link.inner_text() == "feedback@lonepair.app" and "BDE%20tool" in link.get_attribute("href") and "SMILES%3A%20CCO" in link.get_attribute("href")
         return
+    # Sending is only tested against a local stand-in (scripts/serve_site.py, which keeps the messages at /__feedback).
+    # On the real site it would email the owner, so a run against lonepair.app stops here.
+    from urllib.parse import urlparse
+    if urlparse(URL).hostname not in ("localhost", "127.0.0.1", "::1"):
+        pytest.skip("not sending real feedback from a test run against " + URL)
     page.focus("#fbMsg"); page.keyboard.press("Control+Enter")  # Ctrl+Enter sends
     page.wait_for_selector("#toast.show"); assert "Thank you" in page.inner_text("#toast")
     assert not page.is_visible("#fbMsg")
