@@ -1,6 +1,6 @@
 # Requirements — 001-valence-guard
 
-> Status: draft · Approved by: — · Last updated: 2026-11-03
+> Status: approved · Approved by: user (2026-11-03) · Last updated: 2026-11-03
 > The **what & why**. Behaviour and constraints only.
 
 ## 1. Summary
@@ -106,10 +106,10 @@ No saved-data or file-format changes.
 
 ## 13. Assumptions
 - Verified 2026-11-03 on main 5a5109e: the existing rule accepts all 11 must-accept cases in §9 (incl. Grubbs II) and flags all 4 must-refuse cases; today all 15 are inserted.
-- [ASSUMED: the toast area can hold a button. If not, paste shows a small non-blocking banner instead. Decided in plan.md.]
+- Resolved in plan.md: the toast has no pointer events, so paste and file refusals open the Insert structure dialog instead.
 
 ## 14. Open questions
 
 | Question | Owner | Needed by |
 |---|---|---|
-| FR-009: should over-valent atoms in opened files also be selected, so they're easy to find? Default: no, the existing red warning can be clicked to select them. | user | plan |
+| FR-009: select over-valent atoms when a file opens? **Resolved: no** (default accepted); the red warning selects them on click. | user | done |
