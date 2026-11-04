@@ -46,7 +46,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Outputs:** `overValent` in `src/core.js`; `tests/unit/valence_guard.test.mjs`. Tests are written first, named after the requirement IDs. They cover the 11 must-accept cases (none flagged), the 4 must-refuse cases (each flagged with the right `why`), multiple bad atoms, and a 200-atom chain under 20 ms.
 - **Acceptance:** the new tests pass and all 171+ existing unit tests still pass.
 - **Verify:** `npm test`
-- [ ] complete
+- [x] complete (2026-11-03): `npm test` 196 pass / 0 fail (189 + 7 new)
 
 ### TG-02: refuse in `tryLoadText`, and Insert anyway in the dialog   [M]   [satisfies: FR-001, FR-002, FR-003, FR-007, FR-008, FR-010]
 - **Objective:** SMILES, reaction SMILES, molfile and InChI inserts are checked. The dialog shows the reason and an **Insert anyway** button.

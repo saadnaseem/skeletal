@@ -1,6 +1,6 @@
 # Validation — 001-valence-guard
 
-> Status: draft · Last updated: 2026-11-03
+> Status: approved (user, 2026-11-03) · Last updated: 2026-11-03
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
@@ -20,15 +20,15 @@
 | FR-003 | Insert anyway inserts unchanged | TG-02 | CK-05 | automated | ⬜ | |
 | FR-004 | paste refused → dialog | TG-03 | CK-07 | automated | ⬜ | |
 | FR-005 | text file refused → dialog | TG-03 | CK-08 | automated | ⬜ | |
-| FR-006 | real exceptions accepted | TG-01, TG-02 | CK-01, CK-09 | automated | ⬜ | |
+| FR-006 | real exceptions accepted | TG-01, TG-02 | CK-01, CK-09 | automated | ⬜ | CK-01 ✅ (unit, 11 compounds); CK-09 pending TG-02 |
 | FR-007 | reaction checked as a whole | TG-02 | CK-06 | automated | ⬜ | |
 | FR-008 | one undo removes it | TG-02 | CK-05 | automated | ⬜ | |
 | FR-009 | document files open with a count | TG-04 | CK-10 | automated | ⬜ | |
 | FR-010 | templates, examples, PubChem checked | TG-02 | CK-11 | automated | ⬜ | |
-| NFR-001 | < 20 ms for 200 atoms | TG-01 | CK-02 | measured | ⬜ | |
+| NFR-001 | < 20 ms for 200 atoms | TG-01 | CK-02 | measured | ✅ | median 0.44 ms, max 1.34 ms over 20 runs (node) |
 | NFR-002 | no regression | TG-05 | CK-12 | automated ×3 | ⬜ | |
 | NFR-003 | plain-language messages | TG-05 | M-1…M-6 | manual | ⬜ | |
-| CON-001 | same rule as red warning | TG-01 | CK-01b | automated | ⬜ | |
+| CON-001 | same rule as red warning | TG-01 | CK-01b | automated | ✅ | `CON-001 agrees with valenceError on the inserted drawing` passes on all 16 cases |
 | CON-002 | hand drawing not blocked | TG-05 | CK-13, M-5 | automated + manual | ⬜ | |
 | CON-003 | offline, single file, no new deps | TG-05 | CK-14 | automated | ⬜ | |
 
@@ -98,7 +98,7 @@ On the PR's Cloudflare preview (`https://<branch>-lone-pair.saad455.workers.dev`
 ## 5. Non-functional verification
 | NFR | Tool | Measurement | Threshold | Result |
 |---|---|---|---|---|
-| NFR-001 | node --test | median over 20 runs, 200 atoms | < 20 ms | |
+| NFR-001 | node --test | median over 20 runs, 200 atoms | < 20 ms | 0.44 ms ✅ |
 | NFR-002 | CI + 3 local runs | failures | 0 | |
 | NFR-003 | manual M-1…M-6 | reviewer reads the messages | no jargon, says what to do | |
 
