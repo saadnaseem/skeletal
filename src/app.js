@@ -1046,11 +1046,13 @@ function tryLoadText(txt, quiet){
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
-      const mol=OCL.Molecule.fromMolfile(txt); if (!mol.getAllAtoms()) throw 0;
+      const {mol,asDrawn}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
       if (!hasXY) mol.inventCoordinates();
-      insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
+      insertFragments([{kind:'frag',f:molToFragment(mol)}]);
+      if (asDrawn) toast('Stereo read as drawn, although the file’s chiral flag says racemic. Right-click a stereocentre to mark it &1.', 6000);
+      return true;
     }
     if (/^InChI=/.test(txt)){ OCL.InChI.molfileFromInchi(txt.split(/\s+/)[0]).then(r=>{ if (!r.molfile) throw new Error(r.message);
         const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); insertFragments([{kind:'frag',f:molToFragment(mol)}]); closeDialog(); })

@@ -182,18 +182,15 @@ M  V30 END BOND
 M  V30 END CTAB
 M  END
 """
-B1 = "B1: chiral flag 0 is read as a racemic (&1) group, so SMILES drops the stereo while the InChIKey keeps it"
-
-
-@pytest.mark.parametrize("molfile", [
-    pytest.param(RDKIT_ALA_V2000, id="V2000", marks=pytest.mark.xfail(reason=B1, strict=True)),
-    pytest.param(RDKIT_ALA_V3000, id="V3000")])
-def test_molfile_from_rdkit_keeps_its_stereocentre(lp, molfile):
-    r = lp.evaluate("""async f => { setDoc(newDoc()); sel.clear(); changed(); tryLoadText(f, true);
+@pytest.mark.parametrize("molfile,told", [(RDKIT_ALA_V2000, True), (RDKIT_ALA_V3000, False)], ids=["V2000", "V3000"])
+def test_molfile_from_rdkit_keeps_its_stereocentre(lp, molfile, told):
+    r = lp.evaluate("""async f => { setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent='';
+        tryLoadText(f, true);
         return {key: (await exportData('inchikey')).data.trim(), smiles: (await exportData('smiles')).data.trim(),
-                groups: doc.atoms.filter(a=>a.stg).map(a=>a.stg)}; }""", molfile)
+                groups: doc.atoms.filter(a=>a.stg).map(a=>a.stg), toast: document.querySelector('#toast').textContent}; }""", molfile)
     assert r["key"] == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"  # L-alanine
     assert "@" in r["smiles"] and r["groups"] in ([], ["abs"])  # read as drawn: one enantiomer, as RDKit meant
+    assert ("read as drawn" in r["toast"]) == told  # the V2000 file's flag said racemic, so the user is told it was overridden
 
 
 def paste(page, text):
@@ -201,6 +198,22 @@ def paste(page, text):
         const dt=new DataTransfer(); dt.setData('text/plain', t); document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true})); }""", text)
     page.wait_for_timeout(100)
     return page.evaluate("({atoms: doc.atoms.length, radicals: doc.atoms.filter(a=>a.rad).length, toast: document.querySelector('#toast').textContent})")
+
+
+def test_rdkit_molfile_pastes_and_opens_as_l_alanine(lp, tmp_path):
+    # RDKit leaves the name line blank; paste and File > Open trim the text, which used to make the molfile unreadable
+    key = "(async()=> (await exportData('inchikey')).data.trim())()"
+    r = paste(lp, RDKIT_ALA_V2000)
+    assert r["atoms"] == 6 and "read as drawn" in r["toast"]
+    assert lp.evaluate(key) == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"
+    f = tmp_path / "alanine.mol"; f.write_text(RDKIT_ALA_V2000)
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed();")
+    lp.set_input_files("#fileIn", str(f))
+    for _ in range(50):
+        if lp.evaluate("doc.atoms.length"): break
+        lp.wait_for_timeout(50)
+    assert lp.evaluate("doc.atoms.length") == 6
+    assert lp.evaluate(key) == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"
 
 
 @pytest.mark.parametrize("text", ["xyz", "C1CC"])
