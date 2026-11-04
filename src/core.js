@@ -894,6 +894,27 @@ function inventedRadicals(smi, mol){
   const out=[]; for (let i=0;i<toks.length;i++) if (mol.getAtomRadical(i) && toks[i][0]!=='[') out.push(i);
   return out;
 }
+// Why OpenChemLib refused a SMILES, as a sentence for the user; '' when there is nothing more useful to say than "not a SMILES".
+// Text with a run of three or more letters that aren't aromatic atoms (caffeine, 2-butanol) reads as a word, and gets no reason,
+// so the Insert dialog can still look it up as a compound name. Positions in OCL's messages are 0-based; the user is told 1-based.
+function smilesReason(smi, err){
+  const m=/SmilesParser: (.*)/.exec(String(err && err.message || '')); if (!m) return '';
+  const s=String(smi), msg=m[1], p=+(/position:\s*(\d+)/i.exec(msg)||[])[1], at=i=>`at character ${i+1}`;
+  if (/[a-z]{3,}/.test(s.replace(/[bcnops]{3,}/g,'')) ) return '';
+  let r;
+  if ((r=/dangling ring closure: (\d+)/.exec(msg))) return `Ring bond ${r[1]} is opened but never closed. Each ring number appears twice, once where the ring opens and once where it closes, as in cyclohexane: C1CCCCC1.`;
+  if (/Closing '\)'/.test(msg)) return `The “)” ${at(p)} has no “(” before it.`;
+  if (/closing bracket/.test(msg)) return `The “]” ${at(p)} has no “[” before it.`;
+  if (/inside brackets/.test(msg)){ const o=s.lastIndexOf('['); if (o>s.lastIndexOf(']')) return `The “[” ${at(o)} is never closed with “]”.`; }
+  if (/Unknown atom label/.test(msg)){ const b=/^\[[^\]]*\]/.exec(s.slice(p)); if (b) return `“${b[0]}” is not an element.`; }
+  if (/unknown element label/.test(msg)){
+    const two = /[a-z]/.test(s[p]||'') && p>0 ? s.slice(p-1,p+1) : s.slice(p,p+2);
+    if (/^[A-Z][a-z]$/.test(two) && ELSET.has(two)) return `“${two}” has to be written in brackets, as in [${two}]. Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings).`;
+    return `“${s[p]}” ${at(p)} is not an atom. Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings); other elements go in brackets, as in [Na+] or [Si].`;
+  }
+  if (/dangling open bond/.test(msg) && p>=s.length) return `The SMILES ends with “${s.slice(-1)}”, with no atom after it.`;
+  return '';
+}
 // A molfile, with its wedges read as drawn. In V2000, chiral flag 0 strictly means "racemic", and OpenChemLib reads it that way;
 // but RDKit and many other programs write 0 in every file, and RDKit, Indigo and ChemDraw read the wedges as one enantiomer.
 // So a flag-0 file with wedge or hash bonds is read as chiral, and asDrawn says so (the user can still mark a centre &1).

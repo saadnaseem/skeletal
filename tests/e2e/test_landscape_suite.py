@@ -229,9 +229,62 @@ def test_text_that_is_not_a_structure_is_refused(lp, text):
     assert r["atoms"] == 0 and r["toast"]
 
 
-@pytest.mark.xfail(reason="B7: the message doesn't say what is wrong with the SMILES", strict=True)
 def test_unclosed_ring_says_which_ring(lp):
     assert re.search(r"\bring\b", paste(lp, "C1CC")["toast"], re.I)  # not the "ring" in "string"
+
+
+@pytest.mark.parametrize("text, says", [
+    ("C1CC", "Ring bond 1 is opened but never closed"),
+    ("CC)C", "“)” at character 3 has no “(”"),
+    ("C[NH4+", "“[” at character 2 is never closed"),
+    ("NaCl", "“Na” has to be written in brackets"),
+    ("C[Xx]", "“[Xx]” is not an element"),
+    ("C=C=", "ends with “=”"),
+    ("CC>>C1CC", "In “C1CC”: Ring bond 1"),  # a reaction names the part
+])
+def test_invalid_smiles_paste_says_why(lp, text, says):
+    r = paste(lp, text)
+    assert r["atoms"] == 0 and says in r["toast"], r["toast"]
+
+
+def test_a_word_paste_keeps_the_plain_message(lp):
+    assert paste(lp, "caffeine")["toast"] == "Clipboard text is not a SMILES string or molfile"
+
+
+def _insert(lp, text, pubchem):
+    asked = []
+    def handle(route):
+        asked.append(route.request.url)
+        if pubchem == "offline": route.abort()
+        else: route.fulfill(status=200, content_type="application/json", body='{"Fault": {"Code": "PUGREST.NotFound"}}')  # a 404 would log a console error
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", handle)
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
+    lp.fill("#smIn", text); lp.click("#smGo")
+    lp.wait_for_function("!/Looking up/.test(document.querySelector('#smErr').textContent)")
+    msg = lp.inner_text("#smErr"); lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    return msg, asked
+
+
+@pytest.mark.parametrize("pubchem", ["none", "offline"])
+def test_insert_dialog_says_why_after_the_name_lookup(lp, pubchem):
+    # C60 or B12 might be a name, so the lookup still runs; when it finds nothing (or can't be reached) the SMILES fault is given
+    msg, asked = _insert(lp, "C1CC", pubchem)
+    assert asked and "Ring bond 1 is opened but never closed" in msg, msg
+    assert ("PubChem has no compound" in msg) == (pubchem == "none")
+
+
+def test_insert_dialog_keeps_the_name_message_for_a_word(lp):
+    msg, _ = _insert(lp, "notacompound", "none")
+    assert msg == "Not a valid SMILES, and PubChem has no compound named “notacompound”."
+
+
+def test_file_open_of_an_invalid_smiles_says_why(lp, tmp_path):
+    f = tmp_path / "bad.smi"; f.write_text("CC(C)C1CC\n")
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''")
+    lp.set_input_files("#fileIn", str(f))
+    lp.wait_for_function("document.querySelector('#toast').textContent")
+    assert "Not a valid SMILES. Ring bond 1 is opened" in lp.inner_text("#toast") and lp.evaluate("doc.atoms.length") == 0
 
 
 @pytest.mark.parametrize("text", ["c1cccc1", "c1ccc[nH]c1", "c1cccc1>>CC"])

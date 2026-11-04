@@ -1,0 +1,44 @@
+// B7: a SMILES OpenChemLib can't read is refused with the reason in plain words, not just "not a valid SMILES".
+// Text that reads as a word (a compound name like caffeine or 2-butanol) gets no reason, so it can still be looked up as a name.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as OCL from 'openchemlib';
+import { loadModules } from './load.mjs';
+const get = loadModules();
+const smilesReason = get('smilesReason');
+const reason = s => { try { OCL.Molecule.fromSmiles(s); } catch (e) { return smilesReason(s, e); } assert.fail(`${s} was read`); };
+
+test('a ring number that is opened but never closed is named', () => {
+  assert.match(reason('C1CC'), /^Ring bond 1 is opened but never closed/);
+  assert.match(reason('C%12CC'), /^Ring bond 12 /);
+  assert.match(reason('C1CC1C1'), /^Ring bond 1 /);
+  assert.match(reason('c1ccccc'), /^Ring bond 1 /);
+});
+
+test('unbalanced parentheses and brackets say where', () => {
+  assert.match(reason('CC)C'), /“\)” at character 3 has no “\(”/);
+  assert.match(reason('C]C'), /“\]” at character 2 has no “\[”/);
+  assert.match(reason('C[NH4+'), /“\[” at character 2 is never closed/);
+  assert.match(reason('[Na+].[Cl-'), /“\[” at character 7 is never closed/);
+});
+
+test('an element that does not exist, or one that needs brackets, is named', () => {
+  assert.match(reason('C[Xx]'), /“\[Xx\]” is not an element/);
+  assert.match(reason('NaCl'), /“Na” has to be written in brackets/);
+  assert.match(reason('C[Mn]C'.replace(/[[\]]/g, '')), /“Mn” has to be written in brackets/);
+  assert.match(reason('c1ccccc1X'), /“X” at character 9 is not an atom/);
+});
+
+test('a bond with nothing after it is named', () => {
+  assert.match(reason('C=C='), /ends with “=”/);
+  assert.match(reason('CC.'), /ends with “\.”/);
+});
+
+test('words get no reason, so they can still be looked up as compound names', () => {
+  for (const s of ['caffeine', 'xyz', '2-butanol', 'aspirin', 'Benzene']) assert.equal(reason(s), '', s);
+});
+
+test('an error that is not from the SMILES parser gets no reason', () => {
+  assert.equal(smilesReason('C', new Error('out of memory')), '');
+  assert.equal(smilesReason('C', 0), '');
+});
