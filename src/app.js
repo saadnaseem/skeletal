@@ -1013,11 +1013,17 @@ function layoutSmiles(smi){
   const mol=readSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 // why the last tryLoadText refused its text, in words for the user ('' when there is nothing more specific to say than "not readable")
-let loadError='';
+let loadError='', loadErrorKind=''; // loadErrorKind 'valence': refused only for too many bonds, so it can be inserted anyway
 function readSmiles(smi){
   const mol=smilesMol(smi);
   if (inventedRadicals(smi, mol).length){ const e=new Error('This SMILES has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H is written [nH], as in pyrrole: c1cc[nH]c1.'); e.user=true; throw e; }
   return mol;
+}
+// refuse fragments with an atom over its valence (the rule behind the red warning), before anything is inserted
+function checkValence(parts){
+  const bad=parts.flatMap(p=>p.kind==='frag' ? overValent(p.f) : []); if (!bad.length) return;
+  const more=bad.length-1, e=new Error(`${bad[0].why}${more? ` (and ${more} more atom${more>1?'s':''})` : ''}. Nothing was inserted. Check the structure, or choose Insert anyway to draw it as written.`);
+  e.user=true; e.kind='valence'; throw e;
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -1049,8 +1055,9 @@ function insertForeign(r, name){
   const left=Object.entries(skipped||{}).map(([k,n])=>n>1? `${n} ${k}s` : `1 ${k}`);
   toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
 }
-function tryLoadText(txt, quiet){
-  loadError='';
+// force: insert even with too many bonds (only from the user's Insert anyway)
+function tryLoadText(txt, quiet, force){
+  loadError=''; loadErrorKind='';
   try{
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
@@ -1059,12 +1066,15 @@ function tryLoadText(txt, quiet){
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
       if (!hasXY) mol.inventCoordinates();
-      insertFragments([{kind:'frag',f:molToFragment(mol)}]);
+      const parts=[{kind:'frag',f:molToFragment(mol)}]; if (!force) checkValence(parts);
+      insertFragments(parts);
       if (asDrawn) toast('Stereo read as drawn, although the file’s chiral flag says racemic. Right-click a stereocentre to mark it &1.', 6000);
       return true;
     }
     if (/^InChI=/.test(txt)){ OCL.InChI.molfileFromInchi(txt.split(/\s+/)[0]).then(r=>{ if (!r.molfile) throw new Error(r.message);
-        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); insertFragments([{kind:'frag',f:molToFragment(mol)}]); closeDialog(); })
+        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); const parts=[{kind:'frag',f:molToFragment(mol)}];
+        if (!force){ try{ checkValence(parts); }catch(e){ openSmilesDialog(txt, e.message); return; } }
+        insertFragments(parts); closeDialog(); })
         .catch(()=>toast('That InChI could not be read')); return true; }
     if (txt.startsWith('{')){ const d=JSON.parse(txt); if (d && d.atoms){ pasteDoc(normalizeDoc(d),0,viewCenter()); return true; } }
     const line=txt.split(/\s+/)[0];
@@ -1076,14 +1086,16 @@ function tryLoadText(txt, quiet){
       rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
       parts.push({kind:'arrow'});
       ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      if (!force) checkValence(parts);
       insertFragments(parts);
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
     const mol=readSmiles(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
-    insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
-  }catch(err){ if (err && err.user) loadError=err.message; else if(!quiet) console.warn(err); return false; }
+    const parts=[{kind:'frag',f:molToFragment(mol)}]; if (!force) checkValence(parts);
+    insertFragments(parts); return true;
+  }catch(err){ if (err && err.user){ loadError=err.message; loadErrorKind=err.kind||''; } else if(!quiet) console.warn(err); return false; }
 }
 function viewCenter(){ return V((cv.clientWidth/2-view.ox)/view.z,(cv.clientHeight/2-view.oy)/view.z); }
 function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; n.brackets=d.brackets||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates','brackets']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
@@ -2070,16 +2082,26 @@ dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
 let _toastT=null;
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),ms); }
 
-function openSmilesDialog(){
+// prefill and err: text that was refused elsewhere (a paste or a file), shown with the reason and Insert anyway
+function openSmilesDialog(prefill, err){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
-  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
-  dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
-  const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="smForce" hidden>Insert anyway</button><button class="tb primary" id="smGo">Insert</button></div>`);
+  let refused=''; // the text Insert anyway inserts: what was refused (PubChem's SMILES, not the typed name)
+  const refuse=(text,msg)=>{ refused=text; $('#smErr').textContent=msg; $('#smForce').hidden=false; };
+  const unrefuse=()=>{ refused=''; $('#smForce').hidden=true; };
+  dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; unrefuse(); $('#smIn').focus(); });
+  $('#smIn').addEventListener('input', unrefuse);
+  $('#smForce').onclick=()=>{ const t=refused; if (!t) return; unrefuse(); if (tryLoadText(t,true,true)) closeDialog(); else $('#smErr').textContent=loadError||'That structure could not be read.'; };
+  if (prefill){ $('#smIn').value=prefill; if (err) refuse(prefill, err); }
+  const go=async ()=>{ unrefuse(); const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
+    if (loadErrorKind==='valence'){ refuse(v, loadError); return; }
     if (loadError){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
     $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
-    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; } $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }
+      if (smi && loadErrorKind==='valence'){ refuse(smi, `PubChem\u2019s structure for \u201c${v}\u201d: ${loadError}`); return; }
+      $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
     catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
@@ -2172,7 +2194,7 @@ $('#alignGap').value = alignGap>0 ? String(alignGap) : '';
 $('#alignGap').addEventListener('change', e=>{ const v=+e.target.value; alignGap = Number.isFinite(v) && v>0 ? Math.min(20,v) : 0; e.target.value = alignGap? String(alignGap) : ''; try{ localStorage.setItem('skeletal.alignGap', String(alignGap)); }catch(err){} });
 alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeAlignMenu(); $('#bAlign').focus(); } });
 document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
-$('#bSmiles').onclick=openSmilesDialog;
+$('#bSmiles').onclick=()=>openSmilesDialog();
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();

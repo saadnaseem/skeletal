@@ -55,7 +55,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Acceptance:** the e2e tests for FR-001/2/3/7/8/10 pass; the full e2e suite passes.
 - **Verify:** `npm run build && npm test && npm run test:e2e`
 - **Depends on:** TG-01
-- [ ] complete
+- [x] complete (2026-11-03): unit 196 pass; e2e 758 passed, 3 skipped, 7 xfailed, 0 failed (735 + 23 new)
 
 ### TG-03: paste and file open go to the dialog   [S]   [satisfies: FR-004, FR-005]
 - **Objective:** a refused paste or file opens the Insert structure dialog with the text filled in, the reason shown and Insert anyway available.
