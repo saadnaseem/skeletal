@@ -116,3 +116,30 @@ def test_a_failed_copy_does_not_say_copied(page):
     toast = page.inner_text("#toast")
     assert "dative" in toast and "copied" not in toast
     assert "Copy text" in page.inner_text("#dialog")  # the text is offered to copy by hand
+
+
+def test_a_reader_that_reverses_a_dative_bond_is_caught(page):
+    # the same number of dative bonds, pointing the wrong way, is not the drawing
+    draw(page, "Cl[Pt](Cl)([NH3])[NH3]")
+    page.evaluate("""window.__w=FORMATS.write; FORMATS.write=(id,d)=>{ const s=__w(id,d); return id==='cdxml'? s.replace(/B="(\\d+)" E="(\\d+)" Order="dative"/, 'B="$2" E="$1" Order="dative"') : s; }; 0""")
+    try:
+        msg = check(page, "cdxml")
+    finally:
+        page.evaluate("FORMATS.write=window.__w; 0")
+    assert "different dative bonds" in msg
+
+
+@pytest.mark.parametrize("how,message", [("reject", "Could not save the file here"), ("declined", "")])
+def test_a_failed_or_declined_save_keeps_its_own_message(page, how, message):
+    # the read-back warning must not replace the save's failure, or a file that was never written reads as exported
+    draw(page, "Cl[Pt](Cl)([NH3])[NH3]")
+    err = "Object.assign(new Error('no'), {code:'declined'})" if how == "declined" else "new Error('disk full')"
+    page.evaluate(f"dlCap={{save:()=>Promise.reject({err})}}; document.querySelector('#toast').textContent=''; 0")
+    try:
+        page.evaluate("exportAs('mol')")
+        page.wait_for_timeout(300)
+        toast = page.inner_text("#toast")
+    finally:
+        page.evaluate("dlCap=undefined; 0")
+    assert "dative" not in toast
+    assert toast == message
