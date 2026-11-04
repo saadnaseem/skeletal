@@ -20,6 +20,8 @@ test('unbalanced parentheses and brackets say where', () => {
   assert.match(reason('C]C'), /“\]” at character 2 has no “\[”/);
   assert.match(reason('C[NH4+'), /“\[” at character 2 is never closed/);
   assert.match(reason('[Na+].[Cl-'), /“\[” at character 7 is never closed/);
+  // Value: protects=a closed bracket with a bad character inside is not called unclosed; fails_when=the "last [ after last ]" guard is dropped; why_new=only unclosed cases were listed; seam=none; no_claim=none beyond protects
+  assert.equal(reason('[C H]'), '');
 });
 
 test('an element that does not exist, or one that needs brackets, is named', () => {
@@ -41,4 +43,18 @@ test('words get no reason, so they can still be looked up as compound names', ()
 test('an error that is not from the SMILES parser gets no reason', () => {
   assert.equal(smilesReason('C', new Error('out of memory')), '');
   assert.equal(smilesReason('C', 0), '');
+});
+
+// Value: protects=an empty or element-less bracket (C[], C[13]) is never said to have no "[" before it; fails_when=OCL's "closing bracket" message is
+// worded as a missing "[" without checking for one (it is, at this commit); why_new=only a real stray "]" (C]C) was tested; seam=none;
+// no_claim=which sentence is right for an empty bracket; '' (the plain message) also passes
+test('a "]" that has a "[" before it is not called unopened', () => {
+  for (const s of ['C[]', 'C[13]', '[]']) assert.doesNotMatch(reason(s), /has no “\[”/, s);
+  assert.match(reason('C[13]'), /brackets at character 2 have no element/);
+});
+
+test('H, K and other one-letter elements outside the organic set are told to go in brackets', () => {
+  assert.match(reason('HCl'), /“H” has to be written in brackets, as in \[H\]/);
+  assert.match(reason('CK'), /“K” has to be written in brackets/);
+  assert.match(reason('CL'), /“L” at character 2 is not an atom/);
 });

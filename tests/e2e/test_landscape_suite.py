@@ -251,6 +251,18 @@ def test_a_word_paste_keeps_the_plain_message(lp):
     assert paste(lp, "caffeine")["toast"] == "Clipboard text is not a SMILES string or molfile"
 
 
+@pytest.mark.parametrize("text, pastes_clip", [("C1CC", True), ("c1cccc1", False)])
+def test_invalid_smiles_paste_with_an_in_app_copy(lp, text, pastes_clip):
+    # Value: protects=with an in-app copy, an unparseable SMILES pastes the copy, while a refused structure (aromatic) still toasts and pastes nothing;
+    # fails_when=the syntax exemption is dropped from, or widened in, the paste handler's early return; why_new=the other paste tests run with clip null;
+    # seam=none; no_claim=the system clipboard (a synthetic ClipboardEvent stands in)
+    lp.evaluate("setDoc(newDoc()); sel.clear(); tryLoadText('CCO'); clip=subDoc(new Set(doc.atoms.map(a=>'a'+a.id)))")
+    try: r = paste(lp, text)
+    finally: lp.evaluate("clip=null")
+    assert r["atoms"] == (3 if pastes_clip else 0), r
+    assert ("Not a valid SMILES" in r["toast"]) is False and (("aromatic" in r["toast"]) == (not pastes_clip)), r["toast"]
+
+
 def _insert(lp, text, pubchem):
     asked = []
     def handle(route):
@@ -272,6 +284,26 @@ def test_insert_dialog_says_why_after_the_name_lookup(lp, pubchem):
     msg, asked = _insert(lp, "C1CC", pubchem)
     assert asked and "Ring bond 1 is opened but never closed" in msg, msg
     assert ("PubChem has no compound" in msg) == (pubchem == "none")
+
+
+def test_insert_dialog_says_why_for_long_text_without_a_lookup(lp):
+    # Value: protects=text over 200 characters with a SMILES fault gives the reason and is not sent to PubChem; fails_when=the length branch drops
+    # the reason or the length guard moves after the lookup; why_new=the dialog tests above use short text; seam=none; no_claim=real PubChem (routed)
+    msg, asked = _insert(lp, "C1" + "C" * 210, "none")
+    assert not asked and msg.startswith("That isn’t a valid SMILES string or molfile. Ring bond 1 is opened"), msg
+
+
+def test_insert_dialog_still_inserts_a_name_that_is_also_a_broken_smiles(lp):
+    # Value: protects=a name that also reads as a faulty SMILES (B12) is still looked up and inserted; fails_when=a syntax reason stops the
+    # dialog before the PubChem lookup; why_new=only the not-found and offline lookups were tested; seam=none; no_claim=real PubChem (routed)
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", lambda route: route.fulfill(status=200, content_type="application/json",
+        body='{"PropertyTable": {"Properties": [{"SMILES": "CCO"}]}}'))
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''; openSmilesDialog()")
+    lp.fill("#smIn", "B12"); lp.click("#smGo")
+    lp.wait_for_function("doc.atoms.length > 0")
+    toast = lp.inner_text("#toast"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    assert lp.evaluate("doc.atoms.length") == 3 and toast == "Inserted B12 from PubChem"
 
 
 def test_insert_dialog_keeps_the_name_message_for_a_word(lp):
