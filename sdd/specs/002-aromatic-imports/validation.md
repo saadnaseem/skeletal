@@ -1,12 +1,12 @@
 # Validation — 002-aromatic-imports
 
-> Status: done, in review (PR #38) · Last updated: 2026-11-04
+> Status: shipped 2026-11-04 (PR #38, b53c961) · Last updated: 2026-11-04
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
 - [x] TG-01 … TG-04 in `plan.md` ticked.
 - [x] Every row of §2 has ✅ (or ⚠ with a reason) and evidence.
-- [ ] The full bar (§4) passes **3 times in a row** locally, plus CI on the PR.
+- [x] The full bar (§4) passes **3 times in a row** locally (Chromium; WebKit unavailable, logged), plus CI on the PR (3/3 checks pass).
 - [x] Numbers are no worse than `sdd/product/baseline.md`: unit 196 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
 - [x] Manual checks M-1 … M-4 on the PR's Cloudflare preview pass.
 - [x] `requirements.md` and `plan.md` describe what was built; deviations are in `sdd/product/decisions.md`.
@@ -49,3 +49,6 @@ Unit checks: `tests/unit/aromatic_imports.test.mjs`. Browser checks: `tests/e2e/
 - **M-2:** paste a type-4 pyrrole with no H: the toast reads as a fix, not an error code.
 - **M-3:** open a type-4 `.sdf`: as M-1.
 - **M-4:** open a CDXML pyrrole with no N–H: the drawing opens, and the message counts 1 ring.
+
+## 5. After merge (2026-11-04)
+Merged as b53c961 once CI passed (Workers Builds, test ×2). On https://lonepair.app (gstack browse): a type-4 benzene molfile → C6H6; a type-4 pyrrole with no H count → refused with the FR-003 message; a type-4 five-bond carbon → spec 001 refusal; aspirin SMILES → C9H8O4. No console errors.

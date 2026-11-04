@@ -1,6 +1,6 @@
 # Plan — 002-aromatic-imports
 
-> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Shipped 2026-11-04 (PR #38) · Last updated: 2026-11-04
 > The **how & in what order**. Every task group cites requirement IDs; every requirement appears in at least one group.
 
 ## 1. Approach
