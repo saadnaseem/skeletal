@@ -18,7 +18,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 ## Features
 
 ### Drawing
-- Single, double, triple, wedge, hashed, wavy and bold bonds, plus a chain tool with a live atom count.
+- Single, double, triple, wedge, hashed wedge, wavy, bold, dashed (a partial or forming bond) and plain hashed bonds, plus a chain tool with a live atom count. Dashed and hashed bonds count as single bonds.
 - Benzene and 3- to 7-membered rings. Click a bond to fuse a ring, or click an atom to make a spiro ring.
 - Any element, nicknames (OMe, Boc, Ph, CO₂H, Ts and about 50 more) and generic labels (R, R¹, X).
 - Nicknames count toward formula and mass, and flip automatically (MeO, HO₂C) when the bond comes from the right.
@@ -30,11 +30,11 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 - The Text tool on an atom edits its label in place: type OMe, Ph, a name such as phenyl or methoxy, or a label with a superscript such as R¹ (Ctrl/⌘ + Shift + =). To change a label without opening it, click the structure, click the atom again to select just that atom, then press x₂ or x² in the Text panel or the same keys: R1 becomes R¹ or R₁. On an atom with no number (R, O) they open its label with the mode on, so the next characters you type are a subscript or superscript. Ctrl/⌘ + , and Ctrl/⌘ + . (as in Google Docs) also work, for Safari, where ⌘ + = can zoom the page instead. Double-clicking an atom does the same. On a bond, a click near either end labels that atom; a click near the middle adds a caption to the bond (hν, a, Δ) that moves, turns and is copied with it, and is deleted with it.
 - **Clean up** redraws the geometry while keeping stereochemistry. Flip, rotate, undo and redo are available throughout.
 - **Align** lines up structures, arrows and plus signs by their left, center, right, top, middle or bottom edges, or spaces them evenly across or down. **Scheme row** does both in one click: it puts every piece of a reaction on one centerline with equal gaps. Compound numbers and reagent text move with the structure or arrow they belong to. An optional **Gap** sets a fixed spacing in bond lengths, so schemes across a paper match.
-- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 18 built-in templates, including both chairs of cyclohexane. On a chair, a click with the bond tool adds the axial bond and then the equatorial one, a dragged bond snaps to them, and Clean up keeps the chair. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop.
+- Insert structures from SMILES, reaction SMILES (`A.B>>C`), InChI or molfiles, or start from 18 built-in templates, including both chairs of cyclohexane. On a chair, a click with the bond tool adds the axial bond and then the equatorial one, a dragged bond snaps to them, and Clean up keeps the chair. You can also type a compound name or CAS number, which is looked up on PubChem. ChemDraw (.cdxml, .cdx), CML and Marvin (.mrv) files open directly, or by drag and drop. Text with an atom that has too many bonds (a five-bond carbon, say) is not inserted: the Insert structure dialog says which atom is wrong, and **Insert anyway** draws it as written, for a transition state. Hypervalent compounds (SF6, PCl5, ClO4−), charged atoms and metal complexes go in without a prompt. Opened ChemDraw and other document files are never refused; the message says how many atoms have too many bonds. Molfiles that write aromatic bonds as type 4 (as CDK and Open Babel can) open with alternating double bonds; a molfile ring that can't alternate, such as a pyrrole N–H without its H, is refused with the fix, and ChemDraw, CML and Marvin files with such a ring open with a note.
 - **Lasso** (L): select by drawing a freehand loop. V switches back to the box.
 - **Enhanced stereochemistry:** right-click a stereocenter to label it abs, &1 (racemic) or or1 (relative), as in ChemDraw. The labels are saved in V3000 molfiles and ChemDraw files.
 - **TLC plates:** draw lanes, spots and streaks with Rf values and the eluent. They're drawn in the page style and can be edited by double-clicking.
-- **Brackets:** square, curly and round pairs. Select a structure and click a bracket tool, or drag across it; double-click to add a charge or ‡ (top right) or n (bottom right). They open and save in ChemDraw files.
+- **Brackets:** square, curly and round pairs. Select a structure and click a bracket tool, or drag across it; double-click to add a charge or ‡ (top right) or n (bottom right). They open and save in ChemDraw files: ChemDraw's half-brackets open as one pair, and pairs are saved as half-brackets linked together, as ChemDraw writes them.
 - **Groups** (Ctrl+G): a structure and its label select, move and align as one.
 - **Smart guides**: while you drag, the selection snaps to the centers and edges of other structures. Hold Alt to drag freely.
 - Right-click a structure to copy its SMILES or molfile, or to look up its name and CAS number.
@@ -89,7 +89,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
   - Monoisotopic mass, plus the m/z of common adducts: [M+H]⁺, [M+Na]⁺, [M+K]⁺, [M+NH₄]⁺, [M+2H]²⁺, M⁺•, [M−H]⁻, [M+Cl]⁻ and [M+HCOO]⁻.
   - A journal-style HRMS line you can copy.
   - The isotope pattern, as a plot and a table.
-  - A **predicted MS/MS** spectrum for [M+H]⁺ or [M−H]⁻ at three collision energies. It is rule-based: bond cleavages, ring openings and common neutral losses. Clicking a peak shows which atoms the fragment ion keeps and which bonds break.
+  - A **predicted MS/MS** spectrum for [M+H]⁺ or [M−H]⁻ at three collision energies. It is rule-based: bond cleavages, ring openings and up to three neutral losses in a row (H₂O, NH₃, CO …), with the charge kept on the nitrogen side when there is one. Intensities are rough, so it is a guide to fragments, not a spectrum for library searching. Clicking a peak shows which atoms the fragment ion keeps and which bonds break.
   - The Analysis panel also shows m/z for [M+H]⁺.
 - **3D view:** a conformer from OpenChemLib, refined with MMFF94s, in ball-and-stick, space-filling or stick style. You can rotate and zoom it, and export it as XYZ, PDB, 3D SDF or PNG. It works offline.
 - **Find in databases:** sends the structure to PubChem (exact, similarity, substructure or superstructure search), RCSB PDB ligands, ChEMBL, or Google and Google Scholar by InChIKey.
@@ -157,10 +157,10 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 164 unit tests (Node test runner)
+npm test             # 228 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
+npm run test:e2e     # 793 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
@@ -199,7 +199,7 @@ A drawing is JSON. Coordinates are in points, with y pointing down.
 
 ```json
 { "atoms":  [{ "id": 1, "x": 0, "y": 0, "el": "C", "charge": 0, "lp": 0, "rad": 0 }],
-  "bonds":  [{ "id": 3, "a": 1, "b": 2, "order": 1, "stereo": "none|wedge|hash|wavy|bold" }],
+  "bonds":  [{ "id": 3, "a": 1, "b": 2, "order": 1, "stereo": "none|wedge|hash|wavy|bold|dashed|hashed" }],
   "arrows": [{ "id": 4, "type": "reaction|equilibrium|retro|resonance|dashed|nogo|curly|fishhook", "x1": 0, "y1": 0, "x2": 40, "y2": 0 }],
   "texts":  [{ "id": 5, "x": 0, "y": 20, "text": "H2SO4", "size": 10, "font": "sans|serif|mono" }],
   "pluses": [], "style": "acs|slides", "page": { "w": 612, "h": 792, "across": 1, "down": 1 } }

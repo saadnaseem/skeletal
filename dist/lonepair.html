@@ -672,7 +672,7 @@ function sanitizeDoc(d){
   const arr=v=>Array.isArray(v)?v:[];
   out.atoms=arr(d.atoms).map(a=>pick({id:int(a.id), x:num(a.x), y:num(a.y), el:str(a.el,24)||'C', charge:Math.max(-8,Math.min(8,int(a.charge))), lp:Math.max(0,Math.min(3,int(a.lp))), rad:a.rad?1:0, color:col(a.color), g:grp(a.g), stg: typeof a.stg==='string' && /^(abs|and\d{1,2}|or\d{1,2})$/.test(a.stg) ? a.stg : undefined, iso: Number.isInteger(+a.iso) && +a.iso>0 && +a.iso<300 ? +a.iso : undefined, size: +a.size>=4 && +a.size<=72 ? +a.size : undefined,
     hs: a.hs ? true : undefined, lc: a.lc && str(a.el,24)==='C' ? true : undefined, hl: typeof a.hl==='string' && /^[A-Z][a-z]?H\d?$/.test(a.hl) ? a.hl : undefined},['id','x','y','el','charge','lp','rad','color','g','stg','iso','size','hs','lc','hl']));
-  out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
+  out.bonds=arr(d.bonds).map(b=>pick({id:int(b.id), a:int(b.a), b:int(b.b), order:Math.max(1,Math.min(3,int(b.order,1))), stereo:['none','wedge','hash','wavy','bold','dashed','hashed'].includes(b.stereo)?b.stereo:'none', dbPos:['auto','center','left','right'].includes(b.dbPos)?b.dbPos:undefined, color:col(b.color), kind:BOND_KINDS.includes(b.kind)?b.kind:undefined},['id','a','b','order','stereo','dbPos','color','kind']));
   const ARROWS=['reaction','equilibrium','retro','resonance','dashed','nogo','curly','fishhook'];
   out.arrows=arr(d.arrows).map(r=>{ const o={id:int(r.id), type:ARROWS.includes(r.type)?r.type:'reaction', x1:num(r.x1), y1:num(r.y1), x2:num(r.x2), y2:num(r.y2), color:col(r.color), g:grp(r.g)}; if (r.cx!=null && r.cy!=null){ o.cx=num(r.cx); o.cy=num(r.cy); } return pick(o,Object.keys(o)); });
   out.texts=arr(d.texts).map(t=>pick({id:int(t.id), x:num(t.x), y:num(t.y), text:str(t.text,5000), size: t.size!=null&&Number.isFinite(+t.size)?Math.min(200,Math.max(2,+t.size)):undefined,
@@ -819,6 +819,14 @@ function valenceError(atom, ix){
   }
   const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
   return {have, max, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; at most ${max}`};
+}
+// the atoms of a fragment ({atoms, bonds} with bonds by atom index, before insert) that valenceError flags: [{atomIndex, have, max, why}]
+function overValent(f){
+  const atoms=f.atoms.map((a,i)=>({...a, id:i+1})), n=atoms.length;
+  const bonds=f.bonds.map((b,k)=>({...b, id:n+k+1, a:b.a+1, b:b.b+1}));
+  const ix=buildIndex({atoms, bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), out=[];
+  atoms.forEach((a,i)=>{ const e=valenceError(a, ix); if (e) out.push({atomIndex:i, ...e}); });
+  return out;
 }
 function components(d, ix, atomIds){
   const allowed = atomIds ? new Set(atomIds) : null;
@@ -983,6 +991,15 @@ function renderBond(d, ix, b, labels, out){
       return;
     }
     if (b.stereo==='bold'){ out.push(strokeLine(p,q,st.boldWidth,col,'butt')); return; }
+    // a dashed bond (a partial or forming bond): longer dashes than a hydrogen bond's, so the two are told apart
+    if (b.stereo==='dashed'){ out.push(strokeLine(p,q,lw,col,'butt',` stroke-dasharray="${f2(lw*7)} ${f2(lw*4.5)}"`)); return; }
+    // a plain hashed bond: the hashed wedge's marks, all the same length
+    if (b.stereo==='hashed'){
+      const L2=dist(p,q), cnt=Math.max(3,Math.round(L2/st.hashSpacing)), hw=st.wedge*0.3; let dd='';
+      for (let i=1;i<cnt;i++){ const c=add(p,mul(sub(q,p),i/cnt)); dd+=`M${f2(c.x+n.x*hw)} ${f2(c.y+n.y*hw)}L${f2(c.x-n.x*hw)} ${f2(c.y-n.y*hw)}`; }
+      out.push(`<path d="${dd}" stroke="${col}" stroke-width="${lw}" fill="none"/>`);
+      return;
+    }
     out.push(strokeLine(p,q,lw,col)); return;
   }
   if (b.order===3){
@@ -1342,7 +1359,9 @@ function fromOCL(mol, offset){
     const t=mol.getBondType(b), ord=mol.getBondOrder(b);
     let stereo='none';
     if (t===OCL.Molecule.cBondTypeUp) stereo='wedge'; else if (t===OCL.Molecule.cBondTypeDown) stereo='hash';
-    bonds.push({a:mol.getBondAtom(0,b), b:mol.getBondAtom(1,b), order: Math.min(3,Math.max(1,ord||1)), stereo});
+    // a molfile's aromatic bond (type 4), which OpenChemLib keeps as delocalized: 1.5 until kekulizeFragment converts it
+    const deloc = t===OCL.Molecule.cBondTypeDelocalized;
+    bonds.push({a:mol.getBondAtom(0,b), b:mol.getBondAtom(1,b), order: deloc ? 1.5 : Math.min(3,Math.max(1,ord||1)), stereo});
   }
   // Dative bonds (donor -> acceptor), which take none of the donor's hydrogens: OCL's metal-ligand bonds (N->B), and a plain bond
   // from a donor OCL gives more H than our valence rules would ([NH3] or [OH2] on a metal) to a metal or boron neighbour
@@ -1350,7 +1369,9 @@ function fromOCL(mol, offset){
   bonds.forEach((b,k)=>{ if (mol.getBondType(k)===lig){ b.kind='dative'; b.order=1; if (acceptor(atoms[b.a].el) && !acceptor(atoms[b.b].el)) [b.a,b.b]=[b.b,b.a]; } });
   const bsum=i=>bonds.reduce((s,b)=>s+(!b.kind && (b.a===i||b.b===i) ? b.order : 0), 0);
   mol.ensureHelperArrays(OCL.Molecule.cHelperNeighbours);
+  const deloc=new Set(bonds.filter(b=>b.order===1.5).flatMap(b=>[b.a,b.b])); // OCL's H count there is for single bonds; kekulizeFragment decides
   for (let i=0;i<n;i++){
+    if (deloc.has(i)) continue;
     const extra=()=>mol.getImplicitHydrogens(i)-implicitH(atoms[i], bsum(i));
     for (const b of bonds){
       if (extra()<=0) break;
@@ -1430,7 +1451,34 @@ function molfileMol(txt){
     const wedged=lines.slice(4+na, 4+na+nb).some(l=>{ const s=l.slice(9,12).trim(); return s==='1'||s==='6'; });
     if (wedged){ lines[3]=c.slice(0,12)+'  1'+c.slice(15); asDrawn=true; }
   }
-  return {mol:OCL.Molecule.fromMolfile(lines.join('\n')), asDrawn};
+  // Aromatic (type-4) bonds: OpenChemLib ignores the file's hydrogen counts, which kekulizeFragment needs (a pyrrole N with
+  // count 1 keeps its H), and a count makes it read the file as a query. So the counts are read here and blanked for OCL.
+  const hcount=new Map();
+  if (/V2000/.test(lines[3]||'')){
+    const na=+lines[3].slice(0,3), nb=+lines[3].slice(3,6);
+    if (lines.slice(4+na, 4+na+nb).some(l=>l.slice(6,9).trim()==='4'))
+      for (let i=0;i<na;i++){ const l=lines[4+i]||'', h=+l.slice(42,45); if (h>0){ hcount.set(i,h-1); lines[4+i]=l.slice(0,42)+'  0'+l.slice(45); } }
+  } else if (lines.some(l=>/^M {2}V30 \d+ 4 \d+ \d+/.test(l))){
+    let inAtoms=false, i=0;
+    lines=lines.map(l=>{
+      if (/^M {2}V30 BEGIN ATOM/.test(l)){ inAtoms=true; return l; } if (/^M {2}V30 END ATOM/.test(l)){ inAtoms=false; return l; }
+      if (!inAtoms || !/^M {2}V30 \d+ /.test(l)) return l;
+      const m=/\s+HCOUNT=(-?\d+)/.exec(l), k=i++; if (!m) return l;
+      if (+m[1]) hcount.set(k, Math.max(0,+m[1])); return l.replace(m[0],'');
+    });
+  }
+  return {mol:OCL.Molecule.fromMolfile(lines.join('\n')), asDrawn, hcount};
+}
+// a fragment ({atoms, bonds by atom index}, before insert) with 1.5 bonds from a molfile -> alternating single and double bonds,
+// with the converter ChemDraw files use (FORMATS.kekulize). hcount: atom index -> H count from the file. Returns how many ring
+// systems couldn't alternate (0 when all did); their bonds are left single.
+function kekulizeFragment(f, hcount){
+  if (!f.bonds.some(b=>b.order===1.5)) return 0;
+  const atoms=f.atoms.map((a,i)=>({id:i+1, el:a.el, charge:a.charge||0, ...(hcount&&hcount.has(i)? {h:hcount.get(i)} : {})}));
+  const bonds=f.bonds.map((b,k)=>({id:atoms.length+k+1, a:b.a+1, b:b.b+1, order:b.kind? 1 : b.order}));
+  const n=FORMATS.kekulizeCount(atoms, bonds);
+  bonds.forEach((b,k)=>{ if (f.bonds[k].order===1.5) f.bonds[k].order=b.order; });
+  return n;
 }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)
@@ -2443,11 +2491,11 @@ const FORMATS = (()=>{
     const d=d0, ix=buildIndex(d), st=S(d); let nid=1; const id=()=>String(nid++);
     const colors=[]; const colorIdx=c=>{ if (!c || /^#0{3}(0{3})?$/i.test(c)) return undefined; let i=colors.indexOf(c.toLowerCase()); if (i<0){ colors.push(c.toLowerCase()); i=colors.length-1; } return String(i+4); };
     const fs=st.fontSize, page=E('page',{id:id()}), objs=[];
-    const fragOf=new Map();
+    const fragOf=new Map(), allNodes=new Map(), bondId=new Map(); // our atom and bond ids -> CDX ids, for bracketedgroup
     for (const comp of components(d,ix)){
       const fr=E('fragment',{id:id()}), nodeId=new Map();
       for (const aid of comp){ const a=ix.atom.get(aid), k=kindOf(a.el), lb=layoutLabel(d,ix,a), n=E('n',{id:id(), p:`${num(a.x)} ${num(a.y)}`}), afs=a.size||fs;
-        nodeId.set(aid,n.attrs.id); fr.children.push(n);
+        nodeId.set(aid,n.attrs.id); allNodes.set(aid,n.attrs.id); fr.children.push(n);
         const right = lb.visible && lb.items.length && lb.items[0].x+0.01 < a.x - tw(a.el[0],afs,st.fontWeight)/2 - 0.5; // label reads leftward
         const label=txt=>{ const just=right?'Right':'Left'; const ch=a.el[0], w=tw(right? txt[txt.length-1]:ch,afs,st.fontWeight);
           n.children.push(E('t',{p:`${num(right? a.x+w/2 : a.x-w/2)} ${num(a.y+afs*0.36)}`, LabelJustification:just, Justification:right?'Right':undefined, LabelAlignment:right?'Right':undefined},
@@ -2472,10 +2520,10 @@ const FORMATS = (()=>{
         } else { n.attrs.NodeType='GenericNickname'; n.attrs.GenericNickname=plainText(a.el); label(a.el); }
       }
       for (const b of d.bonds){ if (!nodeId.has(b.a)||!nodeId.has(b.b)) continue;
-        const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)};
+        const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)}; bondId.set(b.id, at.id);
         if (b.kind) at.Order=b.kind==='hbond'?'hydrogen':'dative';
         else if (b.order>1) at.Order=String(b.order);
-        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold'}[b.stereo];
+        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold',dashed:'Dash',hashed:'Hash'}[b.stereo];
         if (b.order===2 && b.dbPos && b.dbPos!=='auto') at.DoublePosition={center:'Center',left:'Left',right:'Right'}[b.dbPos];
         if (b.color) at.color=colorIdx(b.color);
         fr.children.push(E('b',at)); }
@@ -2488,8 +2536,15 @@ const FORMATS = (()=>{
       const el=E('t',{id:id(), p:`${num(x)} ${num(y)}`, BoundingBox:`${num(t.x-m.w/2)} ${num(t.y-m.h/2)} ${num(t.x+m.w/2)} ${num(t.y+m.h/2)}`, Justification:{left:'Left',right:'Right',center:'Center'}[al], InterpretChemically:'no'}, runs);
       textIds.set(t, el.attrs.id); objs.push(el); }
     for (const q of d.pluses) objs.push(E('graphic',{id:id(), BoundingBox:`${num(q.x)} ${num(q.y+3.75)} ${num(q.x)} ${num(q.y-3.75)}`, GraphicType:'Symbol', SymbolType:'Plus', color:colorIdx(q.color)}));
+    // brackets as ChemDraw writes them: two half-brackets (vertical lines; the right one drawn top to bottom, the left one bottom
+    // to top), linked by a bracketedgroup that also lists the nodes and bonds inside
     for (const q of d.brackets||[]){ const g=bracketGeom(d,q);
-      objs.push(E('graphic',{id:id(), BoundingBox:`${num(g.x0)} ${num(g.y0)} ${num(g.x1)} ${num(g.y1)}`, GraphicType:'Bracket', BracketType:BRACKET_CDX[q.type], color:colorIdx(q.color)}));
+      const half=(x,ya,yb)=>E('graphic',{id:id(), BoundingBox:`${num(x)} ${num(ya)} ${num(x)} ${num(yb)}`, GraphicType:'Bracket', BracketType:HALF_CDX[q.type], color:colorIdx(q.color)});
+      const R=half(g.x1,g.y0,g.y1), Lh=half(g.x0,g.y1,g.y0); objs.push(R, Lh);
+      const inside=a=>a.x>=g.x0 && a.x<=g.x1 && a.y>=g.y0 && a.y<=g.y1;
+      const ins=new Set(d.atoms.filter(a=>allNodes.has(a.id) && inside(a)).map(a=>a.id));
+      const enclosed=[...[...ins].map(a=>allNodes.get(a)), ...d.bonds.filter(b=>bondId.has(b.id) && ins.has(b.a) && ins.has(b.b)).map(b=>bondId.get(b.id))];
+      objs.push(E('bracketedgroup',{id:id(), BracketedObjectIDs: enclosed.length? enclosed.join(' ') : undefined},[E('bracketattachment',{id:id(), GraphicID:R.attrs.id}), E('bracketattachment',{id:id(), GraphicID:Lh.attrs.id})]));
       for (const [txt,y] of [[q.sup,g.supY],[q.sub,g.subY]]) if (txt){ const s=bracketText(txt), w=tw(s,g.fs);
         objs.push(E('t',{id:id(), p:`${num(g.lx)} ${num(y)}`, BoundingBox:`${num(g.lx)} ${num(y-g.fs*0.75)} ${num(g.lx+w)} ${num(y+g.fs*0.2)}`, InterpretChemically:'no'},
           [E('s',{font:'3',size:num(g.fs),face:'0',color:colorIdx(q.color)},[],s)])); } }
@@ -2530,7 +2585,7 @@ const FORMATS = (()=>{
   const CDXML_HEAD='<?xml version="1.0" encoding="UTF-8" ?>\n<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >\n';
 
   /* ---------- CDX binary (tags and types from the ChemDraw CDX spec, as tabulated in Indigo's CDXCommons.h) ---------- */
-  const OBJ={CDXML:0x8000,page:0x8001,group:0x8002,fragment:0x8003,n:0x8004,b:0x8005,t:0x8006,graphic:0x8007,scheme:0x800d,step:0x800e,arrow:0x8027};
+  const OBJ={CDXML:0x8000,page:0x8001,group:0x8002,fragment:0x8003,n:0x8004,b:0x8005,t:0x8006,graphic:0x8007,scheme:0x800d,step:0x800e,bracketedgroup:0x8017,bracketattachment:0x8018,arrow:0x8027};
   const OBJN=Object.fromEntries(Object.entries(OBJ).map(([k,v])=>[v,k]));
   const P={CreationProgram:[0x3,'str'],Name:[0x8,'str'],p:[0x200,'pt2'],BoundingBox:[0x204,'rect'],Head3D:[0x207,'pt3'],Tail3D:[0x208,'pt3'],Center3D:[0x20d,'pt3'],MajorAxisEnd3D:[0x20e,'pt3'],MinorAxisEnd3D:[0x20f,'pt3'],
     color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Isotope:[0x420,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
@@ -2538,6 +2593,7 @@ const FORMATS = (()=>{
     BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelSize:[0x81c,'pt20'],LabelJustification:[0x823,'i8'],
     GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],BracketType:[0xa06,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
     ArrowheadWidth:[0xa31,'u16'],ArrowShaftSpacing:[0xa33,'u16'],ArrowheadHead:[0xa35,'i16'],ArrowheadTail:[0xa36,'i16'],FillType:[0xa37,'i16'],NoGo:[0xa3b,'i8'],
+    LipSize:[0xa22,'i16'],BracketedObjectIDs:[0xa27,'ids'],GraphicID:[0xa2b,'u32'], // tag numbers from Open Babel's chemdrawcdx.h
     ReactionStepReactants:[0xc01,'ids'],ReactionStepProducts:[0xc02,'ids'],ReactionStepArrows:[0xc04,'ids'],ReactionStepObjectsAboveArrow:[0xc05,'ids'],ReactionStepObjectsBelowArrow:[0xc06,'ids'],SupersededBy:[0x12,'u32']};
   const PN=Object.fromEntries(Object.entries(P).map(([k,v])=>[v[0],k]));
   const ENUM={
@@ -2645,18 +2701,30 @@ const FORMATS = (()=>{
   }
 
   /* ---------- ChemDraw tree -> drawing ---------- */
-  function kekulize(atoms, bonds){ // aromatic (1.5) bonds -> alternating single/double
-    const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return;
+  // aromatic (1.5) bonds -> alternating single/double. Returns the ids of atoms that needed a double bond and got none (a ring
+  // that can't alternate: a ring N-H without its H, or a C5 ring); those bonds stay single. Empty when the search ran out of steps.
+  function kekulize(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return [];
     const byId=new Map(atoms.map(a=>[a.id,a])), deg=new Map(), other=new Map();
     for (const b of bonds) for (const x of [b.a,b.b]){ deg.set(x,(deg.get(x)||0)+1); if (b.order!==1.5) other.set(x,(other.get(x)||0)+b.order); }
     const need=id=>{ const a=byId.get(id); const v=({__proto__:null,C:4,N:3,P:3,B:3,Si:4,As:3})[a.el]; if (!v) return false; return v-(a.charge&&a.el!=='C'? -a.charge:Math.abs(a.charge||0))-(other.get(id)||0)-(ar.filter(b=>b.a===id||b.b===id).length)-(a.h||0)>=1; };
     const nodes=[...new Set(ar.flatMap(b=>[b.a,b.b]))].filter(need), mate=new Map(); let budget=20000;
     const adj=id=>ar.filter(b=>(b.a===id||b.b===id)).map(b=>b.a===id?b.b:b.a).filter(x=>nodes.includes(x));
-    function solve(i){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
-      const a=nodes[i]; for (const n of adj(a)) if (!mate.has(n)){ mate.set(a,n); mate.set(n,a); if (solve(i+1)) return true; mate.delete(a); mate.delete(n); }
-      return solve(i+1); } // leave unmatched if impossible
-    solve(0);
+    // a matching that leaves as few atoms unmatched as it can: none first, then one, and so on (the first match found isn't
+    // always the best: furan's carbons can pair up wrongly and leave two unmatched)
+    function solve(i, miss){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
+      const a=nodes[i]; for (const n of adj(a)) if (!mate.has(n)){ mate.set(a,n); mate.set(n,a); if (solve(i+1, miss)) return true; mate.delete(a); mate.delete(n); }
+      return miss>0 && solve(i+1, miss-1); }
+    for (let miss=0; miss<=nodes.length && !solve(0, miss); miss++) mate.clear();
     for (const b of ar) b.order = mate.get(b.a)===b.b ? 2 : 1;
+    return budget<0 ? [] : nodes.filter(id=>!mate.has(id));
+  }
+  // kekulize, and count the aromatic ring systems (connected aromatic bonds, so naphthalene is one) left with an unmatched atom
+  function kekulizeCount(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5).map(b=>[b.a,b.b]), left=kekulize(atoms, bonds); if (!left.length) return 0;
+    const parent=new Map(), find=x=>{ while (parent.get(x)!==x) x=parent.get(x); return x; };
+    for (const [a,b] of ar){ for (const x of [a,b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(a), find(b)); }
+    return new Set(left.map(find)).size;
   }
   // the document's drawing settings -> the closest journal style plus overrides for what differs
   function styleFrom(root){
@@ -2675,10 +2743,11 @@ const FORMATS = (()=>{
   const SKIP_NAMES={curve:'shape', tlcplate:'TLC plate', spectrum:'spectrum', embeddedobject:'embedded object', table:'table', geometry:'geometry constraint', constraint:'geometry constraint', altgroup:'alternative group'};
   const ATOM_SYMBOLS=new Set(['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Minus']); // drawn from the atom's own charge and radical
   const GRAPHIC_NAMES={Line:'line', Arc:'arc', Rectangle:'shape', Oval:'shape', Orbital:'orbital', Bracket:'bracket', Symbol:'symbol'};
-  // bracket pairs; ChemDraw's single brackets have no equivalent here. A bracket with no BracketType is a pair of parentheses
+  // bracket pairs, and ChemDraw's half-brackets (which it draws in pairs). A bracket with no BracketType is a pair of parentheses
   const BRACKET_CDX={square:'SquarePair', curly:'CurlyPair', round:'RoundPair'}, BRACKET_OF={SquarePair:'square', CurlyPair:'curly', RoundPair:'round'};
+  const HALF_OF={Square:'square', Curly:'curly', Round:'round'}, HALF_CDX={square:'Square', curly:'Curly', round:'Round'};
   function treeToDoc(root){
-    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], brackets=[], skipped={}; let nid=1;
+    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], brackets=[], skipped={}, halves=[], groups=[]; let nid=1;
     const skip=what=>{ skipped[what]=(skipped[what]||0)+1; };
     // colour indexes: 0 black, 1 white, then the colour table from 2
     const table=kids(kids(root,'colortable')[0]||{children:[]},'color').map(c=>{ const h=k=>Math.max(0,Math.min(255,Math.round(parseFloat(c.attrs[k])*255)||0)).toString(16).padStart(2,'0'); return '#'+h('r')+h('g')+h('b'); });
@@ -2742,7 +2811,7 @@ const FORMATS = (()=>{
         const dsp=b.attrs.Display||'Solid'; let stereo='none', a1=A, a2=Bb;
         if (dsp==='WedgeBegin') stereo='wedge'; else if (dsp==='WedgeEnd'){ stereo='wedge'; a1=Bb; a2=A; }
         else if (dsp==='WedgedHashBegin') stereo='hash'; else if (dsp==='WedgedHashEnd'){ stereo='hash'; a1=Bb; a2=A; }
-        else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold';
+        else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold'; else if (dsp==='Dash') stereo='dashed'; else if (dsp==='Hash') stereo='hashed';
         const bd={id:nid++, a:a1, b:a2, order, stereo: kind? 'none' : stereo}; const dp=b.attrs.DoublePosition; if (dp) bd.dbPos={Center:'center',Left:'left',Right:'right'}[dp];
         if (kind) bd.kind=kind;
         bonds.push(setColor(bd, b.attrs.color));
@@ -2765,6 +2834,8 @@ const FORMATS = (()=>{
           else if (c.attrs.GraphicType==='Bracket' && BRACKET_OF[c.attrs.BracketType||'RoundPair'] && bb.length===4 && bb.every(Number.isFinite)){
             const w=Math.abs(bb[2]-bb[0]), h=Math.abs(bb[3]-bb[1]);
             if (w>0.5 && h>0.5) brackets.push(setColor({id:nid++, type:BRACKET_OF[c.attrs.BracketType||'RoundPair'], x:(bb[0]+bb[2])/2, y:(bb[1]+bb[3])/2, w, h}, c.attrs.color)); else skip('bracket'); }
+          else if (c.attrs.GraphicType==='Bracket' && HALF_OF[c.attrs.BracketType] && !c.attrs.SupersededBy && bb.length===4 && bb.every(Number.isFinite))
+            halves.push({id:c.attrs.id, type:HALF_OF[c.attrs.BracketType], x:(bb[0]+bb[2])/2, y0:Math.min(bb[1],bb[3]), y1:Math.max(bb[1],bb[3]), color:c.attrs.color});
           else if (c.attrs.GraphicType==='Line' && c.attrs.ArrowType && !c.attrs.SupersededBy && bb.length===4){ const at=c.attrs.ArrowType;
             arrows.push(setColor({id:nid++, type: at==='Equilibrium'?'equilibrium': at==='RetroSynthetic'?'retro': at==='Resonance'?'resonance': c.attrs.LineType==='Dashed'?'dashed':'reaction', x1:bb[2], y1:bb[3], x2:bb[0], y2:bb[1]}, c.attrs.color)); }
           else if (!c.attrs.SupersededBy && !(c.attrs.GraphicType==='Symbol' && ATOM_SYMBOLS.has(c.attrs.SymbolType))) skip(GRAPHIC_NAMES[c.attrs.GraphicType]||'shape');
@@ -2787,10 +2858,22 @@ const FORMATS = (()=>{
             const M=add(C,mul(fromAng(a0+d/2),R)), ctl=sub(mul(M,2),mul(add(t,h),0.5)); r.cx=ctl.x; r.cy=ctl.y; }
           arrows.push(setColor(r, A.color)); }
         else if (c.name==='n') continue;
+        else if (c.name==='bracketedgroup') groups.push(kids(c,'bracketattachment').map(a=>a.attrs.GraphicID));
         else visit(c, inNode);
       }
     }
     visit(root,false);
+    // ChemDraw draws a bracket pair as two half-brackets (linked by a bracketedgroup): pair them into one bracket. Linked halves
+    // first, then halves of the same kind facing each other with the same top and bottom; a half with no partner is left out
+    const used=new Set(), byId=new Map(halves.map(q=>[q.id,q]));
+    const pairUp=(a,b)=>{ const l=a.x<b.x?a:b, r=a.x<b.x?b:a; used.add(a.id); used.add(b.id);
+      brackets.push(setColor({id:nid++, type:a.type, x:(l.x+r.x)/2, y:(Math.min(l.y0,r.y0)+Math.max(l.y1,r.y1))/2, w:r.x-l.x, h:Math.max(l.y1,r.y1)-Math.min(l.y0,r.y0)}, l.color??r.color)); };
+    const fits=(a,b)=>a.type===b.type && Math.abs(a.y0-b.y0)<=1 && Math.abs(a.y1-b.y1)<=1 && Math.abs(a.x-b.x)>0.5;
+    for (const g of groups){ const hs=g.map(id=>byId.get(id)).filter(q=>q && !used.has(q.id)); if (hs.length===2 && hs[0].type===hs[1].type && Math.abs(hs[0].x-hs[1].x)>0.5) pairUp(hs[0],hs[1]); }
+    for (const a of halves){ if (used.has(a.id)) continue;
+      const b=halves.filter(q=>q!==a && !used.has(q.id) && fits(a,q)).sort((p,q)=>Math.abs(p.x-a.x)-Math.abs(q.x-a.x))[0];
+      if (b) pairUp(a,b); }
+    for (const a of halves) if (!used.has(a.id)) skip('bracket');
     // a short text at a bracket's top-right or bottom-right corner is its charge or repeat count (the nearest corner wins)
     for (let i=texts.length-1;i>=0;i--){ const t=texts[i], fs=t.size||10; const lab=plainText(t.text); if (lab.length>8 || lab.includes('\n')) continue;
       let best=null, bd=Infinity;
@@ -2798,7 +2881,7 @@ const FORMATS = (()=>{
         if (q[key]!=null || dx<=-fs*0.3 || dx>=fs*2.5 || Math.abs(t.y-yc)>fs*1.2) continue;
         const dd=Math.hypot(dx, t.y-yc); if (dd<bd){ bd=dd; best=[q,key]; } }
       if (best){ best[0][best[1]]=lab.replace(/\u2212/g,'-'); texts.splice(i,1); } }
-    kekulize(atoms,bonds);
+    const unk=kekulizeCount(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
     const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses,brackets}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
@@ -2808,6 +2891,7 @@ const FORMATS = (()=>{
     if (!parseFloat((root.attrs||{}).LabelSize) && most && Math.abs(most-S(d).fontSize)>0.01) d.labelSize=most;
     for (const a of d.atoms){ if (a._sz && Math.abs(a._sz-S(d).fontSize)>0.01) a.size=a._sz; delete a._sz; }
     if (Object.keys(skipped).length) d.skipped=skipped;
+    if (unk) d.unkekulized=unk;
     return d;
   }
   function scaleToL(d, target=L){
@@ -2852,8 +2936,9 @@ const FORMATS = (()=>{
       const order = o==='A'? 1.5 : o==='D'||o==='2'? 2 : o==='T'||o==='3'? 3 : 1;
       if (ref.has(p)&&ref.has(q)) bonds.push({id:nid++, a:ref.get(p), b:ref.get(q), order, stereo: st==='W'?'wedge': st==='H'?'hash':'none'});
     });
-    kekulize(atoms,bonds);
-    return scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    const unk=kekulizeCount(atoms,bonds), d=scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    if (unk) d.unkekulized=unk;
+    return d;
   }
 
   /* ---------- JME (JSME) ---------- */
@@ -2955,7 +3040,7 @@ const FORMATS = (()=>{
     if (fmt==='cml' || fmt==='mrv') return cmlRead(typeof data==='string'? data : new TextDecoder().decode(data));
     throw new Error('Unknown format '+fmt);
   }
-  return {list:LIST, write, read, expandDoc, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
+  return {list:LIST, write, read, expandDoc, kekulize, kekulizeCount, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode, _cdxEncode:cdxEncode};
 })();
 
 /* ================= mass spectrometry =================
@@ -3052,8 +3137,11 @@ const MS = (()=>{
 
   /* ---------- MS/MS: rule-based CID fragments of [M+H]+ or [M-H]- ----------
      One-bond cleavages of acyclic single bonds and two-bond ring openings, each fragment as an even-electron ion
-     with 0 or 1 hydrogen transfer, plus common neutral losses. Scores favour labile bonds (C–heteroatom, amide,
-     ester, α to carbonyl, benzylic, allylic) and stable ions (acylium, iminium, oxonium, benzylic, tertiary). */
+     with 0 or 1 hydrogen transfer, plus up to three neutral losses in a row (H₂O, NH₃, CO, CO₂ …). A hydrogen moves
+     only when the piece giving it has one on an atom next to the broken bond, so the neutral that leaves is a real
+     closed-shell molecule. Scores favour labile bonds (C–heteroatom, amide, ester, α to carbonyl, benzylic, allylic)
+     and stable ions (acylium, iminium, oxonium, benzylic, tertiary); with a basic amine the charge stays on the
+     nitrogen side. Higher collision energy favours later losses and smaller ions. */
   function msms(mol, opts={}){
     const mode=opts.mode||'pos', energy=opts.energy||'medium';
     mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
@@ -3066,17 +3154,25 @@ const MS = (()=>{
     const precursor = {mz: M + sign*PROTON, formula: hill(add(comp.counts,{H:sign})) + (sign>0?'+':'-'), label: sign>0?'[M+H]⁺':'[M−H]⁻'};
     const isHet=i=>/^(N|O|S|P)$/.test(el(i));
     const isCarbonylC=i=>{ if (el(i)!=='C') return false; for (let k=0;k<mol.getConnAtoms(i);k++){ const b=mol.getConnBond(i,k); if (mol.getBondOrder(b)===2 && /^(O|S|N)$/.test(el(mol.getConnAtom(i,k)))) return true; } return false; };
+    const arom=i=>mol.isAromaticAtom(i);
+    const benzylic=i=>{ if (arom(i)) return false; for (let k=0;k<mol.getConnAtoms(i);k++) if (arom(mol.getConnAtom(i,k))) return true; return false; };
+    // a basic amine: sp3 N that is not an amide, aniline or sulfonamide N (where the proton sits in [M+H]+)
+    const basicN=i=>{ if (el(i)!=='N' || arom(i) || mol.getAtomPi(i)) return false;
+      for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (arom(o) || isCarbonylC(o) || /^(S|P)$/.test(el(o)) || mol.getAtomPi(o)) return false; } return true; };
+    const hasBasicN = sign>0 && [...Array(n).keys()].some(basicN);
     const degreeC=i=>{ let c=0; for (let k=0;k<mol.getConnAtoms(i);k++) if (el(mol.getConnAtom(i,k))==='C') c++; return c; };
-    // stability of a cation (pos) or anion (neg) centred on atom i after cleavage
-    function ionScore(i){
+    // stability of a cation (pos) or anion (neg) centred on atom i after its bond to `gone` breaks
+    function ionScore(i, gone=-1){
       if (sign>0){
-        if (isCarbonylC(i)) return 2.2;                      // acylium
-        if (el(i)==='C'){ for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (/^(N|O|S)$/.test(el(o)) && mol.getBondOrder(mol.getConnBond(i,k))===1) return 2.0; } } // iminium/oxonium
+        if (isCarbonylC(i)){ // acylium, unless an ammonium next to it pushes it straight on to lose CO (amino acids)
+          for (let k=0;k<mol.getConnAtoms(i);k++){ const c=mol.getConnAtom(i,k); if (c!==gone && el(c)==='C') for (let q=0;q<mol.getConnAtoms(c);q++) if (basicN(mol.getConnAtom(c,q))) return 0.8; }
+          return 2.2; }
+        if (el(i)==='C'){ for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (o!==gone && /^(N|O|S)$/.test(el(o)) && mol.getBondOrder(mol.getConnBond(i,k))===1) return 2.0; } } // iminium/oxonium
         if (mol.isAromaticAtom(i)) return 0.6;
-        if (el(i)==='C' && (mol.isBenzylicAtom?.(i) || mol.isAllylicAtom(i))) return 1.8;
+        if (el(i)==='C' && (benzylic(i) || mol.isAllylicAtom(i))) return 1.8;
         if (el(i)==='C') return [0.4,0.7,1.2,1.6][Math.min(3,degreeC(i))];
-        if (el(i)==='N') return 1.4;                         // amine keeps the proton
-        return 0.5;
+        if (el(i)==='N') return 0.3;                         // nitrenium: the N piece takes an H instead (below)
+        return 0.0;                                          // oxenium and the like
       }
       if (el(i)==='O' || el(i)==='S') return 2.0;           // alkoxide/carboxylate/phenoxide/thiolate
       if (el(i)==='N') return 1.3;
@@ -3089,7 +3185,8 @@ const MS = (()=>{
       if (mol.isAmideTypeBond(b)) s+=1.0;
       if ((isCarbonylC(a1)&&isHet(a2)) || (isCarbonylC(a2)&&isHet(a1))) s+=0.9;  // ester/amide/acid C–X
       if (isCarbonylC(a1) || isCarbonylC(a2)) s+=0.5;                               // α-cleavage
-      if ((mol.isAromaticAtom(a1)&&!mol.isAromaticAtom(a2)) || (mol.isAromaticAtom(a2)&&!mol.isAromaticAtom(a1))) s += het ? -0.2 : 0.3; // benzylic
+      if (arom(a1)!==arom(a2)) s += het ? -0.2 : -0.9;                                  // aryl–C bonds rarely break
+      else if (!arom(a1) && (benzylic(a1) || benzylic(a2))) s += 0.3;                   // benzylic
       if (mol.isAllylicAtom(a1) || mol.isAllylicAtom(a2)) s+=0.3;
       if (/^(Cl|Br|I)$/.test(el(a1)) || /^(Cl|Br|I)$/.test(el(a2))) s+=0.8;
       else if (het && (mol.isAromaticAtom(a1) || mol.isAromaticAtom(a2))) s-=1.4;  // aryl–O/N bonds rarely break
@@ -3103,15 +3200,25 @@ const MS = (()=>{
         parts.push(part); }
       return parts;
     }
+    // can the piece `atoms` give up one H next to its cut atoms, forming a double bond and a closed-shell neutral?
+    const givesH=(atoms, sites)=>{ const inP=new Set(atoms);
+      return sites.some(s=>{ for (let k=0;k<mol.getConnAtoms(s);k++){ const o=mol.getConnAtom(s,k); if (o<n && inP.has(o) && hz(o)>0) return true; } return false; }); };
+    // with a basic amine, a fragment ion with no nitrogen needs the proton to move away from it first
+    // a piece with no nitrogen rarely keeps the charge when the other piece has one (amines, anilides, amides)
+    const hasN=atoms=>atoms.some(i=>el(i)==='N');
+    const holdsH=i=>isHet(i) || arom(i) || mol.getAtomPi(i)>0;
+    const chargeSite=(atoms, rest)=> sign<0 ? 0 : hasBasicN && !atoms.some(basicN) ? -0.8 : !hasN(atoms) && hasN(rest) ? -1.0 : 0;
     const countsOf=atoms=>{ const c={}; for (const i of atoms){ c[el(i)]=(c[el(i)]||0)+1; c.H=(c.H||0)+hz(i); } return c; };
     const raw=[];
     // a piece X (atoms with their H, as a radical) gives even-electron ions: X⁺ when the other piece takes the proton,
-    // [X+2H]⁺ when X keeps the proton and takes one H; in negative mode X⁻ or [X−2H]⁻
+    // [X+2H]⁺ when X keeps the proton and takes one H from the other piece; in negative mode X⁻ (the other piece
+    // gives up an H) or [X−2H]⁻ (X gives one up)
     const pushIon=(counts, transfer, score, how, atoms, bonds)=>{
       const cc=add(counts,{H: transfer ? 2*sign : 0});
       if ((cc.H||0)<0) return; const m=massOf(cc); if (!Number.isFinite(m)) return;
       if (Object.entries(cc).reduce((t,[k,v])=>k==='H'?t:t+v,0)<2) return; // CH3+, OH+, NH4+ and the like are not seen in CID spectra
-      raw.push({mz: m - sign*E, formula: hill(cc)+(sign>0?'+':'-'), score, how, atoms, bonds});
+      // ions below m/z 50 (CH₂=NH₂⁺, CH₃CO⁺ …) are weak in CID and usually below the recorded range
+      raw.push({mz: m - sign*E, formula: hill(cc)+(sign>0?'+':'-'), score: score - (m<50 ? 1.0 : 0), how, atoms, bonds});
     };
     const energyShift = energy==='low' ? -0.6 : energy==='high' ? 0.5 : 0;
     // one-bond cleavages
@@ -3120,14 +3227,20 @@ const MS = (()=>{
       const parts=split(new Set([b])); if (parts.length!==2) continue;
       const a1=mol.getBondAtom(0,b), a2=mol.getBondAtom(1,b), bs=bondScore(b);
       for (const [part,site] of [[parts[0], parts[0].includes(a1)?a1:a2],[parts[1], parts[1].includes(a1)?a1:a2]]){
-        const other=site===a1?a2:a1, c=countsOf(part);
-        const lbl=`${el(site)}–${el(other)} cleavage`;
+        const other=site===a1?a2:a1, c=countsOf(part), rest=part===parts[0]?parts[1]:parts[0];
+        const lbl=`${el(site)}–${el(other)} cleavage`, cs=chargeSite(part, rest);
         // even-electron ion with one H moved: to the ion when the charge sits on a basic site, away from it otherwise
-        pushIon(c, true, bs+ionScore(site)*0.6 - 0.4 + (sign>0 && el(site)==='N'?0.8:0), lbl+(sign>0?', H transfer':', H loss'), part, [b]);
-        pushIon(c, false, bs+ionScore(site), lbl, part, [b]);
+        // positive mode: the ion keeps the proton, so it needs a site that can hold one (no CnH2n+3⁺ from an alkyl piece)
+        if (sign>0 ? givesH(rest,[other]) && part.some(holdsH) : givesH(part,[site]))
+          pushIon(c, true, bs+ionScore(site,other)*0.6 - 0.4 + (sign>0 ? ({N:1.6,O:0.6}[el(site)]||0) : 0) + cs, lbl+(sign>0?', H transfer':', H loss'), part, [b]);
+        // the other piece leaves with the proton; an alkane (CH₄, C₂H₆ …) rarely does
+        const alkane = sign>0 && rest.every(i=>el(i)==='C');
+        if (sign>0 || givesH(rest,[other])) pushIon(c, false, bs+ionScore(site,other) + cs - (alkane?1.5:0), lbl, part, [b]);
       }
     }
-    // ring openings: two bonds of the same ring (≤ 7 atoms), giving two pieces (retro-Diels–Alder and similar)
+    // ring openings: two bonds of the same ring (≤ 7 atoms), giving two pieces (retro-Diels–Alder and similar).
+    // Each piece closes up as a neutral molecule on its own (a new π bond), so the ion is that piece plus the
+    // proton, [A+H]⁺, or minus it, [A−H]⁻
     const rs=mol.getRingSet();
     for (let r=0;r<rs.getSize();r++){
       const rb=rs.getRingBonds(r); if (rb.length>7 || rs.isAromatic(r)) continue;
@@ -3135,25 +3248,58 @@ const MS = (()=>{
         const cut=new Set([rb[x],rb[y]]); if ([...cut].some(b=>mol.getBondOrder(b)!==1)) continue;
         const parts=split(cut); if (parts.length!==2) continue;
         const s=(bondScore(rb[x])+bondScore(rb[y]))/2 - 0.8;
-        for (const part of parts){ pushIon(countsOf(part), true, s, 'ring opening', part, [...cut]); pushIon(countsOf(part), false, s-0.3, 'ring opening', part, [...cut]); } }
+        // the larger piece usually keeps the charge
+        for (const part of parts){ const rest=part===parts[0]?parts[1]:parts[0];
+          pushIon(add(countsOf(part),{H:sign}), false, s+chargeSite(part, rest)-(part.length<rest.length?1.0:0), 'ring opening', part, [...cut]); } }
     }
-    // neutral losses from the precursor
-    const groups={OH:0,NH2:0,COOH:0,CO:0,OMe:0,Hal:{}};
+    // neutral losses from the precursor, up to three in a row; each group can be lost as often as it occurs
+    const g={OH:0, ArOH:0, NH2:0, COOH:0, CO:0, OMe:0, Hal:{}};
     for (let i=0;i<n;i++){
-      if (el(i)==='O' && hz(i)>0) groups.OH++;
-      if (el(i)==='N' && hz(i)>=2) groups.NH2++;
-      if (isCarbonylC(i)){ groups.CO++; let oh=false, ome=false; for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (el(o)==='O' && mol.getBondOrder(mol.getConnBond(i,k))===1){ if (hz(o)) oh=true; else for (let q=0;q<mol.getConnAtoms(o);q++){ const c2=mol.getConnAtom(o,q); if (c2!==i && el(c2)==='C' && hz(c2)===3) ome=true; } } } if (oh) groups.COOH++; if (ome) groups.OMe++; }
-      if (/^(Cl|Br|I|F)$/.test(el(i))) groups.Hal[el(i)]=1;
+      if (el(i)==='O' && hz(i)>0){ const c=mol.getConnAtom(i,0);
+        if (c<n && isCarbonylC(c)) {} else if (c<n && arom(c)) g.ArOH++; else g.OH++; }
+      if (el(i)==='N' && hz(i)>=2 && !arom(i)) g.NH2++;
+      if (isCarbonylC(i)){ let oh=false, ome=false; for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (el(o)==='O' && mol.getBondOrder(mol.getConnBond(i,k))===1){ if (hz(o)) oh=true; else for (let q=0;q<mol.getConnAtoms(o);q++){ const c2=mol.getConnAtom(o,q); if (c2!==i && el(c2)==='C' && hz(c2)===3) ome=true; } } } if (oh) g.COOH++; else g.CO++; if (ome) g.OMe++; }
+      if (/^(Cl|Br|I)$/.test(el(i))) g.Hal[el(i)]=(g.Hal[el(i)]||0)+1;
     }
-    const losses=[];
-    if (groups.OH) losses.push(['H2O','loss of H₂O',1.6]);
-    if (groups.NH2) losses.push(['NH3','loss of NH₃',1.5]);
-    if (groups.COOH) losses.push(['CO2','loss of CO₂',sign<0?2.2:0.9], ['CH2O2','loss of HCOOH',1.0]);
-    if (groups.CO) losses.push(['CO','loss of CO',0.8]);
-    if (groups.OMe) losses.push(['CH4O','loss of CH₃OH',1.4]);
-    for (const h of Object.keys(groups.Hal)) if (h!=='F') losses.push([`H${h}`,`loss of H${h}`,1.3]);
-    const pc=add(comp.counts,{H:sign});
-    for (const [f,how,s] of losses){ const c=add(pc,parse(f),-1); if (Object.values(c).some(v=>v<0)) continue; const m=massOf(c); raw.push({mz:m - sign*E, formula:hill(c)+(sign>0?'+':'-'), score:s, how, atoms:null, bonds:[]}); }
+    // [formula, label, score, budget key, how many the molecule can give, earliest step]; a phenol loses CO only
+    // once another loss has made it an ion of its own
+    const LOSS=[
+      ['H2O','H₂O',1.6,'OH',g.OH], ['H2O','H₂O',1.3,'COOH',g.COOH], ['NH3','NH₃',1.5,'NH2',g.NH2],
+      ['CO2','CO₂',sign<0?2.2:0.9,'COOH',g.COOH], ['CH2O2','HCOOH',sign>0?2.0:1.0,'COOH',g.COOH], ['CH4O','CH₃OH',1.4,'OMe',g.OMe],
+      ['CO','CO',0.8,'CO',g.CO], ['CO','CO',0.7,'ArOH',g.ArOH,2], ['H2O','H₂O',-0.5,'ArOH',g.ArOH],
+      ...Object.entries(g.Hal).map(([h,c])=>[`H${h}`,`H${h}`,1.3,h,c]),
+    ].filter(l=>l[4]>0);
+    const depthShift = energy==='low' ? -0.8 : energy==='high' ? 0.7 : 0;
+    const FIRST=2.0; // the first loss from the protonated (or deprotonated) molecule is the most favoured process in CID
+    const pc=add(comp.counts,{H:sign}), heavy=c=>Object.entries(c).reduce((t,[k,v])=>k==='H'?t:t+v,0);
+    // an ion that a bond cleavage already explains (C–O cleavage is the H₂O loss) gets that cleavage's extra score,
+    // whichever loss reaches it, so a chain scores the same in any order
+    const cleaved=new Map(); for (const p of raw) if (!(cleaved.get(p.formula) >= p.score)) cleaved.set(p.formula, p.score);
+    const ionF=c=>hill(c)+(sign>0?'+':'-'), first=new Map();
+    for (const [f,,sc,,,from=1] of LOSS) if (from===1){ const k=ionF(add(pc,parse(f),-1)); if (!(first.get(k) >= sc)) first.set(k, sc); }
+    const boost=f=> cleaved.has(f) ? Math.max(0, cleaved.get(f) - FIRST - first.get(f)) : 0;
+    const seen=new Map();
+    (function walk(counts, used, steps, prevScore){
+      for (let j=0;j<LOSS.length;j++){ const [f,lab,sc,key,max,from=1]=LOSS[j];
+        if ((used[key]||0) >= max || steps.length+1 < from) continue;
+        if (key==='ArOH' && f==='CO' && hasBasicN && (used.NH2||0) < g.NH2) continue; // the ring opens once the amine (and its charge) has gone
+        const c=add(counts,parse(f),-1); if (Object.values(c).some(v=>v<0) || heavy(c)<2) continue;
+        const st=[...steps, lab], u={...used, [key]:(used[key]||0)+1}, formula=ionF(c);
+        // each later loss costs more; collision energy decides how far the chain goes
+        const score = steps.length ? prevScore + sc - 2.0 + depthShift : FIRST + sc + boost(formula);
+        const prev=seen.get(formula);
+        if (prev && prev.score>=score) continue;  // a better route to this ion is already there
+        seen.set(formula, {mz:massOf(c) - sign*E, formula, score, how:'loss of '+st.join(', then '), atoms:null, bonds:[]});
+        if (st.length<3) walk(c, u, st, score);
+      }
+    })(pc, {}, [], 0);
+    // a loss that a bond cleavage also explains replaces it, keeping the cleavage's atoms so a click can show them
+    for (const p of seen.values()){
+      const same=raw.filter(q=>q.formula===p.formula && q.atoms);
+      if (same.length){ const best=same.reduce((a,b)=>b.score>a.score?b:a); Object.assign(p,{atoms:best.atoms, bonds:best.bonds});
+        for (let k=raw.length-1;k>=0;k--) if (raw[k].formula===p.formula) raw.splice(k,1); }
+      raw.push(p);
+    }
     // acylium ions also lose CO
     for (const p of [...raw]) if (sign>0 && p.how.includes('cleavage') && p.atoms && p.atoms.some(isCarbonylC) && p.score>2.5){ const c=add(parse(p.formula.replace(/[+-]$/,'')),{C:1,O:1},-1); if (Object.values(c).every(v=>v>=0) && (c.C||0)>1){ raw.push({mz:massOf(c)-E, formula:hill(c)+'+', score:p.score-1.2, how:p.how+', then −CO', atoms:p.atoms, bonds:p.bonds}); } }
     // merge peaks at the same m/z (keep the best explanation), convert scores to intensities
@@ -4443,6 +4589,7 @@ document.addEventListener('paste', e=>{
   e.preventDefault();
   if (txt.trim()){
     if (tryLoadText(txt.trim(), true)) return;
+    if (loadErrorKind==='valence'){ openSmilesDialog(txt.trim(), loadError); return; } // the toast can't hold Insert anyway
     if (loadError){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
   }
   if (clip) pasteDoc(clip, L*1.2);
@@ -4459,11 +4606,17 @@ function layoutSmiles(smi){
   const mol=readSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 // why the last tryLoadText refused its text, in words for the user ('' when there is nothing more specific to say than "not readable")
-let loadError='';
+let loadError='', loadErrorKind=''; // loadErrorKind 'valence': refused only for too many bonds, so it can be inserted anyway
 function readSmiles(smi){
   const mol=smilesMol(smi);
   if (inventedRadicals(smi, mol).length){ const e=new Error('This SMILES has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H is written [nH], as in pyrrole: c1cc[nH]c1.'); e.user=true; throw e; }
   return mol;
+}
+// refuse fragments with an atom over its valence (the rule behind the red warning), before anything is inserted
+function checkValence(parts){
+  const bad=parts.flatMap(p=>p.kind==='frag' ? overValent(p.f) : []); if (!bad.length) return;
+  const more=bad.length-1, e=new Error(`${bad[0].why}${more? ` (and ${more} more atom${more>1?'s':''})` : ''}. Nothing was inserted. Check the structure, or choose Insert anyway to draw it as written.`);
+  e.user=true; e.kind='valence'; throw e;
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -4487,30 +4640,42 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
 // a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const {skipped, unkekulized, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
   const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
   if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
   else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page}); sel.clear(); changed(); fit(); }
   const left=Object.entries(skipped||{}).map(([k,n])=>n>1? `${n} ${k}s` : `1 ${k}`);
-  toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
+  // a document file opens even with too many bonds on an atom (it may be a transition state), but says so
+  const vix=buildIndex({atoms:d.atoms, bonds:d.bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), nBad=d.atoms.filter(a=>valenceError(a,vix)).length;
+  const bad=nBad ? `. ${nBad} atom${nBad>1?'s have':' has'} too many bonds (shown in red)` : '';
+  // aromatic rings the file draws that can't alternate are drawn with single bonds, so one atom has an extra H: say so
+  const unk=unkekulized ? `. ${unkekulized} aromatic ring${unkekulized>1?'s':''} couldn’t be given alternating double bonds; a ring N–H may be missing its H` : '';
+  toast('Opened '+(name||'drawing')+bad+unk+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad||unk? 6000 : undefined);
 }
-function tryLoadText(txt, quiet){
-  loadError='';
+// force: insert even with too many bonds (only from the user's Insert anyway)
+function tryLoadText(txt, quiet, force){
+  loadError=''; loadErrorKind='';
   try{
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
-      const {mol,asDrawn}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
+      const {mol,asDrawn,hcount}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
       if (!hasXY) mol.inventCoordinates();
-      insertFragments([{kind:'frag',f:molToFragment(mol)}]);
+      const f=molToFragment(mol);
+      // aromatic (type-4) bonds -> alternating double bonds; a ring that can't alternate is refused, as for SMILES (no Insert anyway)
+      if (kekulizeFragment(f, hcount)){ const e=new Error('This molfile has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H needs its H: draw it, or set the N’s hydrogen count to 1.'); e.user=true; throw e; }
+      const parts=[{kind:'frag',f}]; if (!force) checkValence(parts);
+      insertFragments(parts);
       if (asDrawn) toast('Stereo read as drawn, although the file’s chiral flag says racemic. Right-click a stereocentre to mark it &1.', 6000);
       return true;
     }
     if (/^InChI=/.test(txt)){ OCL.InChI.molfileFromInchi(txt.split(/\s+/)[0]).then(r=>{ if (!r.molfile) throw new Error(r.message);
-        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); insertFragments([{kind:'frag',f:molToFragment(mol)}]); closeDialog(); })
+        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); const parts=[{kind:'frag',f:molToFragment(mol)}];
+        if (!force){ try{ checkValence(parts); }catch(e){ openSmilesDialog(txt, e.message); return; } }
+        insertFragments(parts); closeDialog(); })
         .catch(()=>toast('That InChI could not be read')); return true; }
     if (txt.startsWith('{')){ const d=JSON.parse(txt); if (d && d.atoms){ pasteDoc(normalizeDoc(d),0,viewCenter()); return true; } }
     const line=txt.split(/\s+/)[0];
@@ -4522,14 +4687,16 @@ function tryLoadText(txt, quiet){
       rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
       parts.push({kind:'arrow'});
       ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      if (!force) checkValence(parts);
       insertFragments(parts);
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
     const mol=readSmiles(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
-    insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
-  }catch(err){ if (err && err.user) loadError=err.message; else if(!quiet) console.warn(err); return false; }
+    const parts=[{kind:'frag',f:molToFragment(mol)}]; if (!force) checkValence(parts);
+    insertFragments(parts); return true;
+  }catch(err){ if (err && err.user){ loadError=err.message; loadErrorKind=err.kind||''; } else if(!quiet) console.warn(err); return false; }
 }
 function viewCenter(){ return V((cv.clientWidth/2-view.ox)/view.z,(cv.clientHeight/2-view.oy)/view.z); }
 function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; n.brackets=d.brackets||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates','brackets']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
@@ -5402,8 +5569,10 @@ async function openFile(f, handle){
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
-    if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
-    if (!tryLoadText(t.trim())) toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
+    const txt = /\.sdf$/i.test(f.name) ? t.split('$$$$')[0] : t.trim(); // an SD file opens its first record
+    if (tryLoadText(txt)) return;
+    if (loadErrorKind==='valence'){ openSmilesDialog(txt, loadError); return; }
+    toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
 // drag and drop files
@@ -5442,6 +5611,8 @@ const TOOLS = [
     {id:'bond', o:{bond:{order:1,stereo:'hash'}}, t:'Hashed wedge bond', i:ic('<path d="M7 17l.8.8M9 14.5l1.8 1.8M11 12l2.8 2.8M13 9.5l3.8 3.8M15 7l4.8 4.8" stroke-width="1.5"/>')},
     {id:'bond', o:{bond:{order:1,stereo:'wavy'}}, t:'Wavy bond (undefined stereo)', i:ic('<path d="M4 18q2-4 4-2t4-2 4-2 4-6"/>')},
     {id:'bond', o:{bond:{order:1,stereo:'bold'}}, t:'Bold bond', i:ic('<path d="M5 19L19 5" stroke-width="4" stroke-linecap="butt"/>')},
+    {id:'bond', o:{bond:{order:1,stereo:'dashed'}}, t:'Dashed bond (partial or forming bond)', i:ic('<path d="M5 19L19 5" stroke-dasharray="4 3" stroke-linecap="butt"/>')},
+    {id:'bond', o:{bond:{order:1,stereo:'hashed'}}, t:'Hashed bond', i:ic('<path d="M6.6 14.6l2.8 2.8M9.4 11.8l2.8 2.8M12.2 9l2.8 2.8M15 6.2l2.8 2.8"/>')},
     {id:'chain', t:'Chain. Drag to set the length', i:ic('<path d="M3 15l4.5-6 4.5 6 4.5-6 4.5 6"/>')},
   ]},
   {g:'rings', items:[
@@ -5516,16 +5687,26 @@ dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
 let _toastT=null;
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),ms); }
 
-function openSmilesDialog(){
+// prefill and err: text that was refused elsewhere (a paste or a file), shown with the reason and Insert anyway
+function openSmilesDialog(prefill, err){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
-  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
-  dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
-  const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="smForce" hidden>Insert anyway</button><button class="tb primary" id="smGo">Insert</button></div>`);
+  let refused=''; // the text Insert anyway inserts: what was refused (PubChem's SMILES, not the typed name)
+  const refuse=(text,msg)=>{ refused=text; $('#smErr').textContent=msg; $('#smForce').hidden=false; };
+  const unrefuse=()=>{ refused=''; $('#smForce').hidden=true; };
+  dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; unrefuse(); $('#smIn').focus(); });
+  $('#smIn').addEventListener('input', unrefuse);
+  $('#smForce').onclick=()=>{ const t=refused; if (!t) return; unrefuse(); if (tryLoadText(t,true,true)) closeDialog(); else $('#smErr').textContent=loadError||'That structure could not be read.'; };
+  if (prefill){ $('#smIn').value=prefill; if (err) refuse(prefill, err); }
+  const go=async ()=>{ unrefuse(); const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
+    if (loadErrorKind==='valence'){ refuse(v, loadError); return; }
     if (loadError){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
     $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
-    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; } $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }
+      if (smi && loadErrorKind==='valence'){ refuse(smi, `PubChem\u2019s structure for \u201c${v}\u201d: ${loadError}`); return; }
+      $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
     catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
@@ -5618,7 +5799,7 @@ $('#alignGap').value = alignGap>0 ? String(alignGap) : '';
 $('#alignGap').addEventListener('change', e=>{ const v=+e.target.value; alignGap = Number.isFinite(v) && v>0 ? Math.min(20,v) : 0; e.target.value = alignGap? String(alignGap) : ''; try{ localStorage.setItem('skeletal.alignGap', String(alignGap)); }catch(err){} });
 alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeAlignMenu(); $('#bAlign').focus(); } });
 document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
-$('#bSmiles').onclick=openSmilesDialog;
+$('#bSmiles').onclick=()=>openSmilesDialog();
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
@@ -6228,7 +6409,7 @@ function renderMs(){
         <div class="nmrgrid"><div class="nmrbox">${msStructSVG(st, pk)}<p class="note" style="margin:4px 6px">${pk? `m/z ${pk.mz.toFixed(4)}: ${esc(pk.how)}. Blue: atoms kept in the ion; red: bonds broken.` : 'Click a peak or a row to see which part of the molecule it comes from.'}</p></div>
         <div class="nmrbox" id="msPlot">${msStickSVG(plot,{pick:st.pick, labels:9})}</div></div>
         <table class="peaks"><thead><tr><th>m/z</th><th>Rel.</th><th>Ion formula</th><th>Origin</th></tr></thead><tbody>${peaks.map(p=>`<tr data-peak="${p.i}" style="cursor:pointer${st.pick===p.i?';background:var(--accent-soft)':''}"><td class="code">${p.mz.toFixed(4)}</td><td>${p.rel.toFixed(0)}</td><td>${fmtF(p.formula)}</td><td>${esc(p.how)}</td></tr>`).join('') || '<tr><td colspan="4">No fragments predicted</td></tr>'}</tbody></table>
-        <p class="note">Rule-based estimate of collision-induced fragments: one-bond cleavages, ring openings and common neutral losses, scored by bond lability and ion stability. It is a guide to likely fragments, not a measured or library spectrum; relative intensities in particular are rough.</p>`;
+        <p class="note">Rule-based estimate of collision-induced fragments: one-bond cleavages, ring openings and up to three neutral losses in a row, scored by bond lability, ion stability and where the charge sits. It is a guide to likely fragments, not a measured or library spectrum. Intensities are rough, so for a library search use measured spectra (MassBank, GNPS) or a trained predictor such as CFM-ID.</p>`;
       actions=`<button class="tb" id="msCopyMsms">Copy peak list</button>`;
       st._r=r;
     }

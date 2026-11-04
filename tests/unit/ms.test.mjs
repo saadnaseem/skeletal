@@ -39,10 +39,80 @@ test('MS/MS gives known major fragments as even-electron ions', () => {
   assert.ok(r.peaks.every(p => !/^(CH3|HO|H2N|H4N)\+$/.test(p.formula)), 'no one-atom ions');
 });
 
+test('MS/MS follows losses one after another and keeps reference base peaks', () => {
+  const peak = (smi, mz, opts) => MS.msms(mol(smi), opts).peaks.find(p => Math.abs(p.mz - mz) < 0.003);
+  const base = (smi, opts) => MS.msms(mol(smi), opts).peaks.reduce((a, b) => (b.rel > a.rel ? b : a)).mz;
+  const NE = 'NCC(O)c1ccc(O)c(O)c1'; // noradrenaline [M+H]+ 170.0812
+  near(base(NE), 152.0706, 0.003, 'noradrenaline base peak is -H2O');
+  for (const mz of [135.0441, 107.0491]) assert.ok(peak(NE, mz)?.rel >= 10, `noradrenaline ${mz}`);
+  // more energy, more of the later losses
+  assert.ok(peak(NE, 135.0441, { energy: 'high' }).rel > peak(NE, 135.0441, { energy: 'low' }).rel * 2, 'energy moves intensity to 135');
+  near(base('CC(=O)Nc1ccc(O)cc1'), 110.0600, 0.003, 'paracetamol base peak is -ketene');
+  near(base('NC(Cc1ccccc1)C(=O)O'), 120.0808, 0.003, 'phenylalanine base peak is -HCOOH');
+  near(base('Cn1cnc2c1c(=O)n(C)c(=O)n2C'), 138.0662, 0.003, 'caffeine base peak is -CH3NCO');
+  near(base('NCCc1ccc(O)c(O)c1'), 137.0597, 0.003, 'dopamine base peak is -NH3');
+});
+
+test('MS/MS moves a hydrogen only when the other piece has one to give', () => {
+  // [M+H-O]+ and [M+H-NH]+ would leave a bare O atom or NH as the neutral
+  const r = MS.msms(mol('NCC(O)c1ccc(O)c(O)c1'), { energy: 'high' });
+  for (const mz of [154.0863, 155.0703]) assert.ok(!r.peaks.some(p => Math.abs(p.mz - mz) < 0.003), `no impossible ion at ${mz}`);
+  assert.ok(MS.msms(mol('CCO')).peaks.every(p => p.formula !== 'C2H6+'), 'ethanol gives no [M+H-O]+');
+  // an alkyl piece has nowhere to keep the proton: no CnH2n+3+ ions, the carbocations stay
+  const hex = MS.msms(mol('CCCCCC')).peaks;
+  assert.ok(hex.every(p => !/^C(\d*)H(\d+)\+$/.test(p.formula) || +RegExp.$2 <= 2 * (+RegExp.$1 || 1) + 1), `no CnH2n+3+ ions: ${hex.map(p => p.formula)}`);
+  assert.ok(hex.some(p => p.formula === 'C4H9+'), 'hexane keeps the butyl cation');
+});
+
+// Value: protects=[M-H]- loss chain, phenol CO gated on amine loss, ring-opening ions as [A+H]+; fails_when=CO2 score/sign,
+//   ArOH from-step/gate or ring-opening H count regress; why_new=existing tests cover [M+H]+ bases only; seam=none;
+//   no_claim=agreement with measured spectra beyond these reference ions (rule-based predictor; unit only)
+test('MS/MS negative mode, gated phenol CO loss and ring-opening ions', () => {
+  const r = (smi, opts) => MS.msms(mol(smi), opts);
+  const base = (smi, opts) => r(smi, opts).peaks.reduce((a, b) => (b.rel > a.rel ? b : a));
+  const has = (smi, mz, opts) => r(smi, opts).peaks.some(p => Math.abs(p.mz - mz) < 0.003);
+  near(base('OC(=O)c1ccccc1', { mode: 'neg' }).mz, 77.0397, 0.003, 'benzoate [M-H]- base peak is -CO2');
+  near(base('CC(=O)Oc1ccccc1C(=O)O', { mode: 'neg' }).mz, 137.0244, 0.003, 'aspirin [M-H]- base peak is -ketene');
+  assert.ok(r('OC(=O)c1ccccc1', { mode: 'neg' }).peaks.every(p => p.formula.endsWith('-')), 'negative ions only');
+  // tyramine: the phenol loses CO only after NH3 has gone, never straight from [M+H]+
+  const TY = 'NCCc1ccc(O)cc1';
+  assert.ok(has(TY, 93.0699), 'tyramine -NH3 then -CO');
+  assert.ok(!has(TY, 110.0964), 'no direct [M+H-CO]+ from a phenol');
+  // cyclohexanol ring opening: the piece plus the proton (C4H8O + H+), not with an extra or missing H2
+  const ring = r('OC1CCCCC1').peaks.filter(p => p.how === 'ring opening').map(p => p.formula);
+  assert.ok(ring.includes('C4H9O+'), `ring opening gives [C4H8O+H]+: ${ring}`);
+  assert.ok(!ring.includes('C4H7O+') && !ring.includes('C4H11O+'), `no H-shifted ring ions: ${ring}`);
+});
+
 test('elemental analysis uses standard atomic weights', () => {
   const ea = MS.elemental(MS.composition(mol('CC(=O)Oc1ccccc1C(=O)O')).counts);
   assert.equal(ea.rows.map(r => `${r.el} ${r.pct.toFixed(2)}`).join(', '), 'C 60.00, H 4.48, O 35.52');
   near(ea.mw, 180.159, 0.002, 'MW');
   const caf = MS.elemental(MS.composition(mol('Cn1cnc2c1c(=O)n(C)c(=O)n2C')).counts);
   assert.equal(caf.rows.map(r => `${r.el} ${r.pct.toFixed(2)}`).join(', '), 'C 49.48, H 5.19, N 28.85, O 16.48');
+});
+
+// Value: protects=msms() scoring penalties (neg-mode H gate, basic-amine charge site, aryl–C, alkane loss, m/z<50);
+//   fails_when=any one of those terms is dropped or loses its sign; why_new=no test pinned relative intensities of
+//   these ions; seam=none; no_claim=agreement with measured spectra beyond these bounds (rule-based predictor; unit only)
+test('MS/MS scoring penalties keep implausible ions weak', () => {
+  const peaks = (smi, opts) => MS.msms(mol(smi), opts).peaks;
+  const rel = (ps, mz) => ps.find(p => Math.abs(p.mz - mz) < 0.003)?.rel ?? 0;
+  // negative mode: a piece with no beta-H cannot give one up (ethyl benzoate: no EtO-, no C7H3O-)
+  const ebNeg = peaks('CCOC(=O)c1ccccc1', { mode: 'neg' });
+  for (const mz of [45.0346, 103.0189]) assert.equal(rel(ebNeg, mz), 0, `no H-gated [M-H]- ion at ${mz}`);
+  // basic amine: N-free fragments stay well below the N-containing partner
+  const na = peaks('NCC(O)c1ccc(O)c(O)c1');
+  assert.ok(rel(na, 139.0390) < 35, `noradrenaline C7H7O3+ weak: ${rel(na, 139.0390)}`);
+  const pea = peaks('NCCc1ccccc1');
+  assert.ok(rel(pea, 91.0542) < 45, `phenethylamine tropylium below base: ${rel(pea, 91.0542)}`);
+  // aryl–C bonds rarely break: the side-chain pieces stay weak
+  assert.ok(rel(na, 60.0444) < 25, `noradrenaline C2H6NO+ weak: ${rel(na, 60.0444)}`);
+  const dop = peaks('NCCc1ccc(O)c(O)c1');
+  assert.ok(rel(dop, 44.0495) < 12, `dopamine C2H6N+ weak: ${rel(dop, 44.0495)}`);
+  // an all-carbon leaving piece (CH4 from caffeine N-CH3) rarely takes the proton
+  assert.ok(rel(peaks('Cn1cnc2c1c(=O)n(C)c(=O)n2C'), 179.0564) < 20, 'caffeine -CH4 stays weak');
+  // ions below m/z 50 are weak
+  assert.ok(rel(dop, 30.0338) < 50, `dopamine CH4N+ weak: ${rel(dop, 30.0338)}`);
+  assert.ok(rel(ebNeg, 43.0189) < 50, `ethyl benzoate C2H3O- weak: ${rel(ebNeg, 43.0189)}`);
 });

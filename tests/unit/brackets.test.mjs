@@ -77,7 +77,9 @@ test('brackets and their labels round-trip through CDXML and CDX', () => {
     // same size, relative to the bonds
     const r = back.brackets[0].w / back.brackets[2].w; near(r, 1, `${f} proportions`);
   }
-  assert.match(F.write('cdxml', d), /GraphicType="Bracket" BracketType="SquarePair"/);
+  // saved as ChemDraw writes them: two half-brackets linked by a bracketedgroup (spec 003 FR-005)
+  assert.match(F.write('cdxml', d), /GraphicType="Bracket" BracketType="Square"/);
+  assert.doesNotMatch(F.write('cdxml', d), /BracketType="SquarePair"/);
 });
 
 test('ChemDraw brackets open with their repeat count; single brackets are reported', () => {

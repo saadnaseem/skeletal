@@ -997,6 +997,7 @@ document.addEventListener('paste', e=>{
   e.preventDefault();
   if (txt.trim()){
     if (tryLoadText(txt.trim(), true)) return;
+    if (loadErrorKind==='valence'){ openSmilesDialog(txt.trim(), loadError); return; } // the toast can't hold Insert anyway
     if (loadError){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
   }
   if (clip) pasteDoc(clip, L*1.2);
@@ -1013,11 +1014,17 @@ function layoutSmiles(smi){
   const mol=readSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
 }
 // why the last tryLoadText refused its text, in words for the user ('' when there is nothing more specific to say than "not readable")
-let loadError='';
+let loadError='', loadErrorKind=''; // loadErrorKind 'valence': refused only for too many bonds, so it can be inserted anyway
 function readSmiles(smi){
   const mol=smilesMol(smi);
   if (inventedRadicals(smi, mol).length){ const e=new Error('This SMILES has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H is written [nH], as in pyrrole: c1cc[nH]c1.'); e.user=true; throw e; }
   return mol;
+}
+// refuse fragments with an atom over its valence (the rule behind the red warning), before anything is inserted
+function checkValence(parts){
+  const bad=parts.flatMap(p=>p.kind==='frag' ? overValent(p.f) : []); if (!bad.length) return;
+  const more=bad.length-1, e=new Error(`${bad[0].why}${more? ` (and ${more} more atom${more>1?'s':''})` : ''}. Nothing was inserted. Check the structure, or choose Insert anyway to draw it as written.`);
+  e.user=true; e.kind='valence'; throw e;
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -1041,30 +1048,42 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
 // a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const {skipped, unkekulized, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
   const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
   if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
   else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page}); sel.clear(); changed(); fit(); }
   const left=Object.entries(skipped||{}).map(([k,n])=>n>1? `${n} ${k}s` : `1 ${k}`);
-  toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
+  // a document file opens even with too many bonds on an atom (it may be a transition state), but says so
+  const vix=buildIndex({atoms:d.atoms, bonds:d.bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), nBad=d.atoms.filter(a=>valenceError(a,vix)).length;
+  const bad=nBad ? `. ${nBad} atom${nBad>1?'s have':' has'} too many bonds (shown in red)` : '';
+  // aromatic rings the file draws that can't alternate are drawn with single bonds, so one atom has an extra H: say so
+  const unk=unkekulized ? `. ${unkekulized} aromatic ring${unkekulized>1?'s':''} couldn’t be given alternating double bonds; a ring N–H may be missing its H` : '';
+  toast('Opened '+(name||'drawing')+bad+unk+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad||unk? 6000 : undefined);
 }
-function tryLoadText(txt, quiet){
-  loadError='';
+// force: insert even with too many bonds (only from the user's Insert anyway)
+function tryLoadText(txt, quiet, force){
+  loadError=''; loadErrorKind='';
   try{
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
-      const {mol,asDrawn}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
+      const {mol,asDrawn,hcount}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
       if (!hasXY) mol.inventCoordinates();
-      insertFragments([{kind:'frag',f:molToFragment(mol)}]);
+      const f=molToFragment(mol);
+      // aromatic (type-4) bonds -> alternating double bonds; a ring that can't alternate is refused, as for SMILES (no Insert anyway)
+      if (kekulizeFragment(f, hcount)){ const e=new Error('This molfile has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H needs its H: draw it, or set the N’s hydrogen count to 1.'); e.user=true; throw e; }
+      const parts=[{kind:'frag',f}]; if (!force) checkValence(parts);
+      insertFragments(parts);
       if (asDrawn) toast('Stereo read as drawn, although the file’s chiral flag says racemic. Right-click a stereocentre to mark it &1.', 6000);
       return true;
     }
     if (/^InChI=/.test(txt)){ OCL.InChI.molfileFromInchi(txt.split(/\s+/)[0]).then(r=>{ if (!r.molfile) throw new Error(r.message);
-        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); insertFragments([{kind:'frag',f:molToFragment(mol)}]); closeDialog(); })
+        const mol=OCL.Molecule.fromMolfile(r.molfile); mol.inventCoordinates(); const parts=[{kind:'frag',f:molToFragment(mol)}];
+        if (!force){ try{ checkValence(parts); }catch(e){ openSmilesDialog(txt, e.message); return; } }
+        insertFragments(parts); closeDialog(); })
         .catch(()=>toast('That InChI could not be read')); return true; }
     if (txt.startsWith('{')){ const d=JSON.parse(txt); if (d && d.atoms){ pasteDoc(normalizeDoc(d),0,viewCenter()); return true; } }
     const line=txt.split(/\s+/)[0];
@@ -1076,14 +1095,16 @@ function tryLoadText(txt, quiet){
       rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
       parts.push({kind:'arrow'});
       ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      if (!force) checkValence(parts);
       insertFragments(parts);
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
     const mol=readSmiles(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
-    insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
-  }catch(err){ if (err && err.user) loadError=err.message; else if(!quiet) console.warn(err); return false; }
+    const parts=[{kind:'frag',f:molToFragment(mol)}]; if (!force) checkValence(parts);
+    insertFragments(parts); return true;
+  }catch(err){ if (err && err.user){ loadError=err.message; loadErrorKind=err.kind||''; } else if(!quiet) console.warn(err); return false; }
 }
 function viewCenter(){ return V((cv.clientWidth/2-view.ox)/view.z,(cv.clientHeight/2-view.oy)/view.z); }
 function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; n.brackets=d.brackets||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates','brackets']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
@@ -1956,8 +1977,10 @@ async function openFile(f, handle){
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
-    if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
-    if (!tryLoadText(t.trim())) toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
+    const txt = /\.sdf$/i.test(f.name) ? t.split('$$$$')[0] : t.trim(); // an SD file opens its first record
+    if (tryLoadText(txt)) return;
+    if (loadErrorKind==='valence'){ openSmilesDialog(txt, loadError); return; }
+    toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
 // drag and drop files
@@ -1996,6 +2019,8 @@ const TOOLS = [
     {id:'bond', o:{bond:{order:1,stereo:'hash'}}, t:'Hashed wedge bond', i:ic('<path d="M7 17l.8.8M9 14.5l1.8 1.8M11 12l2.8 2.8M13 9.5l3.8 3.8M15 7l4.8 4.8" stroke-width="1.5"/>')},
     {id:'bond', o:{bond:{order:1,stereo:'wavy'}}, t:'Wavy bond (undefined stereo)', i:ic('<path d="M4 18q2-4 4-2t4-2 4-2 4-6"/>')},
     {id:'bond', o:{bond:{order:1,stereo:'bold'}}, t:'Bold bond', i:ic('<path d="M5 19L19 5" stroke-width="4" stroke-linecap="butt"/>')},
+    {id:'bond', o:{bond:{order:1,stereo:'dashed'}}, t:'Dashed bond (partial or forming bond)', i:ic('<path d="M5 19L19 5" stroke-dasharray="4 3" stroke-linecap="butt"/>')},
+    {id:'bond', o:{bond:{order:1,stereo:'hashed'}}, t:'Hashed bond', i:ic('<path d="M6.6 14.6l2.8 2.8M9.4 11.8l2.8 2.8M12.2 9l2.8 2.8M15 6.2l2.8 2.8"/>')},
     {id:'chain', t:'Chain. Drag to set the length', i:ic('<path d="M3 15l4.5-6 4.5 6 4.5-6 4.5 6"/>')},
   ]},
   {g:'rings', items:[
@@ -2070,16 +2095,26 @@ dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
 let _toastT=null;
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),ms); }
 
-function openSmilesDialog(){
+// prefill and err: text that was refused elsewhere (a paste or a file), shown with the reason and Insert anyway
+function openSmilesDialog(prefill, err){
   const ex=[['Aspirin','CC(=O)Oc1ccccc1C(=O)O'],['L-Alanine','C[C@@H](C(=O)O)N'],['Caffeine','Cn1cnc2c1c(=O)n(C)c(=O)n2C'],['Esterification','CC(=O)O.OCC>>CC(=O)OCC']];
-  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb primary" id="smGo">Insert</button></div>`);
-  dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
-  const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
+  openDialog(`<h3>Insert structure</h3><p>Paste a SMILES string, a reaction SMILES (A.B>>C), an InChI or a molfile. You can also type a compound name or CAS number (for example caffeine or 58-08-2); it is looked up on PubChem, which needs an internet connection.</p><textarea id="smIn" placeholder="e.g. c1ccccc1O"></textarea><div class="examples">${ex.map(([n,s])=>`<button class="mini" data-s="${esc(s)}">${n}</button>`).join('')}</div><div class="err" id="smErr"></div><div class="actions"><button class="tb" data-close>Cancel</button><button class="tb" id="smForce" hidden>Insert anyway</button><button class="tb primary" id="smGo">Insert</button></div>`);
+  let refused=''; // the text Insert anyway inserts: what was refused (PubChem's SMILES, not the typed name)
+  const refuse=(text,msg)=>{ refused=text; $('#smErr').textContent=msg; $('#smForce').hidden=false; };
+  const unrefuse=()=>{ refused=''; $('#smForce').hidden=true; };
+  dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; unrefuse(); $('#smIn').focus(); });
+  $('#smIn').addEventListener('input', unrefuse);
+  $('#smForce').onclick=()=>{ const t=refused; if (!t) return; unrefuse(); if (tryLoadText(t,true,true)) closeDialog(); else $('#smErr').textContent=loadError||'That structure could not be read.'; };
+  if (prefill){ $('#smIn').value=prefill; if (err) refuse(prefill, err); }
+  const go=async ()=>{ unrefuse(); const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
+    if (loadErrorKind==='valence'){ refuse(v, loadError); return; }
     if (loadError){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
     $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
-    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; } $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }
+      if (smi && loadErrorKind==='valence'){ refuse(smi, `PubChem\u2019s structure for \u201c${v}\u201d: ${loadError}`); return; }
+      $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
     catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
@@ -2172,7 +2207,7 @@ $('#alignGap').value = alignGap>0 ? String(alignGap) : '';
 $('#alignGap').addEventListener('change', e=>{ const v=+e.target.value; alignGap = Number.isFinite(v) && v>0 ? Math.min(20,v) : 0; e.target.value = alignGap? String(alignGap) : ''; try{ localStorage.setItem('skeletal.alignGap', String(alignGap)); }catch(err){} });
 alignMenu.addEventListener('keydown',e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeAlignMenu(); $('#bAlign').focus(); } });
 document.addEventListener('pointerdown',e=>{ if (!alignMenu.contains(e.target) && e.target.closest('#bAlign')===null) closeAlignMenu(); });
-$('#bSmiles').onclick=openSmilesDialog;
+$('#bSmiles').onclick=()=>openSmilesDialog();
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
@@ -2782,7 +2817,7 @@ function renderMs(){
         <div class="nmrgrid"><div class="nmrbox">${msStructSVG(st, pk)}<p class="note" style="margin:4px 6px">${pk? `m/z ${pk.mz.toFixed(4)}: ${esc(pk.how)}. Blue: atoms kept in the ion; red: bonds broken.` : 'Click a peak or a row to see which part of the molecule it comes from.'}</p></div>
         <div class="nmrbox" id="msPlot">${msStickSVG(plot,{pick:st.pick, labels:9})}</div></div>
         <table class="peaks"><thead><tr><th>m/z</th><th>Rel.</th><th>Ion formula</th><th>Origin</th></tr></thead><tbody>${peaks.map(p=>`<tr data-peak="${p.i}" style="cursor:pointer${st.pick===p.i?';background:var(--accent-soft)':''}"><td class="code">${p.mz.toFixed(4)}</td><td>${p.rel.toFixed(0)}</td><td>${fmtF(p.formula)}</td><td>${esc(p.how)}</td></tr>`).join('') || '<tr><td colspan="4">No fragments predicted</td></tr>'}</tbody></table>
-        <p class="note">Rule-based estimate of collision-induced fragments: one-bond cleavages, ring openings and common neutral losses, scored by bond lability and ion stability. It is a guide to likely fragments, not a measured or library spectrum; relative intensities in particular are rough.</p>`;
+        <p class="note">Rule-based estimate of collision-induced fragments: one-bond cleavages, ring openings and up to three neutral losses in a row, scored by bond lability, ion stability and where the charge sits. It is a guide to likely fragments, not a measured or library spectrum. Intensities are rough, so for a library search use measured spectra (MassBank, GNPS) or a trained predictor such as CFM-ID.</p>`;
       actions=`<button class="tb" id="msCopyMsms">Copy peak list</button>`;
       st._r=r;
     }

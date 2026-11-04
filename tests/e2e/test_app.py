@@ -20,7 +20,7 @@ def smiles(page):
 
 
 def test_loads_cleanly(page):
-    assert page.locator("#tools .tool").count() == 49
+    assert page.locator("#tools .tool").count() == 51  # + dashed and hashed bonds (spec 003)
     assert page.locator("#empty").is_visible()
 
 
