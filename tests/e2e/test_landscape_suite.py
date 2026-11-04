@@ -236,11 +236,28 @@ def test_unclosed_ring_says_which_ring(lp):
     assert re.search(r"\bring\b", paste(lp, "C1CC")["toast"], re.I)  # not the "ring" in "string"
 
 
-@pytest.mark.xfail(reason="B3: OpenChemLib invents a radical for an aromatic ring it can't kekulize, and nothing says so", strict=True)
-@pytest.mark.parametrize("text", ["c1cccc1", "c1ccc[nH]c1"])
-def test_aromatic_ring_that_cannot_be_kekulized_is_not_silently_made_a_radical(lp, text):
+@pytest.mark.parametrize("text", ["c1cccc1", "c1ccc[nH]c1", "c1cccc1>>CC"])
+def test_aromatic_ring_that_cannot_be_kekulized_is_refused_with_the_reason(lp, text):
+    # OpenChemLib would draw a radical nobody wrote; the paste is refused and the toast says what to fix
     r = paste(lp, text)
-    assert r["radicals"] == 0 or "aromatic" in r["toast"].lower()
+    assert r["atoms"] == 0 and r["radicals"] == 0
+    assert "aromatic" in r["toast"] and "[nH]" in r["toast"]
+
+
+def test_insert_dialog_explains_an_undrawable_aromatic_ring_without_a_name_lookup(lp):
+    asked = []
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", lambda route: (asked.append(route.request.url), route.abort()))
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
+    lp.fill("#smIn", "c1ccc[nH]c1"); lp.click("#smGo")
+    assert "aromatic" in lp.inner_text("#smErr") and lp.evaluate("doc.atoms.length") == 0
+    assert asked == []
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.evaluate("closeDialog()")
+
+
+@pytest.mark.parametrize("text", ["[CH3]", "[c]1ccccc1", "C[O]"])
+def test_radicals_written_in_brackets_still_paste(lp, text):
+    assert paste(lp, text)["radicals"] == 1
 
 
 B6 = "B6: the formula is OpenChemLib's string, not Hill order"
