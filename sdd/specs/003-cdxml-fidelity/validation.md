@@ -1,6 +1,6 @@
 # Validation — 003-cdxml-fidelity
 
-> Status: done, in review (PR #39) · Last updated: 2026-11-04
+> Status: shipped 2026-11-04 (PR #39, 242a5fc) · Last updated: 2026-11-04
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
@@ -58,3 +58,6 @@ Unit checks: `tests/unit/cdxml_fidelity.test.mjs` (and the updated `brackets.tes
 - **M-3:** open a hand-written CDXML with grouped square brackets and a "2–": one bracket pair with its charge.
 - **M-4:** messages and tool tips read plainly.
 - **M-5 (optional, user):** open a CDXML saved from the preview in ChemDraw; the brackets are one pair.
+
+## 5. After merge (2026-11-04)
+Merged as 242a5fc once CI passed (Workers Builds, test ×2). On https://lonepair.app (gstack browse): grouped ChemDraw half-brackets → one square pair, nothing left out; a `Display="Dash"` bond → dashed; the toolbar has 51 tools; aspirin → C9H8O4. No console errors. M-5 (opening a saved file in ChemDraw) not done.

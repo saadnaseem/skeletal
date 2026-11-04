@@ -1,6 +1,6 @@
 # Requirements — 003-cdxml-fidelity
 
-> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Shipped 2026-11-04 (PR #39) · Last updated: 2026-11-04
 > The **what & why**. Behaviour and constraints only.
 
 ## 1. Summary
