@@ -39,6 +39,47 @@ test('MS/MS gives known major fragments as even-electron ions', () => {
   assert.ok(r.peaks.every(p => !/^(CH3|HO|H2N|H4N)\+$/.test(p.formula)), 'no one-atom ions');
 });
 
+test('MS/MS follows losses one after another and keeps reference base peaks', () => {
+  const peak = (smi, mz, opts) => MS.msms(mol(smi), opts).peaks.find(p => Math.abs(p.mz - mz) < 0.003);
+  const base = (smi, opts) => MS.msms(mol(smi), opts).peaks.reduce((a, b) => (b.rel > a.rel ? b : a)).mz;
+  const NE = 'NCC(O)c1ccc(O)c(O)c1'; // noradrenaline [M+H]+ 170.0812
+  near(base(NE), 152.0706, 0.003, 'noradrenaline base peak is -H2O');
+  for (const mz of [135.0441, 107.0491]) assert.ok(peak(NE, mz)?.rel >= 10, `noradrenaline ${mz}`);
+  // more energy, more of the later losses
+  assert.ok(peak(NE, 135.0441, { energy: 'high' }).rel > peak(NE, 135.0441, { energy: 'low' }).rel * 2, 'energy moves intensity to 135');
+  near(base('CC(=O)Nc1ccc(O)cc1'), 110.0600, 0.003, 'paracetamol base peak is -ketene');
+  near(base('NC(Cc1ccccc1)C(=O)O'), 120.0808, 0.003, 'phenylalanine base peak is -HCOOH');
+  near(base('Cn1cnc2c1c(=O)n(C)c(=O)n2C'), 138.0662, 0.003, 'caffeine base peak is -CH3NCO');
+  near(base('NCCc1ccc(O)c(O)c1'), 137.0597, 0.003, 'dopamine base peak is -NH3');
+});
+
+test('MS/MS moves a hydrogen only when the other piece has one to give', () => {
+  // [M+H-O]+ and [M+H-NH]+ would leave a bare O atom or NH as the neutral
+  const r = MS.msms(mol('NCC(O)c1ccc(O)c(O)c1'), { energy: 'high' });
+  for (const mz of [154.0863, 155.0703]) assert.ok(!r.peaks.some(p => Math.abs(p.mz - mz) < 0.003), `no impossible ion at ${mz}`);
+  assert.ok(MS.msms(mol('CCO')).peaks.every(p => p.formula !== 'C2H6+'), 'ethanol gives no [M+H-O]+');
+});
+
+// Value: protects=[M-H]- loss chain, phenol CO gated on amine loss, ring-opening ions as [A+H]+; fails_when=CO2 score/sign,
+//   ArOH from-step/gate or ring-opening H count regress; why_new=existing tests cover [M+H]+ bases only; seam=none;
+//   no_claim=agreement with measured spectra beyond these reference ions (rule-based predictor; unit only)
+test('MS/MS negative mode, gated phenol CO loss and ring-opening ions', () => {
+  const r = (smi, opts) => MS.msms(mol(smi), opts);
+  const base = (smi, opts) => r(smi, opts).peaks.reduce((a, b) => (b.rel > a.rel ? b : a));
+  const has = (smi, mz, opts) => r(smi, opts).peaks.some(p => Math.abs(p.mz - mz) < 0.003);
+  near(base('OC(=O)c1ccccc1', { mode: 'neg' }).mz, 77.0397, 0.003, 'benzoate [M-H]- base peak is -CO2');
+  near(base('CC(=O)Oc1ccccc1C(=O)O', { mode: 'neg' }).mz, 137.0244, 0.003, 'aspirin [M-H]- base peak is -ketene');
+  assert.ok(r('OC(=O)c1ccccc1', { mode: 'neg' }).peaks.every(p => p.formula.endsWith('-')), 'negative ions only');
+  // tyramine: the phenol loses CO only after NH3 has gone, never straight from [M+H]+
+  const TY = 'NCCc1ccc(O)cc1';
+  assert.ok(has(TY, 93.0699), 'tyramine -NH3 then -CO');
+  assert.ok(!has(TY, 110.0964), 'no direct [M+H-CO]+ from a phenol');
+  // cyclohexanol ring opening: the piece plus the proton (C4H8O + H+), not with an extra or missing H2
+  const ring = r('OC1CCCCC1').peaks.filter(p => p.how === 'ring opening').map(p => p.formula);
+  assert.ok(ring.includes('C4H9O+'), `ring opening gives [C4H8O+H]+: ${ring}`);
+  assert.ok(!ring.includes('C4H7O+') && !ring.includes('C4H11O+'), `no H-shifted ring ions: ${ring}`);
+});
+
 test('elemental analysis uses standard atomic weights', () => {
   const ea = MS.elemental(MS.composition(mol('CC(=O)Oc1ccccc1C(=O)O')).counts);
   assert.equal(ea.rows.map(r => `${r.el} ${r.pct.toFixed(2)}`).join(', '), 'C 60.00, H 4.48, O 35.52');
