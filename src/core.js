@@ -818,7 +818,9 @@ function fromOCL(mol, offset){
     const t=mol.getBondType(b), ord=mol.getBondOrder(b);
     let stereo='none';
     if (t===OCL.Molecule.cBondTypeUp) stereo='wedge'; else if (t===OCL.Molecule.cBondTypeDown) stereo='hash';
-    bonds.push({a:mol.getBondAtom(0,b), b:mol.getBondAtom(1,b), order: Math.min(3,Math.max(1,ord||1)), stereo});
+    // a molfile's aromatic bond (type 4), which OpenChemLib keeps as delocalized: 1.5 until kekulizeFragment converts it
+    const deloc = t===OCL.Molecule.cBondTypeDelocalized;
+    bonds.push({a:mol.getBondAtom(0,b), b:mol.getBondAtom(1,b), order: deloc ? 1.5 : Math.min(3,Math.max(1,ord||1)), stereo});
   }
   // Dative bonds (donor -> acceptor), which take none of the donor's hydrogens: OCL's metal-ligand bonds (N->B), and a plain bond
   // from a donor OCL gives more H than our valence rules would ([NH3] or [OH2] on a metal) to a metal or boron neighbour
@@ -826,7 +828,9 @@ function fromOCL(mol, offset){
   bonds.forEach((b,k)=>{ if (mol.getBondType(k)===lig){ b.kind='dative'; b.order=1; if (acceptor(atoms[b.a].el) && !acceptor(atoms[b.b].el)) [b.a,b.b]=[b.b,b.a]; } });
   const bsum=i=>bonds.reduce((s,b)=>s+(!b.kind && (b.a===i||b.b===i) ? b.order : 0), 0);
   mol.ensureHelperArrays(OCL.Molecule.cHelperNeighbours);
+  const deloc=new Set(bonds.filter(b=>b.order===1.5).flatMap(b=>[b.a,b.b])); // OCL's H count there is for single bonds; kekulizeFragment decides
   for (let i=0;i<n;i++){
+    if (deloc.has(i)) continue;
     const extra=()=>mol.getImplicitHydrogens(i)-implicitH(atoms[i], bsum(i));
     for (const b of bonds){
       if (extra()<=0) break;
@@ -906,7 +910,37 @@ function molfileMol(txt){
     const wedged=lines.slice(4+na, 4+na+nb).some(l=>{ const s=l.slice(9,12).trim(); return s==='1'||s==='6'; });
     if (wedged){ lines[3]=c.slice(0,12)+'  1'+c.slice(15); asDrawn=true; }
   }
-  return {mol:OCL.Molecule.fromMolfile(lines.join('\n')), asDrawn};
+  // Aromatic (type-4) bonds: OpenChemLib ignores the file's hydrogen counts, which kekulizeFragment needs (a pyrrole N with
+  // count 1 keeps its H), and a count makes it read the file as a query. So the counts are read here and blanked for OCL.
+  const hcount=new Map();
+  if (/V2000/.test(lines[3]||'')){
+    const na=+lines[3].slice(0,3), nb=+lines[3].slice(3,6);
+    if (lines.slice(4+na, 4+na+nb).some(l=>l.slice(6,9).trim()==='4'))
+      for (let i=0;i<na;i++){ const l=lines[4+i]||'', h=+l.slice(42,45); if (h>0){ hcount.set(i,h-1); lines[4+i]=l.slice(0,42)+'  0'+l.slice(45); } }
+  } else if (lines.some(l=>/^M {2}V30 \d+ 4 \d+ \d+/.test(l))){
+    let inAtoms=false, i=0;
+    lines=lines.map(l=>{
+      if (/^M {2}V30 BEGIN ATOM/.test(l)){ inAtoms=true; return l; } if (/^M {2}V30 END ATOM/.test(l)){ inAtoms=false; return l; }
+      if (!inAtoms || !/^M {2}V30 \d+ /.test(l)) return l;
+      const m=/\s+HCOUNT=(-?\d+)/.exec(l), k=i++; if (!m) return l;
+      if (+m[1]) hcount.set(k, Math.max(0,+m[1])); return l.replace(m[0],'');
+    });
+  }
+  return {mol:OCL.Molecule.fromMolfile(lines.join('\n')), asDrawn, hcount};
+}
+// a fragment ({atoms, bonds by atom index}, before insert) with 1.5 bonds from a molfile -> alternating single and double bonds,
+// with the converter ChemDraw files use (FORMATS.kekulize). hcount: atom index -> H count from the file. Returns how many ring
+// systems couldn't alternate (0 when all did); their bonds are left single.
+function kekulizeFragment(f, hcount){
+  if (!f.bonds.some(b=>b.order===1.5)) return 0;
+  const atoms=f.atoms.map((a,i)=>({id:i+1, el:a.el, charge:a.charge||0, ...(hcount&&hcount.has(i)? {h:hcount.get(i)} : {})}));
+  const bonds=f.bonds.map((b,k)=>({id:atoms.length+k+1, a:b.a+1, b:b.b+1, order:b.kind? 1 : b.order}));
+  const ar=bonds.filter(b=>b.order===1.5), left=new Set(FORMATS.kekulize(atoms, bonds));
+  bonds.forEach((b,k)=>{ if (f.bonds[k].order===1.5) f.bonds[k].order=b.order; });
+  // count connected aromatic systems with an unmatched atom (naphthalene is one)
+  const parent=new Map(), find=x=>{ while (parent.has(x) && parent.get(x)!==x) x=parent.get(x); return x; };
+  for (const b of ar){ for (const x of [b.a,b.b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(b.a), find(b.b)); }
+  return new Set([...left].map(find)).size;
 }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)

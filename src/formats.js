@@ -295,18 +295,23 @@ const FORMATS = (()=>{
   }
 
   /* ---------- ChemDraw tree -> drawing ---------- */
-  function kekulize(atoms, bonds){ // aromatic (1.5) bonds -> alternating single/double
-    const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return;
+  // aromatic (1.5) bonds -> alternating single/double. Returns the ids of atoms that needed a double bond and got none (a ring
+  // that can't alternate: a ring N-H without its H, or a C5 ring); those bonds stay single. Empty when the search ran out of steps.
+  function kekulize(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return [];
     const byId=new Map(atoms.map(a=>[a.id,a])), deg=new Map(), other=new Map();
     for (const b of bonds) for (const x of [b.a,b.b]){ deg.set(x,(deg.get(x)||0)+1); if (b.order!==1.5) other.set(x,(other.get(x)||0)+b.order); }
     const need=id=>{ const a=byId.get(id); const v=({__proto__:null,C:4,N:3,P:3,B:3,Si:4,As:3})[a.el]; if (!v) return false; return v-(a.charge&&a.el!=='C'? -a.charge:Math.abs(a.charge||0))-(other.get(id)||0)-(ar.filter(b=>b.a===id||b.b===id).length)-(a.h||0)>=1; };
     const nodes=[...new Set(ar.flatMap(b=>[b.a,b.b]))].filter(need), mate=new Map(); let budget=20000;
     const adj=id=>ar.filter(b=>(b.a===id||b.b===id)).map(b=>b.a===id?b.b:b.a).filter(x=>nodes.includes(x));
-    function solve(i){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
-      const a=nodes[i]; for (const n of adj(a)) if (!mate.has(n)){ mate.set(a,n); mate.set(n,a); if (solve(i+1)) return true; mate.delete(a); mate.delete(n); }
-      return solve(i+1); } // leave unmatched if impossible
-    solve(0);
+    // a matching that leaves as few atoms unmatched as it can: none first, then one, and so on (the first match found isn't
+    // always the best: furan's carbons can pair up wrongly and leave two unmatched)
+    function solve(i, miss){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
+      const a=nodes[i]; for (const n of adj(a)) if (!mate.has(n)){ mate.set(a,n); mate.set(n,a); if (solve(i+1, miss)) return true; mate.delete(a); mate.delete(n); }
+      return miss>0 && solve(i+1, miss-1); }
+    for (let miss=0; miss<=nodes.length && !solve(0, miss); miss++) mate.clear();
     for (const b of ar) b.order = mate.get(b.a)===b.b ? 2 : 1;
+    return budget<0 ? [] : nodes.filter(id=>!mate.has(id));
   }
   // the document's drawing settings -> the closest journal style plus overrides for what differs
   function styleFrom(root){
@@ -605,5 +610,5 @@ const FORMATS = (()=>{
     if (fmt==='cml' || fmt==='mrv') return cmlRead(typeof data==='string'? data : new TextDecoder().decode(data));
     throw new Error('Unknown format '+fmt);
   }
-  return {list:LIST, write, read, expandDoc, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
+  return {list:LIST, write, read, expandDoc, kekulize, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
 })();

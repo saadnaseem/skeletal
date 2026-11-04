@@ -1,6 +1,6 @@
 # Plan — 002-aromatic-imports
 
-> Status: draft · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
 > The **how & in what order**. Every task group cites requirement IDs; every requirement appears in at least one group.
 
 ## 1. Approach
@@ -60,6 +60,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
   - the existing CDXML kekulize test still passes.
 - **Acceptance:** the new tests pass, and all 196 existing unit tests still pass.
 - **Verify:** `npm test`
+- [x] complete (2026-11-04): `npm test` 207 pass / 0 fail (196 + 11 new). Two changes beyond the plan, both in `decisions.md`: `kekulize` now finds the matching that leaves fewest atoms unmatched (its first-found match left furan's carbons wrongly paired), and `fromOCL` skips its dative-bond step on atoms with aromatic bonds (phenylboronic acid's C–B bond became dative). The H-count column is blanked before OpenChemLib reads it (the plan's fallback, done up front), so the file isn't read as a query.
 
 ### TG-02: molfile inserts kekulize, or refuse   [M]   [satisfies: FR-001, FR-003, CON-003]
 - **Objective:** every molfile route draws alternating bonds, and refuses a ring that can't alternate.
