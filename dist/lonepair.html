@@ -3174,8 +3174,7 @@ const MS = (()=>{
     // with a basic amine, a fragment ion with no nitrogen needs the proton to move away from it first
     // a piece with no nitrogen rarely keeps the charge when the other piece has one (amines, anilides, amides)
     const hasN=atoms=>atoms.some(i=>el(i)==='N');
-    const chargeSite=atoms=> sign<0 ? 0 : hasBasicN && !atoms.some(basicN) ? -0.8 : !hasN(atoms) && atoms.length<n && hasN([...Array(n).keys()].filter(i=>!atoms.includes(i))) ? -1.0 : 0;
-    // ions below m/z 50 (CH₂=NH₂⁺, CH₃CO⁺ …) are weak in CID and usually below the recorded range
+    const chargeSite=(atoms, rest)=> sign<0 ? 0 : hasBasicN && !atoms.some(basicN) ? -0.8 : !hasN(atoms) && hasN(rest) ? -1.0 : 0;
     const countsOf=atoms=>{ const c={}; for (const i of atoms){ c[el(i)]=(c[el(i)]||0)+1; c.H=(c.H||0)+hz(i); } return c; };
     const raw=[];
     // a piece X (atoms with their H, as a radical) gives even-electron ions: X⁺ when the other piece takes the proton,
@@ -3185,6 +3184,7 @@ const MS = (()=>{
       const cc=add(counts,{H: transfer ? 2*sign : 0});
       if ((cc.H||0)<0) return; const m=massOf(cc); if (!Number.isFinite(m)) return;
       if (Object.entries(cc).reduce((t,[k,v])=>k==='H'?t:t+v,0)<2) return; // CH3+, OH+, NH4+ and the like are not seen in CID spectra
+      // ions below m/z 50 (CH₂=NH₂⁺, CH₃CO⁺ …) are weak in CID and usually below the recorded range
       raw.push({mz: m - sign*E, formula: hill(cc)+(sign>0?'+':'-'), score: score - (m<50 ? 1.0 : 0), how, atoms, bonds});
     };
     const energyShift = energy==='low' ? -0.6 : energy==='high' ? 0.5 : 0;
@@ -3195,7 +3195,7 @@ const MS = (()=>{
       const a1=mol.getBondAtom(0,b), a2=mol.getBondAtom(1,b), bs=bondScore(b);
       for (const [part,site] of [[parts[0], parts[0].includes(a1)?a1:a2],[parts[1], parts[1].includes(a1)?a1:a2]]){
         const other=site===a1?a2:a1, c=countsOf(part), rest=part===parts[0]?parts[1]:parts[0];
-        const lbl=`${el(site)}–${el(other)} cleavage`, cs=chargeSite(part);
+        const lbl=`${el(site)}–${el(other)} cleavage`, cs=chargeSite(part, rest);
         // even-electron ion with one H moved: to the ion when the charge sits on a basic site, away from it otherwise
         if (sign>0 ? givesH(rest,[other]) : givesH(part,[site]))
           pushIon(c, true, bs+ionScore(site,other)*0.6 - 0.4 + (sign>0 ? ({N:1.6,O:0.6}[el(site)]||0) : 0) + cs, lbl+(sign>0?', H transfer':', H loss'), part, [b]);
@@ -3216,7 +3216,7 @@ const MS = (()=>{
         const s=(bondScore(rb[x])+bondScore(rb[y]))/2 - 0.8;
         // the larger piece usually keeps the charge
         for (const part of parts){ const rest=part===parts[0]?parts[1]:parts[0];
-          pushIon(add(countsOf(part),{H:sign}), false, s+chargeSite(part)-(part.length<rest.length?1.0:0), 'ring opening', part, [...cut]); } }
+          pushIon(add(countsOf(part),{H:sign}), false, s+chargeSite(part, rest)-(part.length<rest.length?1.0:0), 'ring opening', part, [...cut]); } }
     }
     // neutral losses from the precursor, up to three in a row; each group can be lost as often as it occurs
     const g={OH:0, ArOH:0, NH2:0, COOH:0, CO:0, OMe:0, Hal:{}};
