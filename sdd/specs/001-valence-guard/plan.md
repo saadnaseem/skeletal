@@ -1,6 +1,6 @@
 # Plan — 001-valence-guard
 
-> Status: draft · Last updated: 2026-11-03
+> Status: approved (user, 2026-11-03) · Last updated: 2026-11-03
 > The **how & in what order**. Every task group cites requirement IDs; every requirement appears in at least one group.
 
 ## 1. Approach
