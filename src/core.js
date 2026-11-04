@@ -288,6 +288,14 @@ function valenceError(atom, ix){
   const label=atom.el+(ch? (Math.abs(ch)>1?Math.abs(ch):'')+(ch>0?'+':'\u2212') : '');
   return {have, max, why:`${label} has ${have} bond${have>1?'s':''}${atom.rad?' (counting the radical)':''}; at most ${max}`};
 }
+// the atoms of a fragment ({atoms, bonds} with bonds by atom index, before insert) that valenceError flags: [{atomIndex, have, max, why}]
+function overValent(f){
+  const atoms=f.atoms.map((a,i)=>({...a, id:i+1})), n=atoms.length;
+  const bonds=f.bonds.map((b,k)=>({...b, id:n+k+1, a:b.a+1, b:b.b+1}));
+  const ix=buildIndex({atoms, bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), out=[];
+  atoms.forEach((a,i)=>{ const e=valenceError(a, ix); if (e) out.push({atomIndex:i, ...e}); });
+  return out;
+}
 function components(d, ix, atomIds){
   const allowed = atomIds ? new Set(atomIds) : null;
   const seen=new Set(), comps=[];
