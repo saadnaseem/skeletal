@@ -1,0 +1,12 @@
+== core (jas2_core.txt)
+97 specs, 71 failures
+== io (jas2_io.txt)
+217 specs, 0 failures
+== algorithm (jas_algorithm.txt)
+116 specs, 0 failures
+== reaction (jas_reaction.txt)
+4 specs, 1 failure
+== spectrum (jas_spectrum.txt)
+68 specs, 12 failures
+== widget (jas_widget.txt)
+== widget: 1 spec, 0 failures

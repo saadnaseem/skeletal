@@ -1,0 +1,253 @@
+"""The shared edge-case suite from docs/landscape/test-suite.md, run through the app's own import, analysis and export code.
+
+Each structure goes through every path a user has: the Analysis panel, SMILES, molfile V2000 and V3000 export, reopening those
+molfiles, and ChemDraw (CDXML, CDX), CML and Marvin round trips. Every path must give the structure's standard InChIKey.
+The expected keys and masses come from Indigo 1.46 (docs/landscape/opensource/scripts/lonepair/), not from this app, so the
+suite checks Lone Pair against an independent toolkit.
+
+Known bugs are marked xfail with their number from docs/landscape/lonepair-audit.md. They are strict: when a fix makes one
+pass, the run fails until its mark is removed.
+"""
+import re
+import pytest
+from conftest import _open
+
+# id, input, standard InChIKey (Indigo), monoisotopic mass (Indigo)
+CASES = [
+    ("A1", "CCO", "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", 46.0419),
+    ("A2", "c1ccccc1", "UHOVQNZJYSORNB-UHFFFAOYSA-N", 78.0470),
+    ("A3", "C1=CC=CC=C1", "UHOVQNZJYSORNB-UHFFFAOYSA-N", 78.0470),
+    ("A4", "c1ccc2ccccc2c1", "UFWIBTONFRDIAS-UHFFFAOYSA-N", 128.0626),
+    ("A5", "c1cc[nH]c1", "KAESVJOAVNADME-UHFFFAOYSA-N", 67.0422),
+    ("A6", "C[C@H](N)C(=O)O", "QNAYBMKLOCPYGJ-REOHCLBHSA-N", 89.0477),
+    ("A7a", "F/C=C/F", "WFLOTYSKFUPZQB-OWOJBTEDSA-N", 64.0125),
+    ("A7b", "F/C=C\\F", "WFLOTYSKFUPZQB-UPHRSURJSA-N", 64.0125),
+    ("A8", "[NH4+].[Cl-]", "NLXLAEXVIDQMFP-UHFFFAOYSA-N", 53.0032),
+    ("A9", "C[N+](=O)[O-]", "LYGJENNIWJXYER-UHFFFAOYSA-N", 61.0164),
+    ("A10", "CS(=O)(=O)C", "HHVIBTZHLRERCL-UHFFFAOYSA-N", 94.0089),
+    ("A11", "[13CH4]", "VNWKTOKETHGBQD-OUBTZVSYSA-N", 17.0347),
+    ("A12", "[CH3]", "WCYWZMWISLQXQU-UHFFFAOYSA-N", 15.0235),
+    ("A13a", "C1CC1", "LVZWSLJZHVFIQJ-UHFFFAOYSA-N", 42.0470),
+    ("A13b", "C1CCCCCCCCCCC1", "DDTBPAQBQHZRDW-UHFFFAOYSA-N", 168.1878),
+    ("A14", "C12C3C4C1C5C2C3C45", "TXWRERCHRDBNLG-UHFFFAOYSA-N", 104.0626),
+    ("A15", "[Fe+2].c1cc[cH-]c1.c1cc[cH-]c1", "KTWOOEGAPBSYNW-UHFFFAOYSA-N", 186.0132),
+    ("A16", "CC(=O)Oc1ccccc1C(=O)O>>CC(=O)O", "CMKNHBZMXNUDDM-UHFFFAOYSA-N", 240.0634),
+    ("A17a", "CC1=CC=CC=C1", "YXFVVABEGXRONW-UHFFFAOYSA-N", 92.0626),
+    ("A17b", "Cc1ccccc1", "YXFVVABEGXRONW-UHFFFAOYSA-N", 92.0626),
+    ("A18", "OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O", "WQZGKKKJIJFFOK-GASJEMHNSA-N", 180.0634),
+    ("A20", "".join(["N[C@@H](C)C(=O)", "NCC(=O)"][i % 2] for i in range(42)) + "O", "INBZYTXUSDAQBF-VBPTUVIWSA-N", 2707.2407),
+    ("D1", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "RYYVLZVUVIJVGH-UHFFFAOYSA-N", 194.0804),
+    ("D5", "CC(=O)Oc1ccccc1C(=O)O", "BSYNRYMUTXBXSQ-UHFFFAOYSA-N", 180.0423),
+    ("X1", "C[C@@H](O)CC", "BTANRVKWQNVYAZ-SCSAIBSYSA-N", 74.0732),
+    ("X2", "OC(=O)/C=C\\C(=O)O", "VZCYOOQTPOCHFL-UPHRSURJSA-N", 116.0110),
+    ("X3", "C[S@](=O)c1ccccc1", "JXTGICXCHWMCPM-VIFPVBQESA-N", 140.0296),
+    ("X4", "[O-][n+]1ccccc1", "ILVXOBCQQYKLDS-UHFFFAOYSA-N", 95.0371),
+    ("X5", "N#N", "IJGRMHOSHXDMSA-UHFFFAOYSA-N", 28.0061),
+    ("X6", "[2H]C([2H])([2H])O", "OKKJLVBELUTLKV-FIBGUPNXSA-N", 35.0450),
+    ("X7", "Cl[Pt](Cl)([NH3])[NH3]", "LXZZYRPGZAFOLE-UHFFFAOYSA-L", 298.9556),
+    ("X8", "C1CC2CCC1C2", "UMRZSTCPUPJPOJ-UHFFFAOYSA-N", 96.0939),
+    ("X9", "C1C2CC3CC1CC(C2)C3", "ORILYTVJVMAKLC-UHFFFAOYSA-N", 136.1252),
+    ("X10", "c1ccc2c(c1)ccc1ccccc12", "YNPNZTXNASCQKK-UHFFFAOYSA-N", 178.0783),
+    ("X11", "CC(C)(C)[Si](C)(C)OC", "SYFYMKQYUPMRFA-UHFFFAOYSA-N", 146.1127),
+    ("X12", "C=C=C", "IYABWNGZIDDRAK-UHFFFAOYSA-N", 40.0313),
+    ("X13", "C[C@H]1CC[C@@H](C)CC1", "QRMPKOFEUHIBNM-OCAPTIKFSA-N", 112.1252),
+    ("X14", "[Na+].[O-]C(=O)C", "VMHLLURERBWHNL-UHFFFAOYSA-M", 82.0031),
+]
+PATHS = ["analysis", "export_inchikey", "export_smiles", "export_mol", "export_molV3", "reopen_mol", "reopen_molV3",
+         "cdxml", "cdx", "cml", "mrv"]
+
+B2 = "B2: an explicit H count the bonds don't imply ([NH3] on Pt) is dropped by fromOCL"
+B4 = "B4: CML and MRV don't write or read isotopes"
+B10 = "B10: a V3000 molfile with no bonds has an empty bond block, which the IUPAC InChI library rejects"
+KNOWN = {**{("X7", p): B2 for p in PATHS},
+         ("A11", "cml"): B4, ("A11", "mrv"): B4, ("X6", "cml"): B4, ("X6", "mrv"): B4,
+         ("A8", "export_molV3"): B10, ("A11", "export_molV3"): B10, ("A12", "export_molV3"): B10}
+
+# Everything one structure needs, computed in the page in one go. Each path reads the structure back through the
+# bundled IUPAC InChI library (inchiOf), so the comparison is by standard InChIKey.
+RUN = r"""async s => {
+  const docMol = d => toOCL(d, buildIndex(d), d.atoms.map(a=>a.id)).mol;
+  const key = async molfile => (await inchiOf(molfile)).key || 'NO KEY';
+  const reset = () => { setDoc(newDoc()); sel.clear(); changed(); };
+  reset();
+  if (!tryLoadText(s, true) || !doc.atoms.length) return {loaded: false};
+  const base = subDoc(null), out = {loaded: true, keys: {}};
+  const a = analysisFor(doc.atoms.map(x=>x.id)); out.exact = a.exact; out.formula = a.formula;
+  const A = doc.atoms, bonded = new Set(doc.bonds.map(b=>[b.a,b.b].sort().join()));
+  let min = 1e9; for (let i=0;i<A.length;i++) for (let j=i+1;j<A.length;j++) if (!bonded.has([A[i].id,A[j].id].sort().join())) min = Math.min(min, Math.hypot(A[i].x-A[j].x, A[i].y-A[j].y)/L);
+  out.minNonBonded = A.length > 1 ? min : null;
+  const path = async (name, f) => { try { out.keys[name] = await f(); } catch (e) { out.keys[name] = 'ERROR ' + (e.message || e); } };
+  const ex = async id => (await exportData(id)).data;
+  const mol2 = await ex('mol'), mol3 = await ex('molV3');
+  await path('analysis', () => key(docMol(doc).toMolfile()));
+  await path('export_inchikey', async () => (await ex('inchikey')).trim());
+  await path('export_smiles', async () => { const m = smilesMol((await ex('smiles')).trim()); return key(m.toMolfile()); });
+  await path('export_mol', () => key(mol2));
+  await path('export_molV3', () => key(mol3));
+  for (const [name, f] of [['reopen_mol', mol2], ['reopen_molV3', mol3]]) {
+    await path(name, () => { reset(); tryLoadText(f, true); return doc.atoms.length ? key(docMol(doc).toMolfile()) : 'NOTHING OPENED'; });
+  }
+  for (const fmt of ['cdxml', 'cdx', 'cml', 'mrv']) {
+    await path(fmt, () => { const {skipped, style, styleOv, labelSize, ...parts} = FORMATS.read(fmt, FORMATS.write(fmt, base));
+      return key(docMol(normalizeDoc({...newDoc(), ...parts})).toMolfile()); });
+  }
+  return out;
+}"""
+
+
+@pytest.fixture(scope="module")
+def lp(browser):
+    page = _open(browser, {"width": 1400, "height": 900})
+    cache = {}
+    def run(smiles):
+        if smiles not in cache: cache[smiles] = page.evaluate(RUN, smiles)
+        return cache[smiles]
+    page.run = run
+    yield page
+    page.context.close()
+
+
+def case_params(with_paths):
+    out = []
+    for cid, smi, k, m in CASES:
+        for p in (PATHS if with_paths else [None]):
+            why = KNOWN.get((cid, p)) if p else None
+            marks = [pytest.mark.xfail(reason=why, strict=True)] if why else []
+            out.append(pytest.param(smi, k, m, p, id=f"{cid}-{p}" if p else cid, marks=marks))
+    return out
+
+
+@pytest.mark.parametrize("smiles,want_key,mass,path", case_params(True))
+def test_every_path_keeps_the_structure(lp, smiles, want_key, mass, path):
+    r = lp.run(smiles)
+    assert r["loaded"], f"{smiles} did not load"
+    assert r["keys"][path] == want_key
+
+
+@pytest.mark.parametrize("smiles,want_key,mass,path", [
+    pytest.param(*p.values, marks=[pytest.mark.xfail(reason=B2, strict=True)] if p.id == "X7" else [], id=p.id) for p in case_params(False)])
+def test_exact_mass_matches_indigo(lp, smiles, want_key, mass, path):
+    assert abs(lp.run(smiles)["exact"] - mass) < 0.002
+
+
+B8 = "B8: no cage templates; OpenChemLib's layout puts two adamantane atoms 0.5 bond lengths apart"
+
+
+@pytest.mark.parametrize("smiles,want_key,mass,path", [
+    pytest.param(*p.values, marks=[pytest.mark.xfail(reason=B8, strict=True)] if p.id == "X9" else [], id=p.id) for p in case_params(False)])
+def test_layout_keeps_unbonded_atoms_apart(lp, smiles, want_key, mass, path):
+    d = lp.run(smiles)["minNonBonded"]
+    assert d is None or d >= 0.6, f"two unbonded atoms {d:.2f} bond lengths apart"
+
+
+# Molfiles another toolkit wrote: RDKit 2026.09 writes chiral flag 0 even when the wedges define one enantiomer
+RDKIT_ALA_V2000 = """
+     RDKit          2D
+
+  6  5  0  0  0  0  0  0  0  0999 V2000
+    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2990    0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    1.2990    2.2500    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0
+    2.5981   -0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    2.5981   -1.5000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+    3.8971    0.7500    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
+  2  1  1  6
+  2  3  1  0
+  2  4  1  0
+  4  5  2  0
+  4  6  1  0
+M  END
+"""
+RDKIT_ALA_V3000 = """
+     RDKit          2D
+
+  0  0  0  0  0  0  0  0  0  0999 V3000
+M  V30 BEGIN CTAB
+M  V30 COUNTS 6 5 0 0 0
+M  V30 BEGIN ATOM
+M  V30 1 C 0.000000 0.000000 0.000000 0
+M  V30 2 C 1.299038 0.750000 0.000000 0
+M  V30 3 N 1.299038 2.250000 0.000000 0
+M  V30 4 C 2.598076 -0.000000 0.000000 0
+M  V30 5 O 2.598076 -1.500000 0.000000 0
+M  V30 6 O 3.897114 0.750000 0.000000 0
+M  V30 END ATOM
+M  V30 BEGIN BOND
+M  V30 1 1 2 1 CFG=3
+M  V30 2 1 2 3
+M  V30 3 1 2 4
+M  V30 4 2 4 5
+M  V30 5 1 4 6
+M  V30 END BOND
+M  V30 END CTAB
+M  END
+"""
+B1 = "B1: chiral flag 0 is read as a racemic (&1) group, so SMILES drops the stereo while the InChIKey keeps it"
+
+
+@pytest.mark.parametrize("molfile", [
+    pytest.param(RDKIT_ALA_V2000, id="V2000", marks=pytest.mark.xfail(reason=B1, strict=True)),
+    pytest.param(RDKIT_ALA_V3000, id="V3000")])
+def test_molfile_from_rdkit_keeps_its_stereocentre(lp, molfile):
+    r = lp.evaluate("""async f => { setDoc(newDoc()); sel.clear(); changed(); tryLoadText(f, true);
+        return {key: (await exportData('inchikey')).data.trim(), smiles: (await exportData('smiles')).data.trim(),
+                groups: doc.atoms.filter(a=>a.stg).map(a=>a.stg)}; }""", molfile)
+    assert r["key"] == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"  # L-alanine
+    assert "@" in r["smiles"] and r["groups"] in ([], ["abs"])  # read as drawn: one enantiomer, as RDKit meant
+
+
+def paste(page, text):
+    page.evaluate("""t=>{ setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent='';
+        const dt=new DataTransfer(); dt.setData('text/plain', t); document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true})); }""", text)
+    page.wait_for_timeout(100)
+    return page.evaluate("({atoms: doc.atoms.length, radicals: doc.atoms.filter(a=>a.rad).length, toast: document.querySelector('#toast').textContent})")
+
+
+@pytest.mark.parametrize("text", ["xyz", "C1CC"])
+def test_text_that_is_not_a_structure_is_refused(lp, text):
+    r = paste(lp, text)
+    assert r["atoms"] == 0 and r["toast"]
+
+
+@pytest.mark.xfail(reason="B7: the message doesn't say what is wrong with the SMILES", strict=True)
+def test_unclosed_ring_says_which_ring(lp):
+    assert re.search(r"\bring\b", paste(lp, "C1CC")["toast"], re.I)  # not the "ring" in "string"
+
+
+@pytest.mark.xfail(reason="B3: OpenChemLib invents a radical for an aromatic ring it can't kekulize, and nothing says so", strict=True)
+@pytest.mark.parametrize("text", ["c1cccc1", "c1ccc[nH]c1"])
+def test_aromatic_ring_that_cannot_be_kekulized_is_not_silently_made_a_radical(lp, text):
+    r = paste(lp, text)
+    assert r["radicals"] == 0 or "aromatic" in r["toast"].lower()
+
+
+B6 = "B6: the formula is OpenChemLib's string, not Hill order"
+
+
+@pytest.mark.parametrize("smiles,hill", [
+    ("CCO", "C2H6O"), ("CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "C8H10N4O2"),
+    pytest.param("[NH4+].[Cl-]", "ClH4N", marks=pytest.mark.xfail(reason=B6, strict=True)),
+    pytest.param("[Na+].[O-]C(=O)C", "C2H3NaO2", marks=pytest.mark.xfail(reason=B6, strict=True))])
+def test_formula_is_in_hill_order(lp, smiles, hill):
+    assert lp.run(smiles)["formula"] == hill
+
+
+@pytest.mark.xfail(reason="B5: a carbon with five bonds gets no warning", strict=True)
+def test_carbon_with_five_bonds_is_flagged(lp):
+    text = lp.evaluate("""(()=>{ setDoc(newDoc()); sel.clear(); changed(); tryLoadText('CC(C)(C)C', true);
+        const c=doc.atoms.find(a=>doc.bonds.filter(b=>b.a===a.id||b.b===a.id).length===4);
+        pushUndo(); const n={id:nid(), el:'C', x:c.x+L, y:c.y+L, charge:0, lp:0, rad:0}; doc.atoms.push(n);
+        doc.bonds.push({id:nid(), a:c.id, b:n.id, order:1, stereo:'none'}); changed(); analyzeNow();
+        return document.querySelector('#props').innerText; })()""")
+    assert "valence" in text.lower()
+
+
+@pytest.mark.xfail(reason="B9: SMILES export of a reaction joins the parts with dots", strict=True)
+def test_reaction_exports_as_reaction_smiles(lp):
+    smi = lp.evaluate("""(async()=>{ setDoc(newDoc()); sel.clear(); changed(); tryLoadText('CC(=O)Oc1ccccc1C(=O)O>>CC(=O)O', true);
+        return (await exportData('smiles')).data.trim(); })()""")
+    assert ">" in smi
+
+
+def test_suite_ran_without_console_errors(lp):
+    assert lp.errors == []
