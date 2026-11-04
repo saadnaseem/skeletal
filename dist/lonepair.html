@@ -4559,11 +4559,14 @@ function tryLoadText(txt, quiet, force){
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
-      const {mol,asDrawn}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
+      const {mol,asDrawn,hcount}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
       if (!hasXY) mol.inventCoordinates();
-      const parts=[{kind:'frag',f:molToFragment(mol)}]; if (!force) checkValence(parts);
+      const f=molToFragment(mol);
+      // aromatic (type-4) bonds -> alternating double bonds; a ring that can't alternate is refused, as for SMILES (no Insert anyway)
+      if (kekulizeFragment(f, hcount)){ const e=new Error('This molfile has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H needs its H: draw it, or set the N’s hydrogen count to 1.'); e.user=true; throw e; }
+      const parts=[{kind:'frag',f}]; if (!force) checkValence(parts);
       insertFragments(parts);
       if (asDrawn) toast('Stereo read as drawn, although the file’s chiral flag says racemic. Right-click a stereocentre to mark it &1.', 6000);
       return true;

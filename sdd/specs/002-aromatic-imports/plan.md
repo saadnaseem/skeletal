@@ -73,6 +73,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Acceptance:** the new e2e tests pass; the full e2e suite passes.
 - **Verify:** `npm run build && npm test && npm run test:e2e`
 - **Depends on:** TG-01
+- [x] complete (2026-11-04): unit 207 pass; e2e 777 passed, 3 skipped, 7 xfailed, 0 failed (764 + 13 new)
 
 ### TG-03: document files count rings that can't alternate   [S]   [satisfies: FR-004, FR-005]
 - **Objective:** a ChemDraw, CML or Marvin file with such a ring opens as today, and says so.
