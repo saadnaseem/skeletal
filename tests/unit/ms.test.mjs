@@ -87,3 +87,28 @@ test('elemental analysis uses standard atomic weights', () => {
   const caf = MS.elemental(MS.composition(mol('Cn1cnc2c1c(=O)n(C)c(=O)n2C')).counts);
   assert.equal(caf.rows.map(r => `${r.el} ${r.pct.toFixed(2)}`).join(', '), 'C 49.48, H 5.19, N 28.85, O 16.48');
 });
+
+// Value: protects=msms() scoring penalties (neg-mode H gate, basic-amine charge site, aryl–C, alkane loss, m/z<50);
+//   fails_when=any one of those terms is dropped or loses its sign; why_new=no test pinned relative intensities of
+//   these ions; seam=none; no_claim=agreement with measured spectra beyond these bounds (rule-based predictor; unit only)
+test('MS/MS scoring penalties keep implausible ions weak', () => {
+  const peaks = (smi, opts) => MS.msms(mol(smi), opts).peaks;
+  const rel = (ps, mz) => ps.find(p => Math.abs(p.mz - mz) < 0.003)?.rel ?? 0;
+  // negative mode: a piece with no beta-H cannot give one up (ethyl benzoate: no EtO-, no C7H3O-)
+  const ebNeg = peaks('CCOC(=O)c1ccccc1', { mode: 'neg' });
+  for (const mz of [45.0346, 103.0189]) assert.equal(rel(ebNeg, mz), 0, `no H-gated [M-H]- ion at ${mz}`);
+  // basic amine: N-free fragments stay well below the N-containing partner
+  const na = peaks('NCC(O)c1ccc(O)c(O)c1');
+  assert.ok(rel(na, 139.0390) < 35, `noradrenaline C7H7O3+ weak: ${rel(na, 139.0390)}`);
+  const pea = peaks('NCCc1ccccc1');
+  assert.ok(rel(pea, 91.0542) < 45, `phenethylamine tropylium below base: ${rel(pea, 91.0542)}`);
+  // aryl–C bonds rarely break: the side-chain pieces stay weak
+  assert.ok(rel(na, 60.0444) < 25, `noradrenaline C2H6NO+ weak: ${rel(na, 60.0444)}`);
+  const dop = peaks('NCCc1ccc(O)c(O)c1');
+  assert.ok(rel(dop, 44.0495) < 12, `dopamine C2H6N+ weak: ${rel(dop, 44.0495)}`);
+  // an all-carbon leaving piece (CH4 from caffeine N-CH3) rarely takes the proton
+  assert.ok(rel(peaks('Cn1cnc2c1c(=O)n(C)c(=O)n2C'), 179.0564) < 20, 'caffeine -CH4 stays weak');
+  // ions below m/z 50 are weak
+  assert.ok(rel(dop, 30.0338) < 50, `dopamine CH4N+ weak: ${rel(dop, 30.0338)}`);
+  assert.ok(rel(ebNeg, 43.0189) < 50, `ethyl benzoate C2H3O- weak: ${rel(ebNeg, 43.0189)}`);
+});
