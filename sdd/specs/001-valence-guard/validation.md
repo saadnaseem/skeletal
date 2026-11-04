@@ -1,12 +1,12 @@
 # Validation — 001-valence-guard
 
-> Status: approved (user, 2026-11-03) · Last updated: 2026-11-03
+> Status: approved (user, 2026-11-03) · Shipped 2026-11-04 (PR #37) · Last updated: 2026-11-03
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
 - [x] TG-01 … TG-05 in `plan.md` ticked.
 - [ ] Every row of §2 has ✅ with pasted evidence (command output, test name or screenshot path).
-- [ ] The full bar (§7) passes **3 times in a row** locally, plus CI on the PR.
+- [x] The full bar (§7) passes **3 times in a row** locally (Chromium; WebKit unavailable, logged), plus CI on the PR (3/3 checks pass).
 - [ ] Numbers are no worse than `sdd/product/baseline.md`: unit count ≥ 171 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
 - [ ] gstack `/qa-only` on the PR's Cloudflare preview reports no new issues.
 - [ ] Out-of-scope confirmation (§9) passes.
@@ -99,7 +99,7 @@ On the PR's Cloudflare preview (`https://<branch>-lone-pair.saad455.workers.dev`
 | NFR | Tool | Measurement | Threshold | Result |
 |---|---|---|---|---|
 | NFR-001 | node --test | median over 20 runs, 200 atoms | < 20 ms | 0.44 ms ✅ |
-| NFR-002 | CI + 3 local runs | failures | 0 | 0 in Chromium ×3; CI pending |
+| NFR-002 | CI + 3 local runs | failures | 0 | 0 in Chromium ×3; CI 3/3 pass |
 | NFR-003 | manual M-1…M-6 | reviewer reads the messages | no jargon, says what to do | ✅ (owner review still to come) |
 
 ## 6. Edge-case checks
@@ -141,3 +141,6 @@ On the PR's Cloudflare preview (`https://<branch>-lone-pair.saad455.workers.dev`
 |---|---|---|---|
 | Implementer | Claude | §2 matrix all ✅, CK-12 output ×3 | |
 | Owner | user | PR review, preview checked | |
+
+## 11. Post-merge
+- 2026-11-04: merged as 1bf2980; live on lonepair.app ~45 s later. Live check (gstack browse): HTTP 200 in 0.21 s, no console errors, `C(C)(C)(C)(C)C` refused (kind valence, 0 atoms), aspirin and SF6 insert, no red warning.

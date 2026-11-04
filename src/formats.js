@@ -295,18 +295,30 @@ const FORMATS = (()=>{
   }
 
   /* ---------- ChemDraw tree -> drawing ---------- */
-  function kekulize(atoms, bonds){ // aromatic (1.5) bonds -> alternating single/double
-    const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return;
+  // aromatic (1.5) bonds -> alternating single/double. Returns the ids of atoms that needed a double bond and got none (a ring
+  // that can't alternate: a ring N-H without its H, or a C5 ring); those bonds stay single. Empty when the search ran out of steps.
+  function kekulize(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5); if (!ar.length) return [];
     const byId=new Map(atoms.map(a=>[a.id,a])), deg=new Map(), other=new Map();
     for (const b of bonds) for (const x of [b.a,b.b]){ deg.set(x,(deg.get(x)||0)+1); if (b.order!==1.5) other.set(x,(other.get(x)||0)+b.order); }
     const need=id=>{ const a=byId.get(id); const v=({__proto__:null,C:4,N:3,P:3,B:3,Si:4,As:3})[a.el]; if (!v) return false; return v-(a.charge&&a.el!=='C'? -a.charge:Math.abs(a.charge||0))-(other.get(id)||0)-(ar.filter(b=>b.a===id||b.b===id).length)-(a.h||0)>=1; };
     const nodes=[...new Set(ar.flatMap(b=>[b.a,b.b]))].filter(need), mate=new Map(); let budget=20000;
     const adj=id=>ar.filter(b=>(b.a===id||b.b===id)).map(b=>b.a===id?b.b:b.a).filter(x=>nodes.includes(x));
-    function solve(i){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
-      const a=nodes[i]; for (const n of adj(a)) if (!mate.has(n)){ mate.set(a,n); mate.set(n,a); if (solve(i+1)) return true; mate.delete(a); mate.delete(n); }
-      return solve(i+1); } // leave unmatched if impossible
-    solve(0);
+    // a matching that leaves as few atoms unmatched as it can: none first, then one, and so on (the first match found isn't
+    // always the best: furan's carbons can pair up wrongly and leave two unmatched)
+    function solve(i, miss){ if (--budget<0) return true; while (i<nodes.length && mate.has(nodes[i])) i++; if (i>=nodes.length) return true;
+      const a=nodes[i]; for (const n of adj(a)) if (!mate.has(n)){ mate.set(a,n); mate.set(n,a); if (solve(i+1, miss)) return true; mate.delete(a); mate.delete(n); }
+      return miss>0 && solve(i+1, miss-1); }
+    for (let miss=0; miss<=nodes.length && !solve(0, miss); miss++) mate.clear();
     for (const b of ar) b.order = mate.get(b.a)===b.b ? 2 : 1;
+    return budget<0 ? [] : nodes.filter(id=>!mate.has(id));
+  }
+  // kekulize, and count the aromatic ring systems (connected aromatic bonds, so naphthalene is one) left with an unmatched atom
+  function kekulizeCount(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5).map(b=>[b.a,b.b]), left=kekulize(atoms, bonds); if (!left.length) return 0;
+    const parent=new Map(), find=x=>{ while (parent.get(x)!==x) x=parent.get(x); return x; };
+    for (const [a,b] of ar){ for (const x of [a,b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(a), find(b)); }
+    return new Set(left.map(find)).size;
   }
   // the document's drawing settings -> the closest journal style plus overrides for what differs
   function styleFrom(root){
@@ -448,7 +460,7 @@ const FORMATS = (()=>{
         if (q[key]!=null || dx<=-fs*0.3 || dx>=fs*2.5 || Math.abs(t.y-yc)>fs*1.2) continue;
         const dd=Math.hypot(dx, t.y-yc); if (dd<bd){ bd=dd; best=[q,key]; } }
       if (best){ best[0][best[1]]=lab.replace(/\u2212/g,'-'); texts.splice(i,1); } }
-    kekulize(atoms,bonds);
+    const unk=kekulizeCount(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
     const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses,brackets}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
@@ -458,6 +470,7 @@ const FORMATS = (()=>{
     if (!parseFloat((root.attrs||{}).LabelSize) && most && Math.abs(most-S(d).fontSize)>0.01) d.labelSize=most;
     for (const a of d.atoms){ if (a._sz && Math.abs(a._sz-S(d).fontSize)>0.01) a.size=a._sz; delete a._sz; }
     if (Object.keys(skipped).length) d.skipped=skipped;
+    if (unk) d.unkekulized=unk;
     return d;
   }
   function scaleToL(d, target=L){
@@ -502,8 +515,9 @@ const FORMATS = (()=>{
       const order = o==='A'? 1.5 : o==='D'||o==='2'? 2 : o==='T'||o==='3'? 3 : 1;
       if (ref.has(p)&&ref.has(q)) bonds.push({id:nid++, a:ref.get(p), b:ref.get(q), order, stereo: st==='W'?'wedge': st==='H'?'hash':'none'});
     });
-    kekulize(atoms,bonds);
-    return scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    const unk=kekulizeCount(atoms,bonds), d=scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    if (unk) d.unkekulized=unk;
+    return d;
   }
 
   /* ---------- JME (JSME) ---------- */
@@ -605,5 +619,5 @@ const FORMATS = (()=>{
     if (fmt==='cml' || fmt==='mrv') return cmlRead(typeof data==='string'? data : new TextDecoder().decode(data));
     throw new Error('Unknown format '+fmt);
   }
-  return {list:LIST, write, read, expandDoc, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
+  return {list:LIST, write, read, expandDoc, kekulize, kekulizeCount, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
 })();
