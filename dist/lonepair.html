@@ -2482,11 +2482,11 @@ const FORMATS = (()=>{
     const d=d0, ix=buildIndex(d), st=S(d); let nid=1; const id=()=>String(nid++);
     const colors=[]; const colorIdx=c=>{ if (!c || /^#0{3}(0{3})?$/i.test(c)) return undefined; let i=colors.indexOf(c.toLowerCase()); if (i<0){ colors.push(c.toLowerCase()); i=colors.length-1; } return String(i+4); };
     const fs=st.fontSize, page=E('page',{id:id()}), objs=[];
-    const fragOf=new Map();
+    const fragOf=new Map(), allNodes=new Map(), bondId=new Map(); // our atom and bond ids -> CDX ids, for bracketedgroup
     for (const comp of components(d,ix)){
       const fr=E('fragment',{id:id()}), nodeId=new Map();
       for (const aid of comp){ const a=ix.atom.get(aid), k=kindOf(a.el), lb=layoutLabel(d,ix,a), n=E('n',{id:id(), p:`${num(a.x)} ${num(a.y)}`}), afs=a.size||fs;
-        nodeId.set(aid,n.attrs.id); fr.children.push(n);
+        nodeId.set(aid,n.attrs.id); allNodes.set(aid,n.attrs.id); fr.children.push(n);
         const right = lb.visible && lb.items.length && lb.items[0].x+0.01 < a.x - tw(a.el[0],afs,st.fontWeight)/2 - 0.5; // label reads leftward
         const label=txt=>{ const just=right?'Right':'Left'; const ch=a.el[0], w=tw(right? txt[txt.length-1]:ch,afs,st.fontWeight);
           n.children.push(E('t',{p:`${num(right? a.x+w/2 : a.x-w/2)} ${num(a.y+afs*0.36)}`, LabelJustification:just, Justification:right?'Right':undefined, LabelAlignment:right?'Right':undefined},
@@ -2511,7 +2511,7 @@ const FORMATS = (()=>{
         } else { n.attrs.NodeType='GenericNickname'; n.attrs.GenericNickname=plainText(a.el); label(a.el); }
       }
       for (const b of d.bonds){ if (!nodeId.has(b.a)||!nodeId.has(b.b)) continue;
-        const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)};
+        const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)}; bondId.set(b.id, at.id);
         if (b.kind) at.Order=b.kind==='hbond'?'hydrogen':'dative';
         else if (b.order>1) at.Order=String(b.order);
         if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold'}[b.stereo];
@@ -2527,8 +2527,15 @@ const FORMATS = (()=>{
       const el=E('t',{id:id(), p:`${num(x)} ${num(y)}`, BoundingBox:`${num(t.x-m.w/2)} ${num(t.y-m.h/2)} ${num(t.x+m.w/2)} ${num(t.y+m.h/2)}`, Justification:{left:'Left',right:'Right',center:'Center'}[al], InterpretChemically:'no'}, runs);
       textIds.set(t, el.attrs.id); objs.push(el); }
     for (const q of d.pluses) objs.push(E('graphic',{id:id(), BoundingBox:`${num(q.x)} ${num(q.y+3.75)} ${num(q.x)} ${num(q.y-3.75)}`, GraphicType:'Symbol', SymbolType:'Plus', color:colorIdx(q.color)}));
+    // brackets as ChemDraw writes them: two half-brackets (vertical lines; the right one drawn top to bottom, the left one bottom
+    // to top), linked by a bracketedgroup that also lists the nodes and bonds inside
     for (const q of d.brackets||[]){ const g=bracketGeom(d,q);
-      objs.push(E('graphic',{id:id(), BoundingBox:`${num(g.x0)} ${num(g.y0)} ${num(g.x1)} ${num(g.y1)}`, GraphicType:'Bracket', BracketType:BRACKET_CDX[q.type], color:colorIdx(q.color)}));
+      const half=(x,ya,yb)=>E('graphic',{id:id(), BoundingBox:`${num(x)} ${num(ya)} ${num(x)} ${num(yb)}`, GraphicType:'Bracket', BracketType:HALF_CDX[q.type], color:colorIdx(q.color)});
+      const R=half(g.x1,g.y0,g.y1), Lh=half(g.x0,g.y1,g.y0); objs.push(R, Lh);
+      const inside=a=>a.x>=g.x0 && a.x<=g.x1 && a.y>=g.y0 && a.y<=g.y1;
+      const ins=new Set(d.atoms.filter(a=>allNodes.has(a.id) && inside(a)).map(a=>a.id));
+      const enclosed=[...[...ins].map(a=>allNodes.get(a)), ...d.bonds.filter(b=>bondId.has(b.id) && ins.has(b.a) && ins.has(b.b)).map(b=>bondId.get(b.id))];
+      objs.push(E('bracketedgroup',{id:id(), BracketedObjectIDs: enclosed.length? enclosed.join(' ') : undefined},[E('bracketattachment',{id:id(), GraphicID:R.attrs.id}), E('bracketattachment',{id:id(), GraphicID:Lh.attrs.id})]));
       for (const [txt,y] of [[q.sup,g.supY],[q.sub,g.subY]]) if (txt){ const s=bracketText(txt), w=tw(s,g.fs);
         objs.push(E('t',{id:id(), p:`${num(g.lx)} ${num(y)}`, BoundingBox:`${num(g.lx)} ${num(y-g.fs*0.75)} ${num(g.lx+w)} ${num(y+g.fs*0.2)}`, InterpretChemically:'no'},
           [E('s',{font:'3',size:num(g.fs),face:'0',color:colorIdx(q.color)},[],s)])); } }

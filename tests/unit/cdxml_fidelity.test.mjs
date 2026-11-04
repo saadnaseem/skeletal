@@ -76,3 +76,47 @@ test('CON-003 whole pairs from an older Lone Pair file open as before', () => {
   const r = F.read('cdxml', cdxml(frag + `<graphic id="9" BoundingBox="70 280 104 320" GraphicType="Bracket" BracketType="SquarePair"/>`));
   same(r.brackets.map(q => q.type), ['square']); assert.equal(r.skipped, undefined);
 });
+
+// ---------- FR-005: brackets are saved as ChemDraw writes them ----------
+import { docFromSmiles } from './load.mjs';
+function bracketDoc(){
+  const d = docFromSmiles(get, 'C[N+](C)(C)C');
+  const xs = d.atoms.map(a => a.x), ys = d.atoms.map(a => a.y), cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  d.brackets = [
+    { id: 900, type: 'square', x: cx, y: cy, w: 60, h: 56, sup: '2–' },
+    { id: 901, type: 'curly', x: cx, y: cy, w: 90, h: 80, sub: 'n' },
+    { id: 902, type: 'round', x: cx + 150, y: cy, w: 40, h: 30, sup: '‡' },
+  ];
+  d.nid = 903; return d;
+}
+
+test('FR-005 each bracket is written as two half-brackets and a bracketedgroup that links them', () => {
+  const x = F.write('cdxml', bracketDoc()), tree = F._xmlParse(x);
+  const all = []; (function walk(n){ all.push(n); n.children.forEach(walk); })(tree);
+  const halves = all.filter(n => n.name === 'graphic' && n.attrs.GraphicType === 'Bracket');
+  same(halves.map(n => n.attrs.BracketType), ['Square', 'Square', 'Curly', 'Curly', 'Round', 'Round']);
+  for (const h of halves){ const b = h.attrs.BoundingBox.split(' ').map(Number); assert.equal(b[0], b[2], 'a half is a vertical line'); }
+  const groups = all.filter(n => n.name === 'bracketedgroup');
+  assert.equal(groups.length, 3);
+  const ids = new Set(halves.map(h => h.attrs.id));
+  for (const g of groups){ const at = g.children.filter(c => c.name === 'bracketattachment').map(c => c.attrs.GraphicID); assert.equal(at.length, 2); assert.ok(at.every(i => ids.has(i))); }
+  // the square bracket encloses the whole ion: its group lists the ion's nodes and bonds
+  const enclosed = groups[0].attrs.BracketedObjectIDs.split(' ');
+  const nodes = all.filter(n => n.name === 'n').map(n => n.attrs.id), bonds = all.filter(n => n.name === 'b').map(n => n.attrs.id);
+  assert.equal(enclosed.length, nodes.length + bonds.length);
+  // right half drawn top to bottom, left half bottom to top, as ChemDraw does
+  const [r, l] = halves.slice(0, 2).map(h => h.attrs.BoundingBox.split(' ').map(Number));
+  assert.ok(r[0] > l[0] && r[1] < r[3] && l[1] > l[3]);
+});
+
+test('FR-005 brackets, nested ones included, come back the same through CDXML and CDX', () => {
+  const d = bracketDoc();
+  for (const f of ['cdxml', 'cdx']){
+    const back = F.read(f, F.write(f, d));
+    assert.equal(back.skipped, undefined, f);
+    same(back.brackets.map(q => q.type), ['square', 'curly', 'round'], f);
+    const k = back.brackets[0].w / 60; // the reader rescales; proportions stay
+    for (const [i, q] of d.brackets.entries()){ near(back.brackets[i].w / k, q.w, `${f} w ${i}`); near(back.brackets[i].h / k, q.h, `${f} h ${i}`); }
+    if (f === 'cdxml') same(back.brackets.map(q => [q.sup || '', q.sub || '']), [['2–', ''], ['', 'n'], ['‡', '']], f);
+  }
+});

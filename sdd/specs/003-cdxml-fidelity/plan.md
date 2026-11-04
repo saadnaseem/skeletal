@@ -73,6 +73,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Acceptance:** the tests pass; all existing format tests pass.
 - **Verify:** `npm test`
 - **Depends on:** TG-01
+- [x] complete (2026-11-04): `npm test` 218 pass / 0 fail; e2e bracket and import/export files pass. `LipSize` is not written (ChemDraw's unit for it is unclear; ChemDraw uses its default). The existing unit and e2e brackets tests now expect half-brackets instead of `SquarePair`.
 
 ### TG-03: dashed and hashed bond styles   [M]   [satisfies: FR-006, FR-007, FR-008, CON-004]
 - **Objective:** two new single-bond styles that draw, save and round-trip through ChemDraw.

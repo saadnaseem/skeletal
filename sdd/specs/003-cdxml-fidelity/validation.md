@@ -18,7 +18,7 @@
 | FR-002 | facing half-brackets pair without a group | TG-01 | CK-02 | automated | ✅ | `FR-002 facing halves…` (also within 1 pt), `FR-002, FR-003 halves of different kinds or heights…` pass |
 | FR-003 | unpaired halves still counted | TG-01 | CK-02 | automated | ✅ | `FR-003 a lone curly brace is counted…`; existing `single brackets are reported` test unchanged and passing |
 | FR-004 | corner text attaches to pairs | TG-01 | CK-03 | automated | ✅ | `FR-004 a charge at the top right and a count at the bottom right…` pass |
-| FR-005 | brackets save as halves + group | TG-02 | CK-04, M-5 | automated + optional manual | ⬜ | |
+| FR-005 | brackets save as halves + group | TG-02 | CK-04, M-5 | automated + optional manual | ✅ (ChemDraw check pending) | `FR-005 each bracket is written as two half-brackets and a bracketedgroup…`, `FR-005 brackets, nested ones included, come back the same through CDXML and CDX`, `brackets and their labels round-trip…` pass |
 | FR-006 | dashed and hashed bond tool styles, single for chemistry | TG-03 | CK-05, CK-07 | automated | ⬜ | |
 | FR-007 | `Dash`/`Hash` read and written | TG-03 | CK-06 | automated | ⬜ | |
 | FR-008 | drawn in every export; plain single elsewhere | TG-03 | CK-05, CK-07, M-2 | automated + manual | ⬜ | |

@@ -85,7 +85,7 @@ def test_brackets_survive_save_reopen_chemdraw_and_exports(page):
     page.evaluate(f"setDoc(normalizeDoc(JSON.parse({json.dumps(saved)}))); changed()")
     assert bracket(page)["sup"] == "+"
     cdxml = page.evaluate("FORMATS.write('cdxml', doc)")
-    assert 'BracketType="SquarePair"' in cdxml
+    assert 'BracketType="Square"' in cdxml and "<bracketedgroup" in cdxml  # half-brackets linked by a group, as ChemDraw writes them (spec 003)
     back = page.evaluate("(t=>{ const d=FORMATS.read('cdxml',t); return d.brackets.map(q=>[q.type,q.sup,q.sub]); })", cdxml)
     assert back == [["square", "+", "n"]]
     # PDF and PNG are drawn from the same picture
