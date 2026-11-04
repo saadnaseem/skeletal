@@ -93,3 +93,12 @@ test('a parser message without a position gets no reason rather than "character 
   assert.equal(smilesReason('CC)C', new Error("SmilesParser: Closing ')' without opening counterpart.")), '');
   assert.match(smilesReason('C1CC', new Error('SmilesParser: dangling ring closure: 1')), /^Ring bond 1 /);
 });
+
+// Value: protects=the word check finishes quickly on a long run that splits two ways (CoCo… is Co or C+o); fails_when=it is a backtracking
+// regex again ('Co'*24+'X' took 420 ms, doubling per pair); why_new=no long-run input was tested; seam=none; no_claim=other slow paths
+test('a long letter run that splits two ways is checked in linear time', () => {
+  const t = Date.now();
+  assert.equal(reason('Co'.repeat(2000) + 'X'), '');
+  // gstack-timing-ok: an exponential check takes hours on this input and a linear one about 1 ms, so a 1 s bound cannot flake
+  assert.ok(Date.now() - t < 1000);
+});

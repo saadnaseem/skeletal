@@ -907,12 +907,18 @@ function inventedRadicals(smi, mol){
 // Text that reads as a word gets no reason, so the Insert dialog can still look it up as a compound name: a run of three or more
 // lowercase letters that aren't aromatic atoms (caffeine, 2-butanol), or of three or more letters that can't be split into element
 // symbols (ASPIRIN, MeOH, a PDB file's HEADER). Positions in OCL's messages are 0-based; the user is told 1-based.
-const SMILES_SYMBOLS = new RegExp('^(?:'+[...ELEMENTS, 'se', 'as', 'b', 'c', 'n', 'o', 'p', 's'].sort((x,y)=>y.length-x.length).join('|')+')+$');
+const SMILES_SYMBOLS = new Set([...ELEMENTS, 'se', 'as', 'b', 'c', 'n', 'o', 'p', 's']);
+// whether a letter run splits into those symbols. A scan of reachable positions, linear in the run: a regex alternation would backtrack
+// exponentially on runs that split two ways (Co is Co, or C then aromatic o)
+function splitsIntoSymbols(w){
+  const ok=[true]; for (let i=1;i<=w.length;i++) ok[i]=(ok[i-1] && SMILES_SYMBOLS.has(w[i-1])) || (i>1 && ok[i-2] && SMILES_SYMBOLS.has(w.slice(i-2,i)));
+  return ok[w.length];
+}
 const ORGANIC = 'Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings)';
 function smilesReason(smi, err){
   const m=/SmilesParser: (.*)/.exec(String(err && err.message || '')); if (!m) return '';
   const s=String(smi), msg=m[1], at=i=>`at character ${i+1}`;
-  if (/[a-z]{3,}/.test(s.replace(/[bcnops]{3,}/g,'')) || (s.match(/[A-Za-z]{3,}/g)||[]).some(w=>!SMILES_SYMBOLS.test(w))) return '';
+  if (/[a-z]{3,}/.test(s.replace(/[bcnops]{3,}/g,'')) || (s.match(/[A-Za-z]{3,}/g)||[]).some(w=>!splitsIntoSymbols(w))) return '';
   let r;
   if ((r=/dangling ring closure: (\d+)/.exec(msg))) return `Ring bond ${r[1]} is opened but never closed. Each ring number appears twice, once where the ring opens and once where it closes, as in cyclohexane: C1CCCCC1.`;
   // every other message names a position. smilesMol parses [H] as [1H], one character longer, so map it back to the text as written
