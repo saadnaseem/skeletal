@@ -1,6 +1,6 @@
 # Requirements — 003-cdxml-fidelity
 
-> Status: draft · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
 > The **what & why**. Behaviour and constraints only.
 
 ## 1. Summary
@@ -89,9 +89,8 @@ As a chemist sending a Lone Pair drawing to a colleague who uses ChemDraw, I wan
 - Checking the saved brackets in ChemDraw itself, which isn't available here (see open questions).
 
 ## 11. Open questions
+Resolved at the gate (user, 2026-11-04):
+- Roadmap item 4 is rescoped: arrows pinned by tests only, ChemDraw bracket pairing added.
+- FR-006: dashed and hashed are full drawable bond styles.
 
-| Question | Owner | Needed by |
-|---|---|---|
-| Approve rescoping roadmap item 4: arrows pinned by tests only (no change), ChemDraw bracket pairing added? | user | this gate |
-| FR-006: add dashed and hashed as drawable bond styles (recommended), or only keep them when a ChemDraw file is opened and saved again? | user | this gate |
-| FR-005 can't be checked in ChemDraw here. If you have ChemDraw, opening one saved file at the end would confirm it. | user | before merge (optional) |
+Still open: FR-005 can't be checked in ChemDraw here. If you have ChemDraw, opening one saved file before merge would confirm it (optional).
