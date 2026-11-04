@@ -23,7 +23,7 @@
 | FR-006 | real exceptions accepted | TG-01, TG-02 | CK-01, CK-09 | automated | ✅ | CK-01 (unit, 11 compounds) + `test_FR_006_valid_inputs_insert_without_prompt` ×11 pass |
 | FR-007 | reaction checked as a whole | TG-02 | CK-06 | automated | ✅ | `test_FR_007_reaction_refused_as_a_whole` pass |
 | FR-008 | one undo removes it | TG-02 | CK-05 | automated | ✅ | `test_FR_003_008_insert_anyway_then_undo` pass |
-| FR-009 | document files open with a count | TG-04 | CK-10 | automated | ⬜ | |
+| FR-009 | document files open with a count | TG-04 | CK-10 | automated | ✅ | `test_FR_009_cdxml_opens_with_count` pass (and no count for a valid CDXML) |
 | FR-010 | templates, examples, PubChem checked | TG-02 | CK-11 | automated | ✅ | `test_FR_010_pubchem_result_checked`, `test_FR_010_templates_and_examples_still_insert` pass |
 | NFR-001 | < 20 ms for 200 atoms | TG-01 | CK-02 | measured | ✅ | median 0.44 ms, max 1.34 ms over 20 runs (node) |
 | NFR-002 | no regression | TG-05 | CK-12 | automated ×3 | ⬜ | |

@@ -140,3 +140,36 @@ def test_FR_005_mol_and_sdf_file_open_dialog(page, tmp_path, ext):
     g = tmp_path / "good.mol"; g.write_text(good)  # a valid file opens as before
     open_file(page, g)
     assert atoms(page) == 3 and not dialog_open(page)
+
+
+# a ChemDraw drawing of a carbon with five carbon neighbours (as in an SN2 transition state drawn with plain bonds)
+FIVE_BOND_CDXML = """<?xml version="1.0"?><CDXML BondLength="14.4"><page><fragment>
+<n id="1" p="100 100"/><n id="2" p="114.4 100"/><n id="3" p="85.6 100"/><n id="4" p="100 85.6"/><n id="5" p="100 114.4"/><n id="6" p="110 110"/>
+<b id="11" B="1" E="2"/><b id="12" B="1" E="3"/><b id="13" B="1" E="4"/><b id="14" B="1" E="5"/><b id="15" B="1" E="6"/>
+</fragment></page></CDXML>"""
+
+
+def test_FR_009_cdxml_opens_with_count(page, tmp_path):
+    f = tmp_path / "sn2.cdxml"; f.write_text(FIVE_BOND_CDXML)
+    open_file(page, f)
+    assert atoms(page) == 6 and not dialog_open(page)  # opened, not refused
+    toast = page.inner_text("#toast")
+    assert "Opened sn2.cdxml" in toast and "1 atom has too many bonds" in toast
+    assert page.is_visible("#valWarn")
+    page.evaluate(RESET)
+    page.evaluate("([t,n])=>insertForeign(FORMATS.read('cdxml', t), n)", [FIVE_BOND_CDXML.replace('<n id="6" p="110 110"/>', '').replace('<b id="15" B="1" E="6"/>', ''), "ok.cdxml"])
+    assert "too many bonds" not in page.inner_text("#toast") and page.is_hidden("#valWarn")
+
+
+def screen(page, x, y):
+    return page.evaluate("([x,y])=>{ const r=cv.getBoundingClientRect(); return [r.left+view.ox+x*view.z, r.top+view.oy+y*view.z]; }", [x, y])
+
+
+def test_CON_002_drawing_sixth_bond_only_warns(page):
+    page.evaluate(RESET + " tryLoadText('CC'); sel.clear(); fit(); setTool('bond'); tool.bond={order:1,stereo:'none'}; render();")
+    c = page.evaluate("doc.atoms[0].id")
+    for _ in range(4):  # 1 bond to start, 4 clicks: 5 bonds on one carbon, drawn with the mouse
+        page.mouse.click(*screen(page, *page.evaluate(f"[ix.atom.get({c}).x, ix.atom.get({c}).y]")))
+    assert page.evaluate(f"ix.adj.get({c}).length") == 5
+    assert page.is_visible("#valWarn") and "C has 5 bonds" in page.inner_text("#valWarn")
+    assert not dialog_open(page)

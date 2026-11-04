@@ -72,7 +72,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Acceptance:** the file opens, the toast includes the count, and the red warning is visible.
 - **Verify:** `npm run build && npm run test:e2e`
 - **Depends on:** TG-01
-- [ ] complete
+- [x] complete (2026-11-03): unit 196 pass; e2e 764 passed, 3 skipped, 7 xfailed, 0 failed (includes CK-13 hand-drawing test)
 
 ### TG-05: docs, full regression and preview QA   [S]   [satisfies: NFR-002, NFR-003, CON-002, CON-003]
 - **Objective:** prove nothing else broke, and that the messages read well.

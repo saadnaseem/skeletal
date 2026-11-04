@@ -4508,7 +4508,10 @@ function insertForeign(r, name){
   if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
   else { pushUndo(); d.nid=Math.max(d.nid,doc.nid); setDoc({...d, page:doc.page}); sel.clear(); changed(); fit(); }
   const left=Object.entries(skipped||{}).map(([k,n])=>n>1? `${n} ${k}s` : `1 ${k}`);
-  toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
+  // a document file opens even with too many bonds on an atom (it may be a transition state), but says so
+  const vix=buildIndex({atoms:d.atoms, bonds:d.bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), nBad=d.atoms.filter(a=>valenceError(a,vix)).length;
+  const bad=nBad ? `. ${nBad} atom${nBad>1?'s have':' has'} too many bonds (shown in red)` : '';
+  toast('Opened '+(name||'drawing')+bad+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad? 6000 : undefined);
 }
 // force: insert even with too many bonds (only from the user's Insert anyway)
 function tryLoadText(txt, quiet, force){
