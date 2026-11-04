@@ -53,8 +53,9 @@ test('a "]" that has a "[" before it is not called unopened', () => {
   assert.match(reason('C[13]'), /brackets at character 2 have no element/);
 });
 
-test('H, K and other one-letter elements outside the organic set are told to go in brackets', () => {
-  assert.match(reason('HCl'), /“H” has to be written in brackets, as in \[H\]/);
+test('K and other one-letter elements outside the organic set are told to go in brackets; H is told it is implied', () => {
+  // Value: protects=bare H gets advice that works (hydrogens are implied), not [H]2O; fails_when=H is handled like K; why_new=H2O/NH3 got [H] advice; seam=none; no_claim=none beyond protects
+  for (const s of ['HCl', 'H2O', 'NH3']) assert.match(reason(s), /^Hydrogens are implied in SMILES/, s);
   assert.match(reason('CK'), /“K” has to be written in brackets/);
   assert.match(reason('CL'), /“L” at character 2 is not an atom/);
 });
@@ -68,4 +69,27 @@ test('an explicit [H] before the fault does not shift the position', () => {
   assert.match(viaApp('[H]C]C'), /“\]” at character 5/);
   assert.match(viaApp('[H]CNaCl'), /“Na” has to be written in brackets/);
   assert.match(viaApp('[H]C1CC'), /^Ring bond 1 /);
+});
+
+// Value: protects=names in capitals or mixed case (ASPIRIN, MeOH) and a PDB HEADER line get no SMILES reason; fails_when=only lowercase
+// runs are taken as words; why_new=every word case was lowercase; seam=none; no_claim=which words PubChem knows
+test('capitalised words and abbreviations read as words, not broken SMILES', () => {
+  for (const s of ['ASPIRIN', 'BENZENE', 'THF', 'DMSO', 'MeOH', 'EtOAc', 'The', 'HEADER', 'HETATM']) assert.equal(reason(s), '', s);
+  for (const s of ['CCCCCCl)', 'ClCCCl)', 'OCCN1CC']) assert.notEqual(reason(s), '', s); // runs of organic atoms are still SMILES
+});
+
+// Value: protects=the other common parser faults get a reason; fails_when=their OCL messages are not mapped; why_new=Si, charges outside
+// brackets, stray characters, a trailing dot and an unknown pair fell back to the plain message; seam=none; no_claim=none beyond protects
+test('aromatic-letter, charge, stray-character, trailing-dot and unknown-pair faults are named', () => {
+  assert.match(reason('SiH4'), /“Si” has to be written in brackets/);
+  assert.match(reason('Cl+'), /“\+” at character 3 is outside brackets/);
+  assert.match(reason("C'C"), /“'” at character 2 can’t be used/);
+  assert.match(reason('[Cx]'), /“x” at character 3 doesn’t belong inside the brackets/);
+  assert.match(reason('C.'), /ends with “\.”, which separates two structures/);
+  assert.match(reason('Uu'), /“Uu” at character 1 is not an element/);
+});
+
+test('a parser message without a position gets no reason rather than "character NaN"', () => {
+  assert.equal(smilesReason('CC)C', new Error("SmilesParser: Closing ')' without opening counterpart.")), '');
+  assert.match(smilesReason('C1CC', new Error('SmilesParser: dangling ring closure: 1')), /^Ring bond 1 /);
 });

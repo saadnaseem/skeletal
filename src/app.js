@@ -2116,6 +2116,7 @@ function openSmilesDialog(prefill, err){
     const why = loadErrorKind==='syntax' && !/\s/.test(v) ? ' '+loadError : '';
     if (loadErrorKind==='syntax' && !why) loadError='';
     if (loadError && !why){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
+    if (why && /(?<!-)>/.test(v)){ $('#smErr').textContent='Not a valid reaction SMILES.'+why; return; } // a reaction is never a compound name
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile.'+(why||' Check brackets and ring numbers.'); return; }
     $('#smErr').textContent=`Not a valid SMILES.${why} Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
     try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }

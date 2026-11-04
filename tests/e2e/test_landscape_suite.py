@@ -335,9 +335,26 @@ def test_insert_dialog_says_when_pubchem_structure_cannot_be_drawn(lp):
     assert msg.startswith("PubChem found “somename”, but its structure couldn’t be drawn.") and lp.evaluate("doc.atoms.length") == 0, msg
 
 
+def test_insert_dialog_does_not_look_up_a_broken_reaction(lp):
+    # Value: protects=reaction text is never sent to PubChem as a name; fails_when=the syntax branch looks up everything; why_new=only
+    # single structures were typed in the dialog; seam=none; no_claim=real PubChem (routed)
+    msg, asked = _insert(lp, "CC>>C1CC", "none")
+    assert not asked and msg.startswith("Not a valid reaction SMILES. In “C1CC”: Ring bond 1"), msg
+
+
 def test_insert_dialog_keeps_the_name_message_for_a_word(lp):
     msg, _ = _insert(lp, "notacompound", "none")
     assert msg == "Not a valid SMILES, and PubChem has no compound named “notacompound”."
+
+
+def test_file_open_of_a_pdb_file_keeps_the_plain_message(lp, tmp_path):
+    # Value: protects=a non-SMILES text file (a PDB starting HEADER) isn't diagnosed as a broken SMILES; fails_when=the word check sees only
+    # lowercase; why_new=File > Open was tested only with a .smi; seam=none; no_claim=none beyond protects
+    f = tmp_path / "x.pdb"; f.write_text("HEADER    PROTEIN\nATOM      1  N   ALA A   1\n")
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''")
+    lp.set_input_files("#fileIn", str(f))
+    lp.wait_for_function("document.querySelector('#toast').textContent")
+    assert lp.inner_text("#toast") == "Could not read this file"
 
 
 def test_file_open_of_an_invalid_smiles_says_why(lp, tmp_path):
