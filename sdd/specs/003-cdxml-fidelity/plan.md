@@ -101,6 +101,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
   5. Optional, for the user: open one CDXML saved from the preview in ChemDraw (FR-005).
 - **Acceptance:** everything in `validation.md` is ticked.
 - **Depends on:** TG-01 … TG-04
+- [x] complete (2026-11-04): Chromium bar ×3 green; WebKit can't launch locally (logged); preview checks pass; PR #39, CI 3/3
 
 ## 6. Coverage check
 | Requirement | Task group(s) |

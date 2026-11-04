@@ -1,15 +1,15 @@
 # Validation — 003-cdxml-fidelity
 
-> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
+> Status: done, in review (PR #39) · Last updated: 2026-11-04
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
-- [ ] TG-01 … TG-05 in `plan.md` ticked.
-- [ ] Every row of §2 has ✅ (or ⚠ with a reason) and evidence.
-- [ ] The full bar passes **3 times in a row** locally, plus CI on the PR.
-- [ ] Numbers are no worse than `sdd/product/baseline.md`: unit 209 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
-- [ ] Manual checks M-1 … M-4 on the PR's Cloudflare preview pass.
-- [ ] `requirements.md` and `plan.md` describe what was built; deviations are in `sdd/product/decisions.md`.
+- [x] TG-01 … TG-05 in `plan.md` ticked.
+- [x] Every row of §2 has ✅ (or ⚠ with a reason) and evidence.
+- [x] The full bar passes **3 times in a row** locally, plus CI on the PR.
+- [x] Numbers are no worse than `sdd/product/baseline.md`: unit 209 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
+- [x] Manual checks M-1 … M-4 on the PR's Cloudflare preview pass (M-3 by `test_M3_…`; M-5 in ChemDraw is optional and not done).
+- [x] `requirements.md` and `plan.md` describe what was built; deviations are in `sdd/product/decisions.md`.
 
 ## 2. Traceability matrix
 | ID | Requirement (short) | TG | Check | Type | Verdict | Evidence |
@@ -21,14 +21,14 @@
 | FR-005 | brackets save as halves + group | TG-02 | CK-04, M-5 | automated + optional manual | ✅ (ChemDraw check pending) | `FR-005 each bracket is written as two half-brackets and a bracketedgroup…`, `FR-005 brackets, nested ones included, come back the same through CDXML and CDX`, `brackets and their labels round-trip…` pass |
 | FR-006 | dashed and hashed bond tool styles, single for chemistry | TG-03 | CK-05, CK-07 | automated | ✅ | `test_FR_006_draw_save_reopen_undo` [dashed, hashed] (real mouse drag, formula C2H6), `test_FR_006_pressing_2_…`, unit `FR-006, FR-008 … single bonds for formula, SMILES and molfile` pass |
 | FR-007 | `Dash`/`Hash` read and written | TG-03 | CK-06 | automated | ✅ | unit `FR-007 ChemDraw Dash and Hash bonds …` (CDXML and CDX), `test_FR_007_008_chemdraw_round_trip_and_exports` pass |
-| FR-008 | drawn in every export; plain single elsewhere | TG-03 | CK-05, CK-07, M-2 | automated + manual | ⬜ | |
+| FR-008 | drawn in every export; plain single elsewhere | TG-03 | CK-05, CK-07, M-2 | automated + manual | ✅ | unit SVG test (dash lengths, even marks), `test_FR_007_008_chemdraw_round_trip_and_exports` (molfile single bond, PDF nothing lost, PNG) pass |
 | FR-009 | arrow direction pinned | TG-04 | CK-08 | automated | ✅ | `FR-009 a modern arrow and the older graphic it supersedes…`, `FR-009 an older file with only the graphic form…` (both directions) pass; values copied from a real file |
-| NFR-001 | no regression | TG-05 | CK-09 | automated ×3 | ⬜ | |
+| NFR-001 | no regression | TG-05 | CK-09 | automated ×3 | ⚠ | Chromium ×3: unit 224/0, e2e 783 passed / 3 skipped / 7 xfailed / 0 failed, validate unchanged (¹H 0.08, ¹³C 0.73, pKa 0.40); CI 3/3 pass. WebKit still can't launch on this Mac (logged in spec 001), so not run |
 | NFR-002 | real files: 7 pairs, 1 left out | TG-01 | CK-10 | local | ✅ | 4 files: 2 + 3 + 1 + 1 pairs (6 square, 1 curly); 1 bracket left out (the lone curly brace); atoms 852/1664/917/324, arrows 53/149/54/36, texts 54/98/48/26 unchanged |
-| NFR-003 | styles clear at normal zoom and in exports | TG-05 | M-1, M-2 | manual | ⬜ | |
-| CON-001 | user's files only read locally | all | review | review | ⬜ | |
-| CON-002 | offline, no new dependencies | TG-05 | CK-11 | automated | ⬜ | |
-| CON-003 | wedges, wavy, bold, arrows, `SquarePair` unchanged | TG-01, TG-04 | CK-02b, CK-08, existing tests | automated | ⬜ | |
+| NFR-003 | styles clear at normal zoom and in exports | TG-05 | M-1, M-2 | manual | ✅ | Preview sdd-roadmap-after-002-lone-pair.saad455.workers.dev (gstack browse): single, dashed, hashed, hashed wedge, wedge and H-bond side by side at 115% and 345%, light and dark theme: dashed has long dashes, the H-bond short dots; hashed marks are all one length, the hashed wedge's widen. Exports covered by `test_FR_007_008_…` (PDF with nothing lost, PNG) |
+| CON-001 | user's files only read locally | all | review | review | ✅ | read by scratchpad scripts only; fixtures hand-written (one arrow's coordinates reused as numbers) |
+| CON-002 | offline, no new dependencies | TG-05 | CK-11 | automated | ✅ | `git diff origin/main -- package.json package-lock.json` empty |
+| CON-003 | wedges, wavy, bold, arrows, `SquarePair` unchanged | TG-01, TG-04 | CK-02b, CK-08, existing tests | automated | ✅ | `CON-003 whole pairs …`, FR-009 tests, and the existing import/export suites pass |
 | CON-004 | old projects open; unknown style falls back | TG-03 | CK-05b | automated | ✅ | `CON-004 the sanitizer keeps dashed and hashed; an unknown style still falls back to none` pass |
 
 Verdicts: ⬜ not run · ✅ pass · ❌ fail · ⚠ accepted exception (with reason).
