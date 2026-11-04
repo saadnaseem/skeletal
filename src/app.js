@@ -1048,7 +1048,7 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
 // a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const {skipped, unkekulized, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
   const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
   if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
@@ -1057,7 +1057,9 @@ function insertForeign(r, name){
   // a document file opens even with too many bonds on an atom (it may be a transition state), but says so
   const vix=buildIndex({atoms:d.atoms, bonds:d.bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), nBad=d.atoms.filter(a=>valenceError(a,vix)).length;
   const bad=nBad ? `. ${nBad} atom${nBad>1?'s have':' has'} too many bonds (shown in red)` : '';
-  toast('Opened '+(name||'drawing')+bad+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad? 6000 : undefined);
+  // aromatic rings the file draws that can't alternate are drawn with single bonds, so one atom has an extra H: say so
+  const unk=unkekulized ? `. ${unkekulized} aromatic ring${unkekulized>1?'s':''} couldn’t be given alternating double bonds; a ring N–H may be missing its H` : '';
+  toast('Opened '+(name||'drawing')+bad+unk+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad||unk? 6000 : undefined);
 }
 // force: insert even with too many bonds (only from the user's Insert anyway)
 function tryLoadText(txt, quiet, force){
@@ -1066,11 +1068,14 @@ function tryLoadText(txt, quiet, force){
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
     if (/M\s+END/.test(txt) || /V2000|V3000/.test(txt)){
-      const {mol,asDrawn}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
+      const {mol,asDrawn,hcount}=molfileMol(txt); if (!mol.getAllAtoms()) throw 0;
       // keep the file's own coordinates if present
       let hasXY=false; for(let i=0;i<mol.getAllAtoms();i++) if (mol.getAtomX(i)||mol.getAtomY(i)) hasXY=true;
       if (!hasXY) mol.inventCoordinates();
-      const parts=[{kind:'frag',f:molToFragment(mol)}]; if (!force) checkValence(parts);
+      const f=molToFragment(mol);
+      // aromatic (type-4) bonds -> alternating double bonds; a ring that can't alternate is refused, as for SMILES (no Insert anyway)
+      if (kekulizeFragment(f, hcount)){ const e=new Error('This molfile has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H needs its H: draw it, or set the N’s hydrogen count to 1.'); e.user=true; throw e; }
+      const parts=[{kind:'frag',f}]; if (!force) checkValence(parts);
       insertFragments(parts);
       if (asDrawn) toast('Stereo read as drawn, although the file’s chiral flag says racemic. Right-click a stereocentre to mark it &1.', 6000);
       return true;
