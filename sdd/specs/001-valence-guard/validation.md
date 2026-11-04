@@ -4,7 +4,7 @@
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
-- [ ] TG-01 … TG-05 in `plan.md` ticked.
+- [x] TG-01 … TG-05 in `plan.md` ticked.
 - [ ] Every row of §2 has ✅ with pasted evidence (command output, test name or screenshot path).
 - [ ] The full bar (§7) passes **3 times in a row** locally, plus CI on the PR.
 - [ ] Numbers are no worse than `sdd/product/baseline.md`: unit count ≥ 171 + new, e2e 0 failed, validate MAE ¹H ≤ 0.08 and ¹³C ≤ 0.73.
@@ -27,9 +27,9 @@
 | FR-010 | templates, examples, PubChem checked | TG-02 | CK-11 | automated | ✅ | `test_FR_010_pubchem_result_checked`, `test_FR_010_templates_and_examples_still_insert` pass |
 | NFR-001 | < 20 ms for 200 atoms | TG-01 | CK-02 | measured | ✅ | median 0.44 ms, max 1.34 ms over 20 runs (node) |
 | NFR-002 | no regression | TG-05 | CK-12 | automated ×3 | ⚠ | Chromium ×3: unit 196/0, e2e 764 passed / 3 skipped / 7 xfailed / 0 failed, validate unchanged (¹H 0.08, ¹³C 0.73, pKa 0.40). WebKit could not launch on this Mac (Playwright's macOS 14 WebKit build exits with a bus error before any test), so it is not run. Firefox once: 745 passed, 14 failed; the same 13 fail on `main` (Firefox drops `clipboardData` on a script-made paste event, plus one touch long-press test), and the 14th is the new paste test, for the same reason. |
-| NFR-003 | plain-language messages | TG-05 | M-1…M-6 | manual | ⬜ | |
+| NFR-003 | plain-language messages | TG-05 | M-1…M-6 | manual | ✅ | On the preview (sdd-roadmap-lone-pair.saad455.workers.dev, 2026-11-04, gstack browse): M-1 message reads "C has 5 bonds; at most 4. Nothing was inserted. Check the structure, or choose Insert anyway to draw it as written."; M-2 Tab reaches Insert anyway, Enter inserts, red warning click selects the carbons; M-3 paste opens the dialog prefilled; M-4 CDXML toast "Opened sn2.cdxml. 1 atom has too many bonds (shown in red)"; M-5 sixth bond only warns; M-6 at 390 px the three buttons fit, page scroll width 390. No console errors. |
 | CON-001 | same rule as red warning | TG-01 | CK-01b | automated | ✅ | `CON-001 agrees with valenceError on the inserted drawing` passes on all 16 cases |
-| CON-002 | hand drawing not blocked | TG-05 | CK-13, M-5 | automated + manual | ✅ | `test_CON_002_drawing_sixth_bond_only_warns` pass (real mouse clicks); M-5 pending on preview |
+| CON-002 | hand drawing not blocked | TG-05 | CK-13, M-5 | automated + manual | ✅ | `test_CON_002_drawing_sixth_bond_only_warns` pass (real mouse clicks); M-5 on the preview: warning only, no dialog |
 | CON-003 | offline, single file, no new deps | TG-05 | CK-14 | automated | ✅ | `git diff origin/main -- package.json package-lock.json` empty; e2e runs with network fonts blocked and PubChem stubbed |
 
 Verdicts: ⬜ not run · ✅ pass · ❌ fail · ⚠ accepted exception (with reason).
@@ -100,7 +100,7 @@ On the PR's Cloudflare preview (`https://<branch>-lone-pair.saad455.workers.dev`
 |---|---|---|---|---|
 | NFR-001 | node --test | median over 20 runs, 200 atoms | < 20 ms | 0.44 ms ✅ |
 | NFR-002 | CI + 3 local runs | failures | 0 | 0 in Chromium ×3; CI pending |
-| NFR-003 | manual M-1…M-6 | reviewer reads the messages | no jargon, says what to do | |
+| NFR-003 | manual M-1…M-6 | reviewer reads the messages | no jargon, says what to do | ✅ (owner review still to come) |
 
 ## 6. Edge-case checks
 | Case (requirements §9) | Check | Expected |
@@ -124,17 +124,17 @@ On the PR's Cloudflare preview (`https://<branch>-lone-pair.saad455.workers.dev`
 | Templates (chairs use `insertFragments` directly) | must not be checked twice or blocked | CK-11 |
 
 ## 8. Human review checklist
-- [ ] `force` is reachable only from the user's Insert anyway click (and tests), not from file contents.
-- [ ] The text shown in `#smErr` comes from `valenceError`'s `why` (element symbols and numbers only) and is set with `textContent`, so no HTML injection is possible.
-- [ ] Insert anyway is a real `<button>`, reachable by Tab and labelled.
-- [ ] No leftover debug output or TODOs; the comment style matches `src/app.js`.
-- [ ] `dist/lonepair.html` is rebuilt and committed.
+- [x] `force` is reachable only from the user's Insert anyway click (and tests), not from file contents.
+- [x] The text shown in `#smErr` comes from `valenceError`'s `why` (element symbols and numbers only) and is set with `textContent`, so no HTML injection is possible.
+- [x] Insert anyway is a real `<button>`, reachable by Tab and labelled.
+- [x] No leftover debug output or TODOs; the comment style matches `src/app.js`.
+- [x] `dist/lonepair.html` is rebuilt and committed.
 
 ## 9. Out-of-scope confirmation
-- [ ] No prompt or block while drawing by hand (CK-13).
-- [ ] `VAL`, `GROUP`, `HYPER_LIG` and `valenceError` are unchanged (`git diff` shows only the added `overValent`).
-- [ ] No OpenChemLib validity check and no RDKit added.
-- [ ] Analysis panel unchanged (the B5 xfail still xfails).
+- [x] No prompt or block while drawing by hand (CK-13).
+- [x] `VAL`, `GROUP`, `HYPER_LIG` and `valenceError` are unchanged (`git diff` shows only the added `overValent`).
+- [x] No OpenChemLib validity check and no RDKit added.
+- [x] Analysis panel unchanged (the B5 xfail still xfails).
 
 ## 10. Sign-off
 | Role | Who | Evidence needed | Date |

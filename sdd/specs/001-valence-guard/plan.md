@@ -85,7 +85,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
   5. Run gstack `/qa-only` on the branch preview.
 - **Acceptance:** everything in `validation.md` is ticked.
 - **Depends on:** TG-02, TG-03, TG-04
-- [ ] complete
+- [x] complete (2026-11-04): Chromium bar ×3 green; WebKit can't launch locally (logged); preview checks M-1…M-6 pass; PR #37
 
 ## 6. Coverage check
 | Requirement | Task group(s) |
