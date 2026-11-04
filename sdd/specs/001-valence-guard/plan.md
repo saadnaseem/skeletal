@@ -64,7 +64,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Acceptance:** the e2e paste and file tests pass (`.mol` and `.sdf` via `set_input_files`).
 - **Verify:** `npm run build && npm run test:e2e`
 - **Depends on:** TG-02
-- [ ] complete
+- [x] complete (2026-11-03): unit 196 pass; e2e 762 passed, 3 skipped, 7 xfailed, 0 failed. Also `.smi` file covered. Side effect: a refused `.sdf` now shows the specific reason (e.g. the invented-radical message) instead of 'Could not read this file', the same as other text files.
 
 ### TG-04: document files count, without refusing   [S]   [satisfies: FR-009]
 - **Objective:** `insertForeign` adds "2 atoms have too many bonds (shown in red)" to its toast.

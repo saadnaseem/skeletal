@@ -98,3 +98,45 @@ def test_FR_010_templates_and_examples_still_insert(page):
 def test_invented_radical_still_refused_without_insert_anyway(page):
     insert_via_dialog(page, "c1cccc1")
     assert "[nH]" in page.inner_text("#smErr") and page.is_hidden("#smForce") and atoms(page) == 0
+
+
+def paste(page, text):
+    page.evaluate("""t=>{ loadProject(newProject()); sel.clear(); changed();
+        const dt=new DataTransfer(); dt.setData('text/plain', t); document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true})); }""", text)
+    page.wait_for_timeout(100)
+
+
+def test_FR_004_paste_opens_dialog(page):
+    paste(page, "O(C)(C)C")
+    assert atoms(page) == 0 and dialog_open(page)
+    assert page.input_value("#smIn") == "O(C)(C)C"
+    assert "O has 3 bonds; at most 2" in page.inner_text("#smErr") and page.is_visible("#smForce")
+    page.click("#smForce")
+    assert atoms(page) == 4 and not dialog_open(page)
+    page.evaluate("closeDialog()")
+    paste(page, "CCO")  # a valid paste still goes straight in
+    assert atoms(page) == 3 and not dialog_open(page)
+
+
+def open_file(page, path):
+    page.evaluate(RESET)
+    page.set_input_files("#fileIn", str(path))
+    for _ in range(50):
+        if atoms(page) or dialog_open(page): break
+        page.wait_for_timeout(50)
+
+
+@pytest.mark.parametrize("ext", ["mol", "sdf", "smi"])
+def test_FR_005_mol_and_sdf_file_open_dialog(page, tmp_path, ext):
+    bad = page.evaluate("OCL.Molecule.fromSmiles('C(C)(C)(C)(C)C').toMolfile()")
+    good = page.evaluate("OCL.Molecule.fromSmiles('CCO').toMolfile()")
+    body = {"mol": bad, "sdf": bad + "\n$$$$\n" + good + "\n$$$$\n", "smi": "C(C)(C)(C)(C)C\n"}[ext]
+    f = tmp_path / f"bad.{ext}"; f.write_text(body)
+    open_file(page, f)
+    assert atoms(page) == 0 and dialog_open(page)
+    assert "C has 5 bonds; at most 4" in page.inner_text("#smErr") and page.is_visible("#smForce")
+    page.click("#smForce")
+    assert atoms(page) == 6 and not dialog_open(page)
+    g = tmp_path / "good.mol"; g.write_text(good)  # a valid file opens as before
+    open_file(page, g)
+    assert atoms(page) == 3 and not dialog_open(page)

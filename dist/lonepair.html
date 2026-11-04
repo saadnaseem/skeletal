@@ -4451,6 +4451,7 @@ document.addEventListener('paste', e=>{
   e.preventDefault();
   if (txt.trim()){
     if (tryLoadText(txt.trim(), true)) return;
+    if (loadErrorKind==='valence'){ openSmilesDialog(txt.trim(), loadError); return; } // the toast can't hold Insert anyway
     if (loadError){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
   }
   if (clip) pasteDoc(clip, L*1.2);
@@ -5422,8 +5423,10 @@ async function openFile(f, handle){
     if (/\.svg$/i.test(f.name)){ const m=t.match(/<desc id="skeletal-data">([^<]*)<\/desc>/); if(!m){ toast('This SVG was not made here, so it has no editable drawing inside'); return; } pasteDoc(normalizeDoc(JSON.parse(decodeURIComponent(m[1]))),0,viewCenter()); return; }
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
-    if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
-    if (!tryLoadText(t.trim())) toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
+    const txt = /\.sdf$/i.test(f.name) ? t.split('$$$$')[0] : t.trim(); // an SD file opens its first record
+    if (tryLoadText(txt)) return;
+    if (loadErrorKind==='valence'){ openSmilesDialog(txt, loadError); return; }
+    toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
 // drag and drop files
