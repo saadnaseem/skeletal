@@ -88,6 +88,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Objective:** the arrow direction the real files showed is held by tests.
 - **Outputs:** two unit tests in `cdxml_fidelity.test.mjs` (modern arrow with its superseded graphic gives one arrow, head at Head3D; graphic-only arrow gives head at the BoundingBox's first point). No source change.
 - **Verify:** `npm test`
+- [x] complete (2026-11-04): `npm test` 224 pass / 0 fail; no source change
 
 ### TG-05: docs, full regression and preview QA   [S]   [satisfies: NFR-001, NFR-003]
 - **Objective:** prove nothing else broke, and that the new styles look right.

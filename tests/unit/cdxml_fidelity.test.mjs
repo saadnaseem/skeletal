@@ -160,3 +160,20 @@ test('FR-007 ChemDraw Dash and Hash bonds open as the styles and are written bac
   }
   assert.match(F.write('cdxml', { ...get('newDoc')(), ...F.read('cdxml', x) }), /Display="Dash"[\s\S]*Display="Hash"/);
 });
+
+// ---------- FR-009: arrow direction, as in 292 arrows of 4 real ChemDraw files ----------
+test('FR-009 a modern arrow and the older graphic it supersedes give one arrow, head at Head3D', () => {
+  const x = cdxml(frag + `<graphic id="50" SupersededBy="51" BoundingBox="227.93 539.92 182.03 539.92" GraphicType="Line" ArrowType="FullHead" HeadSize="1000"/>
+    <arrow id="51" BoundingBox="182.03 536.26 227.93 543.58" FillType="None" ArrowheadHead="Full" ArrowheadType="Solid" HeadSize="1000" Head3D="227.93 539.92 0" Tail3D="182.03 539.92 0"/>`);
+  const r = F.read('cdxml', x);
+  assert.equal(r.arrows.length, 1);
+  assert.ok(r.arrows[0].x2 > r.arrows[0].x1, 'points right, to Head3D');
+});
+
+test('FR-009 an older file with only the graphic form: the head is the BoundingBox first point', () => {
+  for (const [bb, right] of [['227.93 539.92 182.03 539.92', true], ['182.03 539.92 227.93 539.92', false]]){
+    const r = F.read('cdxml', cdxml(frag + `<graphic id="50" BoundingBox="${bb}" GraphicType="Line" ArrowType="FullHead"/>`));
+    assert.equal(r.arrows.length, 1);
+    assert.equal(r.arrows[0].x2 > r.arrows[0].x1, right, bb);
+  }
+});

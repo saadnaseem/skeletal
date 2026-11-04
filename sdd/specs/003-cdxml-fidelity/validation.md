@@ -22,7 +22,7 @@
 | FR-006 | dashed and hashed bond tool styles, single for chemistry | TG-03 | CK-05, CK-07 | automated | ✅ | `test_FR_006_draw_save_reopen_undo` [dashed, hashed] (real mouse drag, formula C2H6), `test_FR_006_pressing_2_…`, unit `FR-006, FR-008 … single bonds for formula, SMILES and molfile` pass |
 | FR-007 | `Dash`/`Hash` read and written | TG-03 | CK-06 | automated | ✅ | unit `FR-007 ChemDraw Dash and Hash bonds …` (CDXML and CDX), `test_FR_007_008_chemdraw_round_trip_and_exports` pass |
 | FR-008 | drawn in every export; plain single elsewhere | TG-03 | CK-05, CK-07, M-2 | automated + manual | ⬜ | |
-| FR-009 | arrow direction pinned | TG-04 | CK-08 | automated | ⬜ | |
+| FR-009 | arrow direction pinned | TG-04 | CK-08 | automated | ✅ | `FR-009 a modern arrow and the older graphic it supersedes…`, `FR-009 an older file with only the graphic form…` (both directions) pass; values copied from a real file |
 | NFR-001 | no regression | TG-05 | CK-09 | automated ×3 | ⬜ | |
 | NFR-002 | real files: 7 pairs, 1 left out | TG-01 | CK-10 | local | ✅ | 4 files: 2 + 3 + 1 + 1 pairs (6 square, 1 curly); 1 bracket left out (the lone curly brace); atoms 852/1664/917/324, arrows 53/149/54/36, texts 54/98/48/26 unchanged |
 | NFR-003 | styles clear at normal zoom and in exports | TG-05 | M-1, M-2 | manual | ⬜ | |
