@@ -93,11 +93,11 @@ const FORMATS = (()=>{
     const d=d0, ix=buildIndex(d), st=S(d); let nid=1; const id=()=>String(nid++);
     const colors=[]; const colorIdx=c=>{ if (!c || /^#0{3}(0{3})?$/i.test(c)) return undefined; let i=colors.indexOf(c.toLowerCase()); if (i<0){ colors.push(c.toLowerCase()); i=colors.length-1; } return String(i+4); };
     const fs=st.fontSize, page=E('page',{id:id()}), objs=[];
-    const fragOf=new Map();
+    const fragOf=new Map(), allNodes=new Map(), bondId=new Map(); // our atom and bond ids -> CDX ids, for bracketedgroup
     for (const comp of components(d,ix)){
       const fr=E('fragment',{id:id()}), nodeId=new Map();
       for (const aid of comp){ const a=ix.atom.get(aid), k=kindOf(a.el), lb=layoutLabel(d,ix,a), n=E('n',{id:id(), p:`${num(a.x)} ${num(a.y)}`}), afs=a.size||fs;
-        nodeId.set(aid,n.attrs.id); fr.children.push(n);
+        nodeId.set(aid,n.attrs.id); allNodes.set(aid,n.attrs.id); fr.children.push(n);
         const right = lb.visible && lb.items.length && lb.items[0].x+0.01 < a.x - tw(a.el[0],afs,st.fontWeight)/2 - 0.5; // label reads leftward
         const label=txt=>{ const just=right?'Right':'Left'; const ch=a.el[0], w=tw(right? txt[txt.length-1]:ch,afs,st.fontWeight);
           n.children.push(E('t',{p:`${num(right? a.x+w/2 : a.x-w/2)} ${num(a.y+afs*0.36)}`, LabelJustification:just, Justification:right?'Right':undefined, LabelAlignment:right?'Right':undefined},
@@ -122,10 +122,10 @@ const FORMATS = (()=>{
         } else { n.attrs.NodeType='GenericNickname'; n.attrs.GenericNickname=plainText(a.el); label(a.el); }
       }
       for (const b of d.bonds){ if (!nodeId.has(b.a)||!nodeId.has(b.b)) continue;
-        const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)};
+        const at={id:id(), B:nodeId.get(b.a), E:nodeId.get(b.b)}; bondId.set(b.id, at.id);
         if (b.kind) at.Order=b.kind==='hbond'?'hydrogen':'dative';
         else if (b.order>1) at.Order=String(b.order);
-        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold'}[b.stereo];
+        if (!b.kind && b.order===1 && b.stereo!=='none') at.Display={wedge:'WedgeBegin',hash:'WedgedHashBegin',wavy:'Wavy',bold:'Bold',dashed:'Dash',hashed:'Hash'}[b.stereo];
         if (b.order===2 && b.dbPos && b.dbPos!=='auto') at.DoublePosition={center:'Center',left:'Left',right:'Right'}[b.dbPos];
         if (b.color) at.color=colorIdx(b.color);
         fr.children.push(E('b',at)); }
@@ -138,8 +138,15 @@ const FORMATS = (()=>{
       const el=E('t',{id:id(), p:`${num(x)} ${num(y)}`, BoundingBox:`${num(t.x-m.w/2)} ${num(t.y-m.h/2)} ${num(t.x+m.w/2)} ${num(t.y+m.h/2)}`, Justification:{left:'Left',right:'Right',center:'Center'}[al], InterpretChemically:'no'}, runs);
       textIds.set(t, el.attrs.id); objs.push(el); }
     for (const q of d.pluses) objs.push(E('graphic',{id:id(), BoundingBox:`${num(q.x)} ${num(q.y+3.75)} ${num(q.x)} ${num(q.y-3.75)}`, GraphicType:'Symbol', SymbolType:'Plus', color:colorIdx(q.color)}));
+    // brackets as ChemDraw writes them: two half-brackets (vertical lines; the right one drawn top to bottom, the left one bottom
+    // to top), linked by a bracketedgroup that also lists the nodes and bonds inside
     for (const q of d.brackets||[]){ const g=bracketGeom(d,q);
-      objs.push(E('graphic',{id:id(), BoundingBox:`${num(g.x0)} ${num(g.y0)} ${num(g.x1)} ${num(g.y1)}`, GraphicType:'Bracket', BracketType:BRACKET_CDX[q.type], color:colorIdx(q.color)}));
+      const half=(x,ya,yb)=>E('graphic',{id:id(), BoundingBox:`${num(x)} ${num(ya)} ${num(x)} ${num(yb)}`, GraphicType:'Bracket', BracketType:HALF_CDX[q.type], color:colorIdx(q.color)});
+      const R=half(g.x1,g.y0,g.y1), Lh=half(g.x0,g.y1,g.y0); objs.push(R, Lh);
+      const inside=a=>a.x>=g.x0 && a.x<=g.x1 && a.y>=g.y0 && a.y<=g.y1;
+      const ins=new Set(d.atoms.filter(a=>allNodes.has(a.id) && inside(a)).map(a=>a.id));
+      const enclosed=[...[...ins].map(a=>allNodes.get(a)), ...d.bonds.filter(b=>bondId.has(b.id) && ins.has(b.a) && ins.has(b.b)).map(b=>bondId.get(b.id))];
+      objs.push(E('bracketedgroup',{id:id(), BracketedObjectIDs: enclosed.length? enclosed.join(' ') : undefined},[E('bracketattachment',{id:id(), GraphicID:R.attrs.id}), E('bracketattachment',{id:id(), GraphicID:Lh.attrs.id})]));
       for (const [txt,y] of [[q.sup,g.supY],[q.sub,g.subY]]) if (txt){ const s=bracketText(txt), w=tw(s,g.fs);
         objs.push(E('t',{id:id(), p:`${num(g.lx)} ${num(y)}`, BoundingBox:`${num(g.lx)} ${num(y-g.fs*0.75)} ${num(g.lx+w)} ${num(y+g.fs*0.2)}`, InterpretChemically:'no'},
           [E('s',{font:'3',size:num(g.fs),face:'0',color:colorIdx(q.color)},[],s)])); } }
@@ -180,7 +187,7 @@ const FORMATS = (()=>{
   const CDXML_HEAD='<?xml version="1.0" encoding="UTF-8" ?>\n<!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd" >\n';
 
   /* ---------- CDX binary (tags and types from the ChemDraw CDX spec, as tabulated in Indigo's CDXCommons.h) ---------- */
-  const OBJ={CDXML:0x8000,page:0x8001,group:0x8002,fragment:0x8003,n:0x8004,b:0x8005,t:0x8006,graphic:0x8007,scheme:0x800d,step:0x800e,arrow:0x8027};
+  const OBJ={CDXML:0x8000,page:0x8001,group:0x8002,fragment:0x8003,n:0x8004,b:0x8005,t:0x8006,graphic:0x8007,scheme:0x800d,step:0x800e,bracketedgroup:0x8017,bracketattachment:0x8018,arrow:0x8027};
   const OBJN=Object.fromEntries(Object.entries(OBJ).map(([k,v])=>[v,k]));
   const P={CreationProgram:[0x3,'str'],Name:[0x8,'str'],p:[0x200,'pt2'],BoundingBox:[0x204,'rect'],Head3D:[0x207,'pt3'],Tail3D:[0x208,'pt3'],Center3D:[0x20d,'pt3'],MajorAxisEnd3D:[0x20e,'pt3'],MinorAxisEnd3D:[0x20f,'pt3'],
     color:[0x301,'u16'],bgcolor:[0x302,'u16'],NodeType:[0x400,'i16'],Element:[0x402,'i16'],Isotope:[0x420,'i16'],Charge:[0x421,'i8'],Radical:[0x422,'u8'],NumHydrogens:[0x42b,'u16'],GenericNickname:[0x433,'str'],EnhancedStereoType:[0x446,'u8'],EnhancedStereoGroupNum:[0x447,'u16'],
@@ -188,6 +195,7 @@ const FORMATS = (()=>{
     BondSpacing:[0x804,'i16'],BondLength:[0x805,'coord'],BoldWidth:[0x806,'coord'],LineWidth:[0x807,'coord'],MarginWidth:[0x808,'coord'],HashSpacing:[0x809,'coord'],LabelSize:[0x81c,'pt20'],LabelJustification:[0x823,'i8'],
     GraphicType:[0xa00,'i16'],LineType:[0xa01,'i16'],ArrowType:[0xa02,'i16'],BracketType:[0xa06,'i16'],SymbolType:[0xa07,'i16'],HeadSize:[0xa20,'i16'],AngularSize:[0xa21,'i16'],ArrowheadType:[0xa2f,'i16'],ArrowheadCenterSize:[0xa30,'u16'],
     ArrowheadWidth:[0xa31,'u16'],ArrowShaftSpacing:[0xa33,'u16'],ArrowheadHead:[0xa35,'i16'],ArrowheadTail:[0xa36,'i16'],FillType:[0xa37,'i16'],NoGo:[0xa3b,'i8'],
+    LipSize:[0xa22,'i16'],BracketedObjectIDs:[0xa27,'ids'],GraphicID:[0xa2b,'u32'], // tag numbers from Open Babel's chemdrawcdx.h
     ReactionStepReactants:[0xc01,'ids'],ReactionStepProducts:[0xc02,'ids'],ReactionStepArrows:[0xc04,'ids'],ReactionStepObjectsAboveArrow:[0xc05,'ids'],ReactionStepObjectsBelowArrow:[0xc06,'ids'],SupersededBy:[0x12,'u32']};
   const PN=Object.fromEntries(Object.entries(P).map(([k,v])=>[v[0],k]));
   const ENUM={
@@ -337,10 +345,11 @@ const FORMATS = (()=>{
   const SKIP_NAMES={curve:'shape', tlcplate:'TLC plate', spectrum:'spectrum', embeddedobject:'embedded object', table:'table', geometry:'geometry constraint', constraint:'geometry constraint', altgroup:'alternative group'};
   const ATOM_SYMBOLS=new Set(['LonePair','Electron','RadicalCation','RadicalAnion','CirclePlus','CircleMinus','Minus']); // drawn from the atom's own charge and radical
   const GRAPHIC_NAMES={Line:'line', Arc:'arc', Rectangle:'shape', Oval:'shape', Orbital:'orbital', Bracket:'bracket', Symbol:'symbol'};
-  // bracket pairs; ChemDraw's single brackets have no equivalent here. A bracket with no BracketType is a pair of parentheses
+  // bracket pairs, and ChemDraw's half-brackets (which it draws in pairs). A bracket with no BracketType is a pair of parentheses
   const BRACKET_CDX={square:'SquarePair', curly:'CurlyPair', round:'RoundPair'}, BRACKET_OF={SquarePair:'square', CurlyPair:'curly', RoundPair:'round'};
+  const HALF_OF={Square:'square', Curly:'curly', Round:'round'}, HALF_CDX={square:'Square', curly:'Curly', round:'Round'};
   function treeToDoc(root){
-    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], brackets=[], skipped={}; let nid=1;
+    const atoms=[], bonds=[], arrows=[], texts=[], pluses=[], brackets=[], skipped={}, halves=[], groups=[]; let nid=1;
     const skip=what=>{ skipped[what]=(skipped[what]||0)+1; };
     // colour indexes: 0 black, 1 white, then the colour table from 2
     const table=kids(kids(root,'colortable')[0]||{children:[]},'color').map(c=>{ const h=k=>Math.max(0,Math.min(255,Math.round(parseFloat(c.attrs[k])*255)||0)).toString(16).padStart(2,'0'); return '#'+h('r')+h('g')+h('b'); });
@@ -404,7 +413,7 @@ const FORMATS = (()=>{
         const dsp=b.attrs.Display||'Solid'; let stereo='none', a1=A, a2=Bb;
         if (dsp==='WedgeBegin') stereo='wedge'; else if (dsp==='WedgeEnd'){ stereo='wedge'; a1=Bb; a2=A; }
         else if (dsp==='WedgedHashBegin') stereo='hash'; else if (dsp==='WedgedHashEnd'){ stereo='hash'; a1=Bb; a2=A; }
-        else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold';
+        else if (dsp==='Wavy') stereo='wavy'; else if (dsp==='Bold') stereo='bold'; else if (dsp==='Dash') stereo='dashed'; else if (dsp==='Hash') stereo='hashed';
         const bd={id:nid++, a:a1, b:a2, order, stereo: kind? 'none' : stereo}; const dp=b.attrs.DoublePosition; if (dp) bd.dbPos={Center:'center',Left:'left',Right:'right'}[dp];
         if (kind) bd.kind=kind;
         bonds.push(setColor(bd, b.attrs.color));
@@ -427,6 +436,8 @@ const FORMATS = (()=>{
           else if (c.attrs.GraphicType==='Bracket' && BRACKET_OF[c.attrs.BracketType||'RoundPair'] && bb.length===4 && bb.every(Number.isFinite)){
             const w=Math.abs(bb[2]-bb[0]), h=Math.abs(bb[3]-bb[1]);
             if (w>0.5 && h>0.5) brackets.push(setColor({id:nid++, type:BRACKET_OF[c.attrs.BracketType||'RoundPair'], x:(bb[0]+bb[2])/2, y:(bb[1]+bb[3])/2, w, h}, c.attrs.color)); else skip('bracket'); }
+          else if (c.attrs.GraphicType==='Bracket' && HALF_OF[c.attrs.BracketType] && !c.attrs.SupersededBy && bb.length===4 && bb.every(Number.isFinite))
+            halves.push({id:c.attrs.id, type:HALF_OF[c.attrs.BracketType], x:(bb[0]+bb[2])/2, y0:Math.min(bb[1],bb[3]), y1:Math.max(bb[1],bb[3]), color:c.attrs.color});
           else if (c.attrs.GraphicType==='Line' && c.attrs.ArrowType && !c.attrs.SupersededBy && bb.length===4){ const at=c.attrs.ArrowType;
             arrows.push(setColor({id:nid++, type: at==='Equilibrium'?'equilibrium': at==='RetroSynthetic'?'retro': at==='Resonance'?'resonance': c.attrs.LineType==='Dashed'?'dashed':'reaction', x1:bb[2], y1:bb[3], x2:bb[0], y2:bb[1]}, c.attrs.color)); }
           else if (!c.attrs.SupersededBy && !(c.attrs.GraphicType==='Symbol' && ATOM_SYMBOLS.has(c.attrs.SymbolType))) skip(GRAPHIC_NAMES[c.attrs.GraphicType]||'shape');
@@ -449,10 +460,22 @@ const FORMATS = (()=>{
             const M=add(C,mul(fromAng(a0+d/2),R)), ctl=sub(mul(M,2),mul(add(t,h),0.5)); r.cx=ctl.x; r.cy=ctl.y; }
           arrows.push(setColor(r, A.color)); }
         else if (c.name==='n') continue;
+        else if (c.name==='bracketedgroup') groups.push(kids(c,'bracketattachment').map(a=>a.attrs.GraphicID));
         else visit(c, inNode);
       }
     }
     visit(root,false);
+    // ChemDraw draws a bracket pair as two half-brackets (linked by a bracketedgroup): pair them into one bracket. Linked halves
+    // first, then halves of the same kind facing each other with the same top and bottom; a half with no partner is left out
+    const used=new Set(), byId=new Map(halves.map(q=>[q.id,q]));
+    const pairUp=(a,b)=>{ const l=a.x<b.x?a:b, r=a.x<b.x?b:a; used.add(a.id); used.add(b.id);
+      brackets.push(setColor({id:nid++, type:a.type, x:(l.x+r.x)/2, y:(Math.min(l.y0,r.y0)+Math.max(l.y1,r.y1))/2, w:r.x-l.x, h:Math.max(l.y1,r.y1)-Math.min(l.y0,r.y0)}, l.color??r.color)); };
+    const fits=(a,b)=>a.type===b.type && Math.abs(a.y0-b.y0)<=1 && Math.abs(a.y1-b.y1)<=1 && Math.abs(a.x-b.x)>0.5;
+    for (const g of groups){ const hs=g.map(id=>byId.get(id)).filter(q=>q && !used.has(q.id)); if (hs.length===2 && hs[0].type===hs[1].type && Math.abs(hs[0].x-hs[1].x)>0.5) pairUp(hs[0],hs[1]); }
+    for (const a of halves){ if (used.has(a.id)) continue;
+      const b=halves.filter(q=>q!==a && !used.has(q.id) && fits(a,q)).sort((p,q)=>Math.abs(p.x-a.x)-Math.abs(q.x-a.x))[0];
+      if (b) pairUp(a,b); }
+    for (const a of halves) if (!used.has(a.id)) skip('bracket');
     // a short text at a bracket's top-right or bottom-right corner is its charge or repeat count (the nearest corner wins)
     for (let i=texts.length-1;i>=0;i--){ const t=texts[i], fs=t.size||10; const lab=plainText(t.text); if (lab.length>8 || lab.includes('\n')) continue;
       let best=null, bd=Infinity;
@@ -619,5 +642,5 @@ const FORMATS = (()=>{
     if (fmt==='cml' || fmt==='mrv') return cmlRead(typeof data==='string'? data : new TextDecoder().decode(data));
     throw new Error('Unknown format '+fmt);
   }
-  return {list:LIST, write, read, expandDoc, kekulize, kekulizeCount, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
+  return {list:LIST, write, read, expandDoc, kekulize, kekulizeCount, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode, _cdxEncode:cdxEncode};
 })();
