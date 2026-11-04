@@ -145,3 +145,27 @@ test('a large fused aromatic system (coronene) converts in full', () => {
   const s = 'c1cc2ccc3ccc4ccc5ccc6ccc1c1c2c3c4c5c61', { f, rings } = read(type4(s));
   assert.equal(rings, 0); assert.equal(formula(f), 'C24H12');
 });
+
+// ChemDraw and CML/MRV aromatic rings, written by hand: n atoms on a circle, every ring bond aromatic
+const cdxRing = (els, order = '1.5') => `<CDXML><page><fragment>${els.map((e, i) => `<n id="${i + 1}" p="${(Math.cos(2 * Math.PI * i / els.length) * 14.4).toFixed(2)} ${(Math.sin(2 * Math.PI * i / els.length) * 14.4).toFixed(2)}"${e === 'C' ? '' : ` Element="${{ N: 7, O: 8 }[e]}"`}/>`).join('')}
+  ${els.map((_, i) => `<b id="${i + 50}" B="${i + 1}" E="${(i + 1) % els.length + 1}" Order="${order}"/>`).join('')}</fragment></page></CDXML>`;
+const cmlRing = els => `<cml><molecule id="m1"><atomArray>${els.map((e, i) => `<atom id="a${i + 1}" elementType="${e}" x2="${Math.cos(2 * Math.PI * i / els.length).toFixed(3)}" y2="${Math.sin(2 * Math.PI * i / els.length).toFixed(3)}"/>`).join('')}</atomArray>
+  <bondArray>${els.map((_, i) => `<bond atomRefs2="a${i + 1} a${(i + 1) % els.length + 1}" order="A"/>`).join('')}</bondArray></molecule></cml>`;
+
+test('FR-004 ChemDraw and CML five-membered aromatic rings with no N–H are counted; benzene is not', () => {
+  assert.equal(F.read('cdxml', cdxRing(['N', 'C', 'C', 'C', 'C'])).unkekulized, 1);
+  assert.equal(F.read('cml', cmlRing(['N', 'C', 'C', 'C', 'C'])).unkekulized, 1);
+  assert.equal(F.read('cdxml', cdxRing(['C', 'C', 'C', 'C', 'C'])).unkekulized, 1);
+  const twice = cdxRing(['N', 'C', 'C', 'C', 'C']).replace('</fragment></page>', '</fragment>' + cdxRing(['N', 'C', 'C', 'C', 'C']).replace(/^<CDXML><page>/, '').replace(/id="(\d+)"/g, (m, k) => `id="${+k + 200}"`).replace(/([BE])="(\d+)"/g, (m, k, v) => `${k}="${+v + 200}"`).replace('</page></CDXML>', '') + '</page>');
+  assert.equal(F.read('cdxml', twice).unkekulized, 2);
+  for (const r of [F.read('cdxml', cdxRing(['C', 'C', 'C', 'C', 'C', 'C'])), F.read('cml', cmlRing(['C', 'C', 'C', 'C', 'C', 'N'])), F.read('cdxml', cdxRing(['C', 'C', 'C', 'C', 'C', 'C'], '1'))])
+    assert.equal(r.unkekulized, undefined);
+});
+
+test('FR-005 a ChemDraw furan alternates whatever its atom order (C, C, C, O, C used to pair wrongly)', () => {
+  for (const els of [['O', 'C', 'C', 'C', 'C'], ['C', 'O', 'C', 'C', 'C'], ['C', 'C', 'O', 'C', 'C'], ['C', 'C', 'C', 'O', 'C'], ['C', 'C', 'C', 'C', 'O']]){
+    const r = F.read('cdxml', cdxRing(els));
+    assert.equal(r.unkekulized, undefined, els.join());
+    assert.equal(r.bonds.filter(b => b.order === 2).length, 2, els.join());
+  }
+});

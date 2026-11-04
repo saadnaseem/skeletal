@@ -1467,12 +1467,9 @@ function kekulizeFragment(f, hcount){
   if (!f.bonds.some(b=>b.order===1.5)) return 0;
   const atoms=f.atoms.map((a,i)=>({id:i+1, el:a.el, charge:a.charge||0, ...(hcount&&hcount.has(i)? {h:hcount.get(i)} : {})}));
   const bonds=f.bonds.map((b,k)=>({id:atoms.length+k+1, a:b.a+1, b:b.b+1, order:b.kind? 1 : b.order}));
-  const ar=bonds.filter(b=>b.order===1.5), left=new Set(FORMATS.kekulize(atoms, bonds));
+  const n=FORMATS.kekulizeCount(atoms, bonds);
   bonds.forEach((b,k)=>{ if (f.bonds[k].order===1.5) f.bonds[k].order=b.order; });
-  // count connected aromatic systems with an unmatched atom (naphthalene is one)
-  const parent=new Map(), find=x=>{ while (parent.has(x) && parent.get(x)!==x) x=parent.get(x); return x; };
-  for (const b of ar){ for (const x of [b.a,b.b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(b.a), find(b.b)); }
-  return new Set([...left].map(find)).size;
+  return n;
 }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)
@@ -2705,6 +2702,13 @@ const FORMATS = (()=>{
     for (const b of ar) b.order = mate.get(b.a)===b.b ? 2 : 1;
     return budget<0 ? [] : nodes.filter(id=>!mate.has(id));
   }
+  // kekulize, and count the aromatic ring systems (connected aromatic bonds, so naphthalene is one) left with an unmatched atom
+  function kekulizeCount(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5).map(b=>[b.a,b.b]), left=kekulize(atoms, bonds); if (!left.length) return 0;
+    const parent=new Map(), find=x=>{ while (parent.get(x)!==x) x=parent.get(x); return x; };
+    for (const [a,b] of ar){ for (const x of [a,b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(a), find(b)); }
+    return new Set(left.map(find)).size;
+  }
   // the document's drawing settings -> the closest journal style plus overrides for what differs
   function styleFrom(root){
     const A=root.attrs||{}, f=k=>{ const v=parseFloat(A[k]); return Number.isFinite(v)&&v>0? v : null; };
@@ -2845,7 +2849,7 @@ const FORMATS = (()=>{
         if (q[key]!=null || dx<=-fs*0.3 || dx>=fs*2.5 || Math.abs(t.y-yc)>fs*1.2) continue;
         const dd=Math.hypot(dx, t.y-yc); if (dd<bd){ bd=dd; best=[q,key]; } }
       if (best){ best[0][best[1]]=lab.replace(/\u2212/g,'-'); texts.splice(i,1); } }
-    kekulize(atoms,bonds);
+    const unk=kekulizeCount(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
     const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses,brackets}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
@@ -2855,6 +2859,7 @@ const FORMATS = (()=>{
     if (!parseFloat((root.attrs||{}).LabelSize) && most && Math.abs(most-S(d).fontSize)>0.01) d.labelSize=most;
     for (const a of d.atoms){ if (a._sz && Math.abs(a._sz-S(d).fontSize)>0.01) a.size=a._sz; delete a._sz; }
     if (Object.keys(skipped).length) d.skipped=skipped;
+    if (unk) d.unkekulized=unk;
     return d;
   }
   function scaleToL(d, target=L){
@@ -2899,8 +2904,9 @@ const FORMATS = (()=>{
       const order = o==='A'? 1.5 : o==='D'||o==='2'? 2 : o==='T'||o==='3'? 3 : 1;
       if (ref.has(p)&&ref.has(q)) bonds.push({id:nid++, a:ref.get(p), b:ref.get(q), order, stereo: st==='W'?'wedge': st==='H'?'hash':'none'});
     });
-    kekulize(atoms,bonds);
-    return scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    const unk=kekulizeCount(atoms,bonds), d=scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    if (unk) d.unkekulized=unk;
+    return d;
   }
 
   /* ---------- JME (JSME) ---------- */
@@ -3002,7 +3008,7 @@ const FORMATS = (()=>{
     if (fmt==='cml' || fmt==='mrv') return cmlRead(typeof data==='string'? data : new TextDecoder().decode(data));
     throw new Error('Unknown format '+fmt);
   }
-  return {list:LIST, write, read, expandDoc, kekulize, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
+  return {list:LIST, write, read, expandDoc, kekulize, kekulizeCount, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
 })();
 
 /* ================= mass spectrometry =================
@@ -4541,7 +4547,7 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
 // a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const {skipped, unkekulized, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
   const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
   if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
@@ -4550,7 +4556,9 @@ function insertForeign(r, name){
   // a document file opens even with too many bonds on an atom (it may be a transition state), but says so
   const vix=buildIndex({atoms:d.atoms, bonds:d.bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), nBad=d.atoms.filter(a=>valenceError(a,vix)).length;
   const bad=nBad ? `. ${nBad} atom${nBad>1?'s have':' has'} too many bonds (shown in red)` : '';
-  toast('Opened '+(name||'drawing')+bad+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad? 6000 : undefined);
+  // aromatic rings the file draws that can't alternate are drawn with single bonds, so one atom has an extra H: say so
+  const unk=unkekulized ? `. ${unkekulized} aromatic ring${unkekulized>1?'s':''} couldn’t be given alternating double bonds; a ring N–H may be missing its H` : '';
+  toast('Opened '+(name||'drawing')+bad+unk+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad||unk? 6000 : undefined);
 }
 // force: insert even with too many bonds (only from the user's Insert anyway)
 function tryLoadText(txt, quiet, force){

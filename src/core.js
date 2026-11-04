@@ -935,12 +935,9 @@ function kekulizeFragment(f, hcount){
   if (!f.bonds.some(b=>b.order===1.5)) return 0;
   const atoms=f.atoms.map((a,i)=>({id:i+1, el:a.el, charge:a.charge||0, ...(hcount&&hcount.has(i)? {h:hcount.get(i)} : {})}));
   const bonds=f.bonds.map((b,k)=>({id:atoms.length+k+1, a:b.a+1, b:b.b+1, order:b.kind? 1 : b.order}));
-  const ar=bonds.filter(b=>b.order===1.5), left=new Set(FORMATS.kekulize(atoms, bonds));
+  const n=FORMATS.kekulizeCount(atoms, bonds);
   bonds.forEach((b,k)=>{ if (f.bonds[k].order===1.5) f.bonds[k].order=b.order; });
-  // count connected aromatic systems with an unmatched atom (naphthalene is one)
-  const parent=new Map(), find=x=>{ while (parent.has(x) && parent.get(x)!==x) x=parent.get(x); return x; };
-  for (const b of ar){ for (const x of [b.a,b.b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(b.a), find(b.b)); }
-  return new Set([...left].map(find)).size;
+  return n;
 }
 function scaleLayout(mol){
   // make the average bond length exactly 1 unit (OCL default is ~1 but varies)

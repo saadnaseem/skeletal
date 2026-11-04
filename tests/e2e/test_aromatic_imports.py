@@ -97,3 +97,22 @@ def test_FR_005_kekule_molfile_unchanged(page):
     page.evaluate(RESET)
     page.evaluate("tryLoadText(OCL.Molecule.fromSmiles('c1cc[nH]c1').toMolfile(), true)")
     assert formula(page) == "C4H5N" and doubles(page) == 2
+
+
+def cdx_ring(els):
+    import math
+    n = len(els)
+    at = "".join(f'<n id="{i + 1}" p="{math.cos(2 * math.pi * i / n) * 14.4:.2f} {math.sin(2 * math.pi * i / n) * 14.4:.2f}"{"" if e == "C" else " Element=" + chr(34) + str({"N": 7, "O": 8}[e]) + chr(34)}/>' for i, e in enumerate(els))
+    bo = "".join(f'<b id="{i + 50}" B="{i + 1}" E="{(i + 1) % n + 1}" Order="1.5"/>' for i in range(n))
+    return f'<?xml version="1.0"?><CDXML BondLength="14.4"><page><fragment>{at}{bo}</fragment></page></CDXML>'
+
+
+def test_FR_004_cdxml_ring_that_cannot_alternate_opens_with_count(page, tmp_path):
+    f = tmp_path / "pyrrole.cdxml"; f.write_text(cdx_ring(["N", "C", "C", "C", "C"]))
+    open_file(page, f)
+    assert atoms(page) == 5 and not dialog_open(page)
+    toast = page.inner_text("#toast")
+    assert "Opened pyrrole.cdxml" in toast and "1 aromatic ring couldn’t be given alternating double bonds" in toast and "N–H" in toast
+    g = tmp_path / "benzene.cdxml"; g.write_text(cdx_ring(["C"] * 6))
+    open_file(page, g)
+    assert formula(page) == "C6H6" and "aromatic ring" not in page.inner_text("#toast")

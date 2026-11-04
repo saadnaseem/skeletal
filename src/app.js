@@ -1048,7 +1048,7 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
 // a drawing read from another program's file: paste it in (or make it the page when the page is empty)
 // a drawing read from another format. On an empty page it keeps the file's style; added to a drawing, it takes the drawing's style
 function insertForeign(r, name){
-  const {skipped, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
+  const {skipped, unkekulized, style, styleOv, labelSize, ...parts}=r, fresh=!hasContent(doc);
   const d=normalizeDoc({...newDoc(), ...parts, style: fresh&&style ? style : doc.style, styleOv: fresh&&style ? styleOv : doc.styleOv, labelSize: fresh&&style ? labelSize : doc.labelSize});
   if (!hasContent(d)){ toast('No structures found in '+(name||'the file')); return; }
   if (!fresh){ if (style) rescaleDoc(d, L/S({style, styleOv, labelSize}).bondLength); pasteDoc(d,0,viewCenter()); }
@@ -1057,7 +1057,9 @@ function insertForeign(r, name){
   // a document file opens even with too many bonds on an atom (it may be a transition state), but says so
   const vix=buildIndex({atoms:d.atoms, bonds:d.bonds, arrows:[], texts:[], pluses:[], plates:[], brackets:[]}), nBad=d.atoms.filter(a=>valenceError(a,vix)).length;
   const bad=nBad ? `. ${nBad} atom${nBad>1?'s have':' has'} too many bonds (shown in red)` : '';
-  toast('Opened '+(name||'drawing')+bad+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad? 6000 : undefined);
+  // aromatic rings the file draws that can't alternate are drawn with single bonds, so one atom has an extra H: say so
+  const unk=unkekulized ? `. ${unkekulized} aromatic ring${unkekulized>1?'s':''} couldn’t be given alternating double bonds; a ring N–H may be missing its H` : '';
+  toast('Opened '+(name||'drawing')+bad+unk+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length||nBad||unk? 6000 : undefined);
 }
 // force: insert even with too many bonds (only from the user's Insert anyway)
 function tryLoadText(txt, quiet, force){

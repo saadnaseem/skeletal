@@ -83,6 +83,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Acceptance:** the tests pass; the existing CDXML/CML tests still pass.
 - **Verify:** `npm run build && npm test && npm run test:e2e`
 - **Depends on:** TG-01
+- [x] complete (2026-11-04): unit 209 pass; e2e 778 passed, 3 skipped, 7 xfailed, 0 failed. The ring-system count moved into `FORMATS.kekulizeCount`, shared by the readers and `kekulizeFragment`.
 
 ### TG-04: docs, full regression and preview QA   [S]   [satisfies: NFR-001, NFR-002, FR-005]
 - **Objective:** prove nothing else broke, and that the messages read well.

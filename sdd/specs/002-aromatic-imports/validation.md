@@ -17,7 +17,7 @@
 | FR-001 | type-4 molfiles alternate, every route | TG-01, TG-02 | CK-01, CK-05 | automated | ✅ | CK-01 unit (11 compounds × V2000/V3000, coronene) pass; `test_FR_001_type4_benzene_every_route` [dialog, paste, mol, sdf], `test_FR_001_type4_formulas_match_smiles` ×4, `test_FR_001_undo_removes_in_one_step` pass |
 | FR-002 | coordinates, charges, isotopes, H counts, wedges kept | TG-01 | CK-02 | automated | ✅ | `FR-002 charges, isotopes, coordinates and wedges are kept`, `FR-001, FR-002 pyrrole with its N–H drawn as an H atom` pass |
 | FR-003 | molfile ring that can't alternate is refused | TG-01, TG-02 | CK-03, CK-06 | automated | ✅ | CK-03 unit (1, 1, 2, 1 rings) pass; `test_FR_003_dialog_refuses_ring_that_cannot_alternate`, `test_FR_003_paste_and_file_show_the_reason` pass |
-| FR-004 | document files open with a ring count | TG-03 | CK-08 | automated | ⬜ | |
+| FR-004 | document files open with a ring count | TG-03 | CK-08 | automated | ✅ | `FR-004 ChemDraw and CML five-membered aromatic rings with no N–H are counted` (unit), `test_FR_004_cdxml_ring_that_cannot_alternate_opens_with_count` (e2e) pass |
 | FR-005 | Kekulé molfiles and alternating document files unchanged | TG-01, TG-03, TG-04 | CK-04, CK-08, CK-09 | automated | ⬜ | |
 | NFR-001 | no regression | TG-04 | CK-09 | automated ×3 | ⬜ | |
 | NFR-002 | plain messages | TG-04 | M-1 … M-4 | manual | ⬜ | |

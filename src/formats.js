@@ -313,6 +313,13 @@ const FORMATS = (()=>{
     for (const b of ar) b.order = mate.get(b.a)===b.b ? 2 : 1;
     return budget<0 ? [] : nodes.filter(id=>!mate.has(id));
   }
+  // kekulize, and count the aromatic ring systems (connected aromatic bonds, so naphthalene is one) left with an unmatched atom
+  function kekulizeCount(atoms, bonds){
+    const ar=bonds.filter(b=>b.order===1.5).map(b=>[b.a,b.b]), left=kekulize(atoms, bonds); if (!left.length) return 0;
+    const parent=new Map(), find=x=>{ while (parent.get(x)!==x) x=parent.get(x); return x; };
+    for (const [a,b] of ar){ for (const x of [a,b]) if (!parent.has(x)) parent.set(x,x); parent.set(find(a), find(b)); }
+    return new Set(left.map(find)).size;
+  }
   // the document's drawing settings -> the closest journal style plus overrides for what differs
   function styleFrom(root){
     const A=root.attrs||{}, f=k=>{ const v=parseFloat(A[k]); return Number.isFinite(v)&&v>0? v : null; };
@@ -453,7 +460,7 @@ const FORMATS = (()=>{
         if (q[key]!=null || dx<=-fs*0.3 || dx>=fs*2.5 || Math.abs(t.y-yc)>fs*1.2) continue;
         const dd=Math.hypot(dx, t.y-yc); if (dd<bd){ bd=dd; best=[q,key]; } }
       if (best){ best[0][best[1]]=lab.replace(/\u2212/g,'-'); texts.splice(i,1); } }
-    kekulize(atoms,bonds);
+    const unk=kekulizeCount(atoms,bonds);
     // fold back explicit-H labels on carbons drawn as ChemDraw "C" text nodes
     for (const a of atoms) delete a.h;
     const st=styleFrom(root), d=scaleToL({atoms,bonds,arrows,texts,pluses,brackets}, st? (st.styleOv&&st.styleOv.bondLength) || PRESETS[st.style].bondLength : L);
@@ -463,6 +470,7 @@ const FORMATS = (()=>{
     if (!parseFloat((root.attrs||{}).LabelSize) && most && Math.abs(most-S(d).fontSize)>0.01) d.labelSize=most;
     for (const a of d.atoms){ if (a._sz && Math.abs(a._sz-S(d).fontSize)>0.01) a.size=a._sz; delete a._sz; }
     if (Object.keys(skipped).length) d.skipped=skipped;
+    if (unk) d.unkekulized=unk;
     return d;
   }
   function scaleToL(d, target=L){
@@ -507,8 +515,9 @@ const FORMATS = (()=>{
       const order = o==='A'? 1.5 : o==='D'||o==='2'? 2 : o==='T'||o==='3'? 3 : 1;
       if (ref.has(p)&&ref.has(q)) bonds.push({id:nid++, a:ref.get(p), b:ref.get(q), order, stereo: st==='W'?'wedge': st==='H'?'hash':'none'});
     });
-    kekulize(atoms,bonds);
-    return scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    const unk=kekulizeCount(atoms,bonds), d=scaleToL({atoms,bonds,arrows:[],texts:[],pluses:[]});
+    if (unk) d.unkekulized=unk;
+    return d;
   }
 
   /* ---------- JME (JSME) ---------- */
@@ -610,5 +619,5 @@ const FORMATS = (()=>{
     if (fmt==='cml' || fmt==='mrv') return cmlRead(typeof data==='string'? data : new TextDecoder().decode(data));
     throw new Error('Unknown format '+fmt);
   }
-  return {list:LIST, write, read, expandDoc, kekulize, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
+  return {list:LIST, write, read, expandDoc, kekulize, kekulizeCount, _xmlParse:xmlParse, _cdxTree:cdxTree, _cdxDecode:cdxDecode};
 })();
