@@ -2112,12 +2112,15 @@ function openSmilesDialog(prefill, err){
   const go=async ()=>{ unrefuse(); const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
     if (loadErrorKind==='valence'){ refuse(v, loadError); return; }
-    const why = loadErrorKind==='syntax' ? ' '+loadError : ''; // a SMILES fault; C60 or B12 may still be a name, so look it up
+    // a SMILES fault; C60 or B12 may still be a name, so look it up. The reason is about the first word only, so text with spaces doesn't get it
+    const why = loadErrorKind==='syntax' && !/\s/.test(v) ? ' '+loadError : '';
+    if (loadErrorKind==='syntax' && !why) loadError='';
     if (loadError && !why){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile.'+(why||' Check brackets and ring numbers.'); return; }
     $('#smErr').textContent=`Not a valid SMILES.${why} Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
     try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }
       if (smi && loadErrorKind==='valence'){ refuse(smi, `PubChem\u2019s structure for \u201c${v}\u201d: ${loadError}`); return; }
+      if (smi){ $('#smErr').textContent=`PubChem found \u201c${v}\u201d, but its structure couldn\u2019t be drawn.${loadError ? ' '+loadError : ''}`; return; }
       $('#smErr').textContent= why ? `Not a valid SMILES.${why} PubChem has no compound named \u201c${v}\u201d either.` : `Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
     catch(err){ $('#smErr').textContent= why ? `Not a valid SMILES.${why} (PubChem could not be reached to look it up as a name.)` : 'That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });

@@ -271,10 +271,13 @@ def _insert(lp, text, pubchem):
         else: route.fulfill(status=200, content_type="application/json", body='{"Fault": {"Code": "PUGREST.NotFound"}}')  # a 404 would log a console error
     lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
     lp.route("**/pubchem.ncbi.nlm.nih.gov/**", handle)
-    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
-    lp.fill("#smIn", text); lp.click("#smGo")
-    lp.wait_for_function("!/Looking up/.test(document.querySelector('#smErr').textContent)")
-    msg = lp.inner_text("#smErr"); lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    try:  # the page is shared by the module: leave no route or open dialog behind, even on failure
+        lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
+        lp.fill("#smIn", text); lp.click("#smGo")
+        lp.wait_for_function("!/Looking up/.test(document.querySelector('#smErr').textContent)")
+        msg = lp.inner_text("#smErr")
+    finally:
+        lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
     return msg, asked
 
 
@@ -299,11 +302,37 @@ def test_insert_dialog_still_inserts_a_name_that_is_also_a_broken_smiles(lp):
     lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
     lp.route("**/pubchem.ncbi.nlm.nih.gov/**", lambda route: route.fulfill(status=200, content_type="application/json",
         body='{"PropertyTable": {"Properties": [{"SMILES": "CCO"}]}}'))
-    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''; openSmilesDialog()")
-    lp.fill("#smIn", "B12"); lp.click("#smGo")
-    lp.wait_for_function("doc.atoms.length > 0")
-    toast = lp.inner_text("#toast"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    try:
+        lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''; openSmilesDialog()")
+        lp.fill("#smIn", "B12"); lp.click("#smGo")
+        lp.wait_for_function("doc.atoms.length > 0")
+        toast = lp.inner_text("#toast")
+    finally:
+        lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
     assert lp.evaluate("doc.atoms.length") == 3 and toast == "Inserted B12 from PubChem"
+
+
+def test_insert_dialog_gives_no_smiles_reason_for_text_with_spaces(lp):
+    # Value: protects=a reason about the first word isn't shown for a whole phrase; fails_when=the syntax reason is used whatever the text;
+    # why_new=every other dialog case is one word; seam=none; no_claim=real PubChem (routed)
+    msg, asked = _insert(lp, "B12 vitamin", "none")
+    assert asked and msg == "Not a valid SMILES, and PubChem has no compound named “B12 vitamin”.", msg
+
+
+def test_insert_dialog_says_when_pubchem_structure_cannot_be_drawn(lp):
+    # Value: protects=a PubChem hit whose structure fails to load is not reported as "no compound"; fails_when=the not-found message is
+    # shown for a hit; why_new=only hits that load and misses were tested; seam=none; no_claim=real PubChem (routed)
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", lambda route: route.fulfill(status=200, content_type="application/json",
+        body='{"PropertyTable": {"Properties": [{"SMILES": "C1CC"}]}}'))
+    try:
+        lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
+        lp.fill("#smIn", "somename"); lp.click("#smGo")
+        lp.wait_for_function("!/Looking up/.test(document.querySelector('#smErr').textContent)")
+        msg = lp.inner_text("#smErr")
+    finally:
+        lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    assert msg.startswith("PubChem found “somename”, but its structure couldn’t be drawn.") and lp.evaluate("doc.atoms.length") == 0, msg
 
 
 def test_insert_dialog_keeps_the_name_message_for_a_word(lp):

@@ -58,3 +58,14 @@ test('H, K and other one-letter elements outside the organic set are told to go 
   assert.match(reason('CK'), /“K” has to be written in brackets/);
   assert.match(reason('CL'), /“L” at character 2 is not an atom/);
 });
+
+// Value: protects=positions and names count an explicit [H] as written; fails_when=OCL's position (in the [1H] text smilesMol parses) is used
+// as is; why_new=no case had [H] before the fault; seam=none; no_claim=none beyond protects
+test('an explicit [H] before the fault does not shift the position', () => {
+  const smilesMol = get('smilesMol');
+  const viaApp = s => { try { smilesMol(s); } catch (e) { return smilesReason(s, e); } assert.fail(`${s} was read`); };
+  assert.match(viaApp('[H]CC)C'), /“\)” at character 6/);
+  assert.match(viaApp('[H]C]C'), /“\]” at character 5/);
+  assert.match(viaApp('[H]CNaCl'), /“Na” has to be written in brackets/);
+  assert.match(viaApp('[H]C1CC'), /^Ring bond 1 /);
+});

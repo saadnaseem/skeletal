@@ -908,7 +908,10 @@ function inventedRadicals(smi, mol){
 // so the Insert dialog can still look it up as a compound name. Positions in OCL's messages are 0-based; the user is told 1-based.
 function smilesReason(smi, err){
   const m=/SmilesParser: (.*)/.exec(String(err && err.message || '')); if (!m) return '';
-  const s=String(smi), msg=m[1], p=+(/position:\s*(\d+)/i.exec(msg)||[])[1], at=i=>`at character ${i+1}`;
+  const s=String(smi), msg=m[1], at=i=>`at character ${i+1}`;
+  // smilesMol parses [H] as [1H], one character longer, so map OCL's position back to the text as written
+  const back=[]; for (let i=0;i<s.length;) if (s.startsWith('[H]',i)){ back.push(i,i,i+1,i+2); i+=3; } else back.push(i++);
+  const q=+(/position:\s*(\d+)/i.exec(msg)||[])[1], p = q>=back.length ? s.length+(q-back.length) : back[q];
   if (/[a-z]{3,}/.test(s.replace(/[bcnops]{3,}/g,'')) ) return '';
   let r;
   if ((r=/dangling ring closure: (\d+)/.exec(msg))) return `Ring bond ${r[1]} is opened but never closed. Each ring number appears twice, once where the ring opens and once where it closes, as in cyclohexane: C1CCCCC1.`;
