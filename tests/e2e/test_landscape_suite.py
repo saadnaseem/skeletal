@@ -56,10 +56,8 @@ CASES = [
 PATHS = ["analysis", "export_inchikey", "export_smiles", "export_mol", "export_molV3", "reopen_mol", "reopen_molV3",
          "cdxml", "cdx", "cml", "mrv"]
 
-B4 = "B4: CML and MRV don't write or read isotopes"
 B10 = "B10: a V3000 molfile with no bonds has an empty bond block, which the IUPAC InChI library rejects"
-KNOWN = {("A11", "cml"): B4, ("A11", "mrv"): B4, ("X6", "cml"): B4, ("X6", "mrv"): B4,
-         ("A8", "export_molV3"): B10, ("A11", "export_molV3"): B10, ("A12", "export_molV3"): B10}
+KNOWN = {("A8", "export_molV3"): B10, ("A11", "export_molV3"): B10, ("A12", "export_molV3"): B10}
 
 # Everything one structure needs, computed in the page in one go. Each path reads the structure back through the
 # bundled IUPAC InChI library (inchiOf), so the comparison is by standard InChIKey.
