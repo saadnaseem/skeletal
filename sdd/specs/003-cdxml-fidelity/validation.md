@@ -1,6 +1,6 @@
 # Validation — 003-cdxml-fidelity
 
-> Status: draft · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
 > **How we know it's done.** Kept after the feature ships. Every requirement gets at least one check.
 
 ## 1. Definition of done
@@ -14,17 +14,17 @@
 ## 2. Traceability matrix
 | ID | Requirement (short) | TG | Check | Type | Verdict | Evidence |
 |---|---|---|---|---|---|---|
-| FR-001 | grouped half-brackets open as a pair | TG-01 | CK-01 | automated | ⬜ | |
-| FR-002 | facing half-brackets pair without a group | TG-01 | CK-02 | automated | ⬜ | |
-| FR-003 | unpaired halves still counted | TG-01 | CK-02 | automated | ⬜ | |
-| FR-004 | corner text attaches to pairs | TG-01 | CK-03 | automated | ⬜ | |
+| FR-001 | grouped half-brackets open as a pair | TG-01 | CK-01 | automated | ✅ | `FR-001 grouped half-brackets open as one pair…` (Square, Curly, Round), `FR-001 the same file as CDX…` (group link decoded from binary) pass |
+| FR-002 | facing half-brackets pair without a group | TG-01 | CK-02 | automated | ✅ | `FR-002 facing halves…` (also within 1 pt), `FR-002, FR-003 halves of different kinds or heights…` pass |
+| FR-003 | unpaired halves still counted | TG-01 | CK-02 | automated | ✅ | `FR-003 a lone curly brace is counted…`; existing `single brackets are reported` test unchanged and passing |
+| FR-004 | corner text attaches to pairs | TG-01 | CK-03 | automated | ✅ | `FR-004 a charge at the top right and a count at the bottom right…` pass |
 | FR-005 | brackets save as halves + group | TG-02 | CK-04, M-5 | automated + optional manual | ⬜ | |
 | FR-006 | dashed and hashed bond tool styles, single for chemistry | TG-03 | CK-05, CK-07 | automated | ⬜ | |
 | FR-007 | `Dash`/`Hash` read and written | TG-03 | CK-06 | automated | ⬜ | |
 | FR-008 | drawn in every export; plain single elsewhere | TG-03 | CK-05, CK-07, M-2 | automated + manual | ⬜ | |
 | FR-009 | arrow direction pinned | TG-04 | CK-08 | automated | ⬜ | |
 | NFR-001 | no regression | TG-05 | CK-09 | automated ×3 | ⬜ | |
-| NFR-002 | real files: 7 pairs, 1 left out | TG-01 | CK-10 | local | ⬜ | |
+| NFR-002 | real files: 7 pairs, 1 left out | TG-01 | CK-10 | local | ✅ | 4 files: 2 + 3 + 1 + 1 pairs (6 square, 1 curly); 1 bracket left out (the lone curly brace); atoms 852/1664/917/324, arrows 53/149/54/36, texts 54/98/48/26 unchanged |
 | NFR-003 | styles clear at normal zoom and in exports | TG-05 | M-1, M-2 | manual | ⬜ | |
 | CON-001 | user's files only read locally | all | review | review | ⬜ | |
 | CON-002 | offline, no new dependencies | TG-05 | CK-11 | automated | ⬜ | |

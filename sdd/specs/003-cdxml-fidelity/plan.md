@@ -1,6 +1,6 @@
 # Plan — 003-cdxml-fidelity
 
-> Status: draft · Last updated: 2026-11-04
+> Status: approved (user, 2026-11-04) · Last updated: 2026-11-04
 > The **how & in what order**. Every task group cites requirement IDs; every requirement appears in at least one group.
 
 ## 1. Approach
@@ -65,6 +65,7 @@ Order: logic → interface → integration → docs. Every group ends with `npm 
 - **Local check (not committed):** the four real files give 7 pairs and 1 bracket left out, and everything else they open (atoms, bonds, arrows, texts) is unchanged.
 - **Acceptance:** the new tests pass; all existing unit tests pass (the brackets test updated for the new behaviour).
 - **Verify:** `npm test`, plus the local check script.
+- [x] complete (2026-11-04): `npm test` 216 pass / 0 fail (209 + 7 new; `import_fidelity` compares skipped counts without key order, since unpaired halves are now counted after the walk). Local check: the four real files give 7 pairs (6 square, 1 curly) and 1 bracket left out; atoms, bonds, arrows and texts unchanged.
 
 ### TG-02: brackets save as ChemDraw writes them   [S]   [satisfies: FR-005]
 - **Objective:** CDXML and CDX output uses half-brackets and a `<bracketedgroup>`.

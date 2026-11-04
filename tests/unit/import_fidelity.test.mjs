@@ -112,6 +112,6 @@ test('shapes, single brackets and other objects with no equivalent are counted, 
     <graphic id="9" BoundingBox="0 0 40 0" GraphicType="Line" ArrowType="FullHead" SupersededBy="10"/>
     <curve id="11"/></page>`);
   const r = F.read('cdxml', x);
-  same(r.skipped, { bracket: 2, shape: 2, orbital: 1 });
+  same(Object.fromEntries(Object.entries(r.skipped).sort()), { bracket: 2, orbital: 1, shape: 2 }); // unpaired half-brackets are counted after the walk, so key order varies
   assert.equal(F.read('cdxml', F.write('cdxml', docFromSmiles(get, 'CCO'))).skipped, undefined, 'our own files lose nothing');
 });
