@@ -873,6 +873,15 @@ function findChairs(d, ix){
 }
 // SMILES with its explicit hydrogens kept as atoms ([H]C([H])([H])O draws its H): OpenChemLib drops plain [H], so they go in as [1H]
 function smilesMol(smi){ return OCL.Molecule.fromSmiles(String(smi).replace(/\[H\]/g,'[1H]')); }
+// Atoms a SMILES writes outside brackets fill their valence with H, so they can't be radicals. OpenChemLib makes one when it can't give an
+// aromatic ring alternating double bonds (c1cccc1, or a ring N-H written n, not [nH]): those atoms are returned, so the caller can refuse
+// the SMILES instead of drawing a radical nobody wrote. OCL keeps the SMILES atom order; if the counts disagree, nothing is reported.
+function inventedRadicals(smi, mol){
+  const toks=[...String(smi).matchAll(/\[[^\]]+\]|Cl|Br|[BCNOPSFI]|[bcnops]|\*/g)].map(m=>m[0]);
+  if (toks.length!==mol.getAllAtoms()) return [];
+  const out=[]; for (let i=0;i<toks.length;i++) if (mol.getAtomRadical(i) && toks[i][0]!=='[') out.push(i);
+  return out;
+}
 // A molfile, with its wedges read as drawn. In V2000, chiral flag 0 strictly means "racemic", and OpenChemLib reads it that way;
 // but RDKit and many other programs write 0 in every file, and RDKit, Indigo and ChemDraw read the wedges as one enantiomer.
 // So a flag-0 file with wedge or hash bonds is read as chiral, and asDrawn says so (the user can still mark a centre &1).

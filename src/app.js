@@ -997,6 +997,7 @@ document.addEventListener('paste', e=>{
   e.preventDefault();
   if (txt.trim()){
     if (tryLoadText(txt.trim(), true)) return;
+    if (loadError){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
   }
   if (clip) pasteDoc(clip, L*1.2);
   else if (txt.trim()) toast('Clipboard text is not a SMILES string or molfile');
@@ -1009,7 +1010,14 @@ function molToFragment(mol){
   return {atoms,bonds};
 }
 function layoutSmiles(smi){
-  const mol=smilesMol(smi); mol.inventCoordinates(); return molToFragment(mol);
+  const mol=readSmiles(smi); mol.inventCoordinates(); return molToFragment(mol);
+}
+// why the last tryLoadText refused its text, in words for the user ('' when there is nothing more specific to say than "not readable")
+let loadError='';
+function readSmiles(smi){
+  const mol=smilesMol(smi);
+  if (inventedRadicals(smi, mol).length){ const e=new Error('This SMILES has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H is written [nH], as in pyrrole: c1cc[nH]c1.'); e.user=true; throw e; }
+  return mol;
 }
 function fragBBox(f){ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(const a of f.atoms){x0=Math.min(x0,a.x);y0=Math.min(y0,a.y);x1=Math.max(x1,a.x);y1=Math.max(y1,a.y);} if(!f.atoms.length) return {x0:0,y0:0,x1:0,y1:0}; return {x0,y0,x1,y1}; }
 function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:'arrow'}]
@@ -1042,6 +1050,7 @@ function insertForeign(r, name){
   toast('Opened '+(name||'drawing')+(left.length? `. Not supported, left out: ${left.join(', ')}` : ''), left.length? 6000 : undefined);
 }
 function tryLoadText(txt, quiet){
+  loadError='';
   try{
     if (/<CDXML[\s>]/.test(txt)){ insertForeign(FORMATS.read('cdxml',txt),'ChemDraw drawing'); return true; }
     if (/<(cml|MDocument)[\s>]/.test(txt) || /<molecule[\s>]/.test(txt)){ insertForeign(FORMATS.read(/MDocument/.test(txt)?'mrv':'cml',txt),'structure'); return true; }
@@ -1071,10 +1080,10 @@ function tryLoadText(txt, quiet){
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
       return true;
     }
-    const mol=smilesMol(line); if (!mol.getAllAtoms()) throw 0;
+    const mol=readSmiles(line); if (!mol.getAllAtoms()) throw 0;
     mol.inventCoordinates();
     insertFragments([{kind:'frag',f:molToFragment(mol)}]); return true;
-  }catch(err){ if(!quiet) console.warn(err); return false; }
+  }catch(err){ if (err && err.user) loadError=err.message; else if(!quiet) console.warn(err); return false; }
 }
 function viewCenter(){ return V((cv.clientWidth/2-view.ox)/view.z,(cv.clientHeight/2-view.oy)/view.z); }
 function normalizeDoc(d){ d=sanitizeDoc(d); const n={...newDoc(),...d}; n.atoms=(d.atoms||[]).map(a=>({charge:0,lp:0,rad:0,...a})); n.bonds=(d.bonds||[]).map(b=>({order:1,stereo:'none',...b})); n.arrows=d.arrows||[]; n.texts=d.texts||[]; n.pluses=d.pluses||[]; n.plates=d.plates||[]; n.brackets=d.brackets||[]; let mx=0; for (const k of ['atoms','bonds','arrows','texts','pluses','plates','brackets']) for(const o of n[k]) mx=Math.max(mx,o.id||0); n.nid=Math.max(n.nid||1,mx+1); return n; }
@@ -1948,7 +1957,7 @@ async function openFile(f, handle){
     if (/\.html?$/i.test(f.name)){ const pj=extractProject(t); if(!pj){ toast('This HTML file has no Lone Pair project inside'); return; } confirmOpenProject(pj, handle); return; }
     if (/\.json$/i.test(f.name)){ const j=JSON.parse(t); if (j && j.pages){ confirmOpenProject(j, handle); return; } const d=normalizeDoc(j); if (doc.atoms.length||doc.arrows.length){ pasteDoc(d,0,viewCenter()); } else { pushUndo(); setDoc(d); changed(); fit(); } return; }
     if (/\.sdf$/i.test(f.name)){ const first=t.split('$$$$')[0]; if (!tryLoadText(first)) toast('Could not read this file'); return; }
-    if (!tryLoadText(t.trim())) toast('Could not read this file');
+    if (!tryLoadText(t.trim())) toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
 // drag and drop files
@@ -2067,6 +2076,7 @@ function openSmilesDialog(){
   dialog.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{ $('#smIn').value=b.dataset.s; $('#smIn').focus(); });
   const go=async ()=>{ const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
+    if (loadError){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
     if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
     $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
     try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; } $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
