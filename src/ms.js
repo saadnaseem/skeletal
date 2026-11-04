@@ -161,6 +161,7 @@ const MS = (()=>{
     // with a basic amine, a fragment ion with no nitrogen needs the proton to move away from it first
     // a piece with no nitrogen rarely keeps the charge when the other piece has one (amines, anilides, amides)
     const hasN=atoms=>atoms.some(i=>el(i)==='N');
+    const holdsH=i=>isHet(i) || arom(i) || mol.getAtomPi(i)>0;
     const chargeSite=(atoms, rest)=> sign<0 ? 0 : hasBasicN && !atoms.some(basicN) ? -0.8 : !hasN(atoms) && hasN(rest) ? -1.0 : 0;
     const countsOf=atoms=>{ const c={}; for (const i of atoms){ c[el(i)]=(c[el(i)]||0)+1; c.H=(c.H||0)+hz(i); } return c; };
     const raw=[];
@@ -184,7 +185,8 @@ const MS = (()=>{
         const other=site===a1?a2:a1, c=countsOf(part), rest=part===parts[0]?parts[1]:parts[0];
         const lbl=`${el(site)}–${el(other)} cleavage`, cs=chargeSite(part, rest);
         // even-electron ion with one H moved: to the ion when the charge sits on a basic site, away from it otherwise
-        if (sign>0 ? givesH(rest,[other]) : givesH(part,[site]))
+        // positive mode: the ion keeps the proton, so it needs a site that can hold one (no CnH2n+3⁺ from an alkyl piece)
+        if (sign>0 ? givesH(rest,[other]) && part.some(holdsH) : givesH(part,[site]))
           pushIon(c, true, bs+ionScore(site,other)*0.6 - 0.4 + (sign>0 ? ({N:1.6,O:0.6}[el(site)]||0) : 0) + cs, lbl+(sign>0?', H transfer':', H loss'), part, [b]);
         // the other piece leaves with the proton; an alkane (CH₄, C₂H₆ …) rarely does
         const alkane = sign>0 && rest.every(i=>el(i)==='C');

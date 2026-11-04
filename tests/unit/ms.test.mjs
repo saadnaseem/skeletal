@@ -58,6 +58,10 @@ test('MS/MS moves a hydrogen only when the other piece has one to give', () => {
   const r = MS.msms(mol('NCC(O)c1ccc(O)c(O)c1'), { energy: 'high' });
   for (const mz of [154.0863, 155.0703]) assert.ok(!r.peaks.some(p => Math.abs(p.mz - mz) < 0.003), `no impossible ion at ${mz}`);
   assert.ok(MS.msms(mol('CCO')).peaks.every(p => p.formula !== 'C2H6+'), 'ethanol gives no [M+H-O]+');
+  // an alkyl piece has nowhere to keep the proton: no CnH2n+3+ ions, the carbocations stay
+  const hex = MS.msms(mol('CCCCCC')).peaks;
+  assert.ok(hex.every(p => !/^C(\d*)H(\d+)\+$/.test(p.formula) || +RegExp.$2 <= 2 * (+RegExp.$1 || 1) + 1), `no CnH2n+3+ ions: ${hex.map(p => p.formula)}`);
+  assert.ok(hex.some(p => p.formula === 'C4H9+'), 'hexane keeps the butyl cation');
 });
 
 // Value: protects=[M-H]- loss chain, phenol CO gated on amine loss, ring-opening ions as [A+H]+; fails_when=CO2 score/sign,
