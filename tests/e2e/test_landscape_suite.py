@@ -214,8 +214,8 @@ def test_rdkit_molfile_pastes_and_opens_as_l_alanine(lp, tmp_path):
 
 
 @pytest.mark.parametrize("text,formula,datives,arrows", [
-    ("Cl[Pt](Cl)([NH3])[NH3]", "H6N2Cl2Pt", 2, 0),  # ammine ligands keep their 3 H: the N-Pt bonds come in as dative
-    ("N->[BH3]", "H6NB", 1, 0),                       # SMILES's own dative bond, not a reaction arrow
+    ("Cl[Pt](Cl)([NH3])[NH3]", "Cl2H6N2Pt", 2, 0),  # ammine ligands keep their 3 H: the N-Pt bonds come in as dative
+    ("N->[BH3]", "BH6N", 1, 0),                       # SMILES's own dative bond, not a reaction arrow
     ("CC(=O)O.N->[BH3]>>CC(=O)[O-].[NH4+]", None, 1, 1)])  # a reaction can still contain one
 def test_dative_ligands_paste_with_their_hydrogens(lp, text, formula, datives, arrows):
     r = paste(lp, text)
@@ -260,15 +260,18 @@ def test_radicals_written_in_brackets_still_paste(lp, text):
     assert paste(lp, text)["radicals"] == 1
 
 
-B6 = "B6: the formula is OpenChemLib's string, not Hill order"
-
-
 @pytest.mark.parametrize("smiles,hill", [
-    ("CCO", "C2H6O"), ("CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "C8H10N4O2"),
-    pytest.param("[NH4+].[Cl-]", "ClH4N", marks=pytest.mark.xfail(reason=B6, strict=True)),
-    pytest.param("[Na+].[O-]C(=O)C", "C2H3NaO2", marks=pytest.mark.xfail(reason=B6, strict=True))])
+    ("CCO", "C2H6O"), ("CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "C8H10N4O2"), ("[NH4+].[Cl-]", "ClH4N"), ("[Na+].[O-]C(=O)C", "C2H3NaO2"),
+    ("[13CH4]", "¹³CH4"), ("[2H]C([2H])([2H])O", "CHD3O"), ("Cl[Pt](Cl)([NH3])[NH3]", "Cl2H6N2Pt")])
 def test_formula_is_in_hill_order(lp, smiles, hill):
     assert lp.run(smiles)["formula"] == hill
+
+
+def test_analysis_panel_shows_the_labelled_formula_and_its_own_m_z(lp):
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); tryLoadText('[13CH4]', true); analyzeNow();")
+    html = lp.inner_html("#props")
+    assert "¹³CH<sub>4</sub>" in html
+    assert "18.0419" in html  # [M+H]+ of 13CH4; plain CH4 would be 17.0386
 
 
 @pytest.mark.xfail(reason="B5: a carbon with five bonds gets no warning", strict=True)
