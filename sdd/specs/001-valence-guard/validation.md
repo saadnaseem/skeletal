@@ -26,11 +26,11 @@
 | FR-009 | document files open with a count | TG-04 | CK-10 | automated | ✅ | `test_FR_009_cdxml_opens_with_count` pass (and no count for a valid CDXML) |
 | FR-010 | templates, examples, PubChem checked | TG-02 | CK-11 | automated | ✅ | `test_FR_010_pubchem_result_checked`, `test_FR_010_templates_and_examples_still_insert` pass |
 | NFR-001 | < 20 ms for 200 atoms | TG-01 | CK-02 | measured | ✅ | median 0.44 ms, max 1.34 ms over 20 runs (node) |
-| NFR-002 | no regression | TG-05 | CK-12 | automated ×3 | ⬜ | |
+| NFR-002 | no regression | TG-05 | CK-12 | automated ×3 | ⚠ | Chromium ×3: unit 196/0, e2e 764 passed / 3 skipped / 7 xfailed / 0 failed, validate unchanged (¹H 0.08, ¹³C 0.73, pKa 0.40). WebKit could not launch on this Mac (Playwright's macOS 14 WebKit build exits with a bus error before any test), so it is not run. Firefox once: 745 passed, 14 failed; the same 13 fail on `main` (Firefox drops `clipboardData` on a script-made paste event, plus one touch long-press test), and the 14th is the new paste test, for the same reason. |
 | NFR-003 | plain-language messages | TG-05 | M-1…M-6 | manual | ⬜ | |
 | CON-001 | same rule as red warning | TG-01 | CK-01b | automated | ✅ | `CON-001 agrees with valenceError on the inserted drawing` passes on all 16 cases |
-| CON-002 | hand drawing not blocked | TG-05 | CK-13, M-5 | automated + manual | ⬜ | |
-| CON-003 | offline, single file, no new deps | TG-05 | CK-14 | automated | ⬜ | |
+| CON-002 | hand drawing not blocked | TG-05 | CK-13, M-5 | automated + manual | ✅ | `test_CON_002_drawing_sixth_bond_only_warns` pass (real mouse clicks); M-5 pending on preview |
+| CON-003 | offline, single file, no new deps | TG-05 | CK-14 | automated | ✅ | `git diff origin/main -- package.json package-lock.json` empty; e2e runs with network fonts blocked and PubChem stubbed |
 
 Verdicts: ⬜ not run · ✅ pass · ❌ fail · ⚠ accepted exception (with reason).
 
@@ -99,7 +99,7 @@ On the PR's Cloudflare preview (`https://<branch>-lone-pair.saad455.workers.dev`
 | NFR | Tool | Measurement | Threshold | Result |
 |---|---|---|---|---|
 | NFR-001 | node --test | median over 20 runs, 200 atoms | < 20 ms | 0.44 ms ✅ |
-| NFR-002 | CI + 3 local runs | failures | 0 | |
+| NFR-002 | CI + 3 local runs | failures | 0 | 0 in Chromium ×3; CI pending |
 | NFR-003 | manual M-1…M-6 | reviewer reads the messages | no jargon, says what to do | |
 
 ## 6. Edge-case checks

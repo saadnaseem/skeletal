@@ -34,7 +34,7 @@ As a chemist, I want SF6, PCl5, IF7, Ph-I(OAc)2, ClO4⁻, sulfoxides and metal c
 | FR-006 | THE check SHALL accept every structure the existing rule accepts, including hypervalent P, As, S, Se, Te, Cl, Br, I, charged atoms (e.g. [N+](C)(C)(C)C) and atoms of elements with no fixed valence (metals). | must |
 | FR-007 | WHEN a reaction SMILES is checked, THE app SHALL check every reactant and product and refuse or offer **Insert anyway** for the reaction as a whole. | must |
 | FR-008 | WHEN a structure is inserted after **Insert anyway**, THE single undo step SHALL remove it, as for any insert. | must |
-| FR-009 | WHEN a document file is opened (CDXML, CDX, CML, MRV, saved project, JSON) that contains over-valent atoms, THE app SHALL open it as today and SHALL add the count of over-valent atoms to the "Opened …" message. It SHALL NOT refuse the file. | should |
+| FR-009 | WHEN another program's document file is opened (CDXML, CDX, CML, MRV) that contains over-valent atoms, THE app SHALL open it as today and SHALL add the count of over-valent atoms to the "Opened …" message. It SHALL NOT refuse the file. | should |
 | FR-010 | The built-in templates, examples and PubChem name lookups SHALL go through the same check (a PubChem result that fails it is refused with the same message). | should |
 
 ## 5. Non-functional requirements
@@ -107,6 +107,9 @@ No saved-data or file-format changes.
 ## 13. Assumptions
 - Verified 2026-11-03 on main 5a5109e: the existing rule accepts all 11 must-accept cases in §9 (incl. Grubbs II) and flags all 4 must-refuse cases; today all 15 are inserted.
 - Resolved in plan.md: the toast has no pointer events, so paste and file refusals open the Insert structure dialog instead.
+
+## 13a. Changed while building
+- FR-009 narrowed: Lone Pair's own saved projects and JSON drawings open without a count (see `decisions.md`, 2026-11-03).
 
 ## 14. Open questions
 
