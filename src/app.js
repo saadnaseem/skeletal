@@ -1022,7 +1022,7 @@ function insertFragments(parts){ // parts: [{kind:'frag',f}|{kind:'plus'}|{kind:
     if (p.kind==='frag'){
       const bb=fragBBox(p.f); const dx=x-bb.x0, dy=cy-(bb.y0+bb.y1)/2; const ids=[];
       for (const a of p.f.atoms){ const n={...a,id:nid(),x:a.x+dx,y:a.y+dy}; ids.push(n.id); doc.atoms.push(n); sel.add('a'+n.id); }
-      for (const b of p.f.bonds) doc.bonds.push({id:nid(),a:ids[b.a],b:ids[b.b],order:b.order,stereo:b.stereo});
+      for (const b of p.f.bonds) doc.bonds.push({id:nid(),a:ids[b.a],b:ids[b.b],order:b.order,stereo:b.stereo,...(b.kind?{kind:b.kind}:{})});
       x += (bb.x1-bb.x0) + L*1.4;
     } else if (p.kind==='plus'){ const q={id:nid(),x:x+L*0.3,y:cy}; doc.pluses.push(q); sel.add('p'+q.id); x+=L*2; }
     else if (p.kind==='arrow'){ const r={id:nid(),type:'reaction',x1:x,y1:cy,x2:x+L*3.2,y2:cy}; doc.arrows.push(r); sel.add('r'+r.id); x+=L*4.6; }
@@ -1059,8 +1059,10 @@ function tryLoadText(txt, quiet){
         .catch(()=>toast('That InChI could not be read')); return true; }
     if (txt.startsWith('{')){ const d=JSON.parse(txt); if (d && d.atoms){ pasteDoc(normalizeDoc(d),0,viewCenter()); return true; } }
     const line=txt.split(/\s+/)[0];
-    if (line.includes('>')){
-      const [r,a,p]= line.split('>'); if (p===undefined) throw 0;
+    // reaction SMILES: reactants>agents>products. A '>' in '->' is a dative bond (N->B), not one of those separators
+    const rxn=line.split(/(?<!-)>/);
+    if (rxn.length>1){
+      const [r,a,p]=rxn; if (p===undefined || rxn.length>3) throw 0;
       const parts=[]; const rs=r.split('.').filter(Boolean), ps=p.split('.').filter(Boolean);
       rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
       parts.push({kind:'arrow'});

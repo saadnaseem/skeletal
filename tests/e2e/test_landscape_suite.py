@@ -56,11 +56,9 @@ CASES = [
 PATHS = ["analysis", "export_inchikey", "export_smiles", "export_mol", "export_molV3", "reopen_mol", "reopen_molV3",
          "cdxml", "cdx", "cml", "mrv"]
 
-B2 = "B2: an explicit H count the bonds don't imply ([NH3] on Pt) is dropped by fromOCL"
 B4 = "B4: CML and MRV don't write or read isotopes"
 B10 = "B10: a V3000 molfile with no bonds has an empty bond block, which the IUPAC InChI library rejects"
-KNOWN = {**{("X7", p): B2 for p in PATHS},
-         ("A11", "cml"): B4, ("A11", "mrv"): B4, ("X6", "cml"): B4, ("X6", "mrv"): B4,
+KNOWN = {("A11", "cml"): B4, ("A11", "mrv"): B4, ("X6", "cml"): B4, ("X6", "mrv"): B4,
          ("A8", "export_molV3"): B10, ("A11", "export_molV3"): B10, ("A12", "export_molV3"): B10}
 
 # Everything one structure needs, computed in the page in one go. Each path reads the structure back through the
@@ -124,8 +122,7 @@ def test_every_path_keeps_the_structure(lp, smiles, want_key, mass, path):
     assert r["keys"][path] == want_key
 
 
-@pytest.mark.parametrize("smiles,want_key,mass,path", [
-    pytest.param(*p.values, marks=[pytest.mark.xfail(reason=B2, strict=True)] if p.id == "X7" else [], id=p.id) for p in case_params(False)])
+@pytest.mark.parametrize("smiles,want_key,mass,path", case_params(False))
 def test_exact_mass_matches_indigo(lp, smiles, want_key, mass, path):
     assert abs(lp.run(smiles)["exact"] - mass) < 0.002
 
@@ -214,6 +211,18 @@ def test_rdkit_molfile_pastes_and_opens_as_l_alanine(lp, tmp_path):
         lp.wait_for_timeout(50)
     assert lp.evaluate("doc.atoms.length") == 6
     assert lp.evaluate(key) == "QNAYBMKLOCPYGJ-REOHCLBHSA-N"
+
+
+@pytest.mark.parametrize("text,formula,datives,arrows", [
+    ("Cl[Pt](Cl)([NH3])[NH3]", "H6N2Cl2Pt", 2, 0),  # ammine ligands keep their 3 H: the N-Pt bonds come in as dative
+    ("N->[BH3]", "H6NB", 1, 0),                       # SMILES's own dative bond, not a reaction arrow
+    ("CC(=O)O.N->[BH3]>>CC(=O)[O-].[NH4+]", None, 1, 1)])  # a reaction can still contain one
+def test_dative_ligands_paste_with_their_hydrogens(lp, text, formula, datives, arrows):
+    r = paste(lp, text)
+    assert r["atoms"], r["toast"]
+    got = lp.evaluate("({f: analysisFor(doc.atoms.map(a=>a.id)).formula, d: doc.bonds.filter(b=>b.kind==='dative').length, r: doc.arrows.length})")
+    assert (got["d"], got["r"]) == (datives, arrows)
+    if formula: assert got["f"] == formula
 
 
 @pytest.mark.parametrize("text", ["xyz", "C1CC"])

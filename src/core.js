@@ -812,6 +812,20 @@ function fromOCL(mol, offset){
     if (t===OCL.Molecule.cBondTypeUp) stereo='wedge'; else if (t===OCL.Molecule.cBondTypeDown) stereo='hash';
     bonds.push({a:mol.getBondAtom(0,b), b:mol.getBondAtom(1,b), order: Math.min(3,Math.max(1,ord||1)), stereo});
   }
+  // Dative bonds (donor -> acceptor), which take none of the donor's hydrogens: OCL's metal-ligand bonds (N->B), and a plain bond
+  // from a donor OCL gives more H than our valence rules would ([NH3] or [OH2] on a metal) to a metal or boron neighbour
+  const lig=OCL.Molecule.cBondTypeMetalLigand, acceptor=el=>el==='B' || (kindOf(el)==='element' && !VAL[el] && el!=='H');
+  bonds.forEach((b,k)=>{ if (mol.getBondType(k)===lig){ b.kind='dative'; b.order=1; if (acceptor(atoms[b.a].el) && !acceptor(atoms[b.b].el)) [b.a,b.b]=[b.b,b.a]; } });
+  const bsum=i=>bonds.reduce((s,b)=>s+(!b.kind && (b.a===i||b.b===i) ? b.order : 0), 0);
+  mol.ensureHelperArrays(OCL.Molecule.cHelperNeighbours);
+  for (let i=0;i<n;i++){
+    const extra=()=>mol.getImplicitHydrogens(i)-implicitH(atoms[i], bsum(i));
+    for (const b of bonds){
+      if (extra()<=0) break;
+      const j = b.kind ? -1 : b.a===i ? b.b : b.b===i ? b.a : -1;
+      if (j>=0 && acceptor(atoms[j].el)){ b.kind='dative'; b.order=1; b.stereo='none'; b.a=i; b.b=j; }
+    }
+  }
   return {atoms,bonds};
 }
 // A cyclohexane chair as textbooks draw it: opposite bonds parallel, the left end (the foot) down and the right end (the head) up.
