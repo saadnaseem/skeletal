@@ -89,7 +89,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
   - Monoisotopic mass, plus the m/z of common adducts: [M+H]⁺, [M+Na]⁺, [M+K]⁺, [M+NH₄]⁺, [M+2H]²⁺, M⁺•, [M−H]⁻, [M+Cl]⁻ and [M+HCOO]⁻.
   - A journal-style HRMS line you can copy.
   - The isotope pattern, as a plot and a table.
-  - A **predicted MS/MS** spectrum for [M+H]⁺ or [M−H]⁻ at three collision energies. It is rule-based: bond cleavages, ring openings and common neutral losses. Clicking a peak shows which atoms the fragment ion keeps and which bonds break.
+  - A **predicted MS/MS** spectrum for [M+H]⁺ or [M−H]⁻ at three collision energies. It is rule-based: bond cleavages, ring openings and up to three neutral losses in a row (H₂O, NH₃, CO …), with the charge kept on the nitrogen side when there is one. Intensities are rough, so it is a guide to fragments, not a spectrum for library searching. Clicking a peak shows which atoms the fragment ion keeps and which bonds break.
   - The Analysis panel also shows m/z for [M+H]⁺.
 - **3D view:** a conformer from OpenChemLib, refined with MMFF94s, in ball-and-stick, space-filling or stick style. You can rotate and zoom it, and export it as XYZ, PDB, 3D SDF or PNG. It works offline.
 - **Find in databases:** sends the structure to PubChem (exact, similarity, substructure or superstructure search), RCSB PDB ligands, ChEMBL, or Google and Google Scholar by InChIKey.
@@ -157,7 +157,7 @@ Requirements: Node.js 20 or later. Python 3.10 or later is needed for the browse
 ```bash
 npm install          # OpenChemLib + esbuild
 npm run build        # writes dist/lonepair.html
-npm test             # 164 unit tests (Node test runner)
+npm test             # 213 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
 npm run test:e2e     # 73 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)

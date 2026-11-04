@@ -92,8 +92,11 @@ const MS = (()=>{
 
   /* ---------- MS/MS: rule-based CID fragments of [M+H]+ or [M-H]- ----------
      One-bond cleavages of acyclic single bonds and two-bond ring openings, each fragment as an even-electron ion
-     with 0 or 1 hydrogen transfer, plus common neutral losses. Scores favour labile bonds (C–heteroatom, amide,
-     ester, α to carbonyl, benzylic, allylic) and stable ions (acylium, iminium, oxonium, benzylic, tertiary). */
+     with 0 or 1 hydrogen transfer, plus up to three neutral losses in a row (H₂O, NH₃, CO, CO₂ …). A hydrogen moves
+     only when the piece giving it has one on an atom next to the broken bond, so the neutral that leaves is a real
+     closed-shell molecule. Scores favour labile bonds (C–heteroatom, amide, ester, α to carbonyl, benzylic, allylic)
+     and stable ions (acylium, iminium, oxonium, benzylic, tertiary); with a basic amine the charge stays on the
+     nitrogen side. Higher collision energy favours later losses and smaller ions. */
   function msms(mol, opts={}){
     const mode=opts.mode||'pos', energy=opts.energy||'medium';
     mol.ensureHelperArrays(OCL.Molecule.cHelperRings);
@@ -106,17 +109,25 @@ const MS = (()=>{
     const precursor = {mz: M + sign*PROTON, formula: hill(add(comp.counts,{H:sign})) + (sign>0?'+':'-'), label: sign>0?'[M+H]⁺':'[M−H]⁻'};
     const isHet=i=>/^(N|O|S|P)$/.test(el(i));
     const isCarbonylC=i=>{ if (el(i)!=='C') return false; for (let k=0;k<mol.getConnAtoms(i);k++){ const b=mol.getConnBond(i,k); if (mol.getBondOrder(b)===2 && /^(O|S|N)$/.test(el(mol.getConnAtom(i,k)))) return true; } return false; };
+    const arom=i=>mol.isAromaticAtom(i);
+    const benzylic=i=>{ if (arom(i)) return false; for (let k=0;k<mol.getConnAtoms(i);k++) if (arom(mol.getConnAtom(i,k))) return true; return false; };
+    // a basic amine: sp3 N that is not an amide, aniline or sulfonamide N (where the proton sits in [M+H]+)
+    const basicN=i=>{ if (el(i)!=='N' || arom(i) || mol.getAtomPi(i)) return false;
+      for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (arom(o) || isCarbonylC(o) || /^(S|P)$/.test(el(o)) || mol.getAtomPi(o)) return false; } return true; };
+    const hasBasicN = sign>0 && [...Array(n).keys()].some(basicN);
     const degreeC=i=>{ let c=0; for (let k=0;k<mol.getConnAtoms(i);k++) if (el(mol.getConnAtom(i,k))==='C') c++; return c; };
-    // stability of a cation (pos) or anion (neg) centred on atom i after cleavage
-    function ionScore(i){
+    // stability of a cation (pos) or anion (neg) centred on atom i after its bond to `gone` breaks
+    function ionScore(i, gone=-1){
       if (sign>0){
-        if (isCarbonylC(i)) return 2.2;                      // acylium
-        if (el(i)==='C'){ for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (/^(N|O|S)$/.test(el(o)) && mol.getBondOrder(mol.getConnBond(i,k))===1) return 2.0; } } // iminium/oxonium
+        if (isCarbonylC(i)){ // acylium, unless an ammonium next to it pushes it straight on to lose CO (amino acids)
+          for (let k=0;k<mol.getConnAtoms(i);k++){ const c=mol.getConnAtom(i,k); if (c!==gone && el(c)==='C') for (let q=0;q<mol.getConnAtoms(c);q++) if (basicN(mol.getConnAtom(c,q))) return 0.8; }
+          return 2.2; }
+        if (el(i)==='C'){ for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (o!==gone && /^(N|O|S)$/.test(el(o)) && mol.getBondOrder(mol.getConnBond(i,k))===1) return 2.0; } } // iminium/oxonium
         if (mol.isAromaticAtom(i)) return 0.6;
-        if (el(i)==='C' && (mol.isBenzylicAtom?.(i) || mol.isAllylicAtom(i))) return 1.8;
+        if (el(i)==='C' && (benzylic(i) || mol.isAllylicAtom(i))) return 1.8;
         if (el(i)==='C') return [0.4,0.7,1.2,1.6][Math.min(3,degreeC(i))];
-        if (el(i)==='N') return 1.4;                         // amine keeps the proton
-        return 0.5;
+        if (el(i)==='N') return 0.3;                         // nitrenium: the N piece takes an H instead (below)
+        return 0.0;                                          // oxenium and the like
       }
       if (el(i)==='O' || el(i)==='S') return 2.0;           // alkoxide/carboxylate/phenoxide/thiolate
       if (el(i)==='N') return 1.3;
@@ -129,7 +140,8 @@ const MS = (()=>{
       if (mol.isAmideTypeBond(b)) s+=1.0;
       if ((isCarbonylC(a1)&&isHet(a2)) || (isCarbonylC(a2)&&isHet(a1))) s+=0.9;  // ester/amide/acid C–X
       if (isCarbonylC(a1) || isCarbonylC(a2)) s+=0.5;                               // α-cleavage
-      if ((mol.isAromaticAtom(a1)&&!mol.isAromaticAtom(a2)) || (mol.isAromaticAtom(a2)&&!mol.isAromaticAtom(a1))) s += het ? -0.2 : 0.3; // benzylic
+      if (arom(a1)!==arom(a2)) s += het ? -0.2 : -0.9;                                  // aryl–C bonds rarely break
+      else if (!arom(a1) && (benzylic(a1) || benzylic(a2))) s += 0.3;                   // benzylic
       if (mol.isAllylicAtom(a1) || mol.isAllylicAtom(a2)) s+=0.3;
       if (/^(Cl|Br|I)$/.test(el(a1)) || /^(Cl|Br|I)$/.test(el(a2))) s+=0.8;
       else if (het && (mol.isAromaticAtom(a1) || mol.isAromaticAtom(a2))) s-=1.4;  // aryl–O/N bonds rarely break
@@ -143,15 +155,25 @@ const MS = (()=>{
         parts.push(part); }
       return parts;
     }
+    // can the piece `atoms` give up one H next to its cut atoms, forming a double bond and a closed-shell neutral?
+    const givesH=(atoms, sites)=>{ const inP=new Set(atoms);
+      return sites.some(s=>{ for (let k=0;k<mol.getConnAtoms(s);k++){ const o=mol.getConnAtom(s,k); if (o<n && inP.has(o) && hz(o)>0) return true; } return false; }); };
+    // with a basic amine, a fragment ion with no nitrogen needs the proton to move away from it first
+    // a piece with no nitrogen rarely keeps the charge when the other piece has one (amines, anilides, amides)
+    const hasN=atoms=>atoms.some(i=>el(i)==='N');
+    const holdsH=i=>isHet(i) || arom(i) || mol.getAtomPi(i)>0;
+    const chargeSite=(atoms, rest)=> sign<0 ? 0 : hasBasicN && !atoms.some(basicN) ? -0.8 : !hasN(atoms) && hasN(rest) ? -1.0 : 0;
     const countsOf=atoms=>{ const c={}; for (const i of atoms){ c[el(i)]=(c[el(i)]||0)+1; c.H=(c.H||0)+hz(i); } return c; };
     const raw=[];
     // a piece X (atoms with their H, as a radical) gives even-electron ions: X⁺ when the other piece takes the proton,
-    // [X+2H]⁺ when X keeps the proton and takes one H; in negative mode X⁻ or [X−2H]⁻
+    // [X+2H]⁺ when X keeps the proton and takes one H from the other piece; in negative mode X⁻ (the other piece
+    // gives up an H) or [X−2H]⁻ (X gives one up)
     const pushIon=(counts, transfer, score, how, atoms, bonds)=>{
       const cc=add(counts,{H: transfer ? 2*sign : 0});
       if ((cc.H||0)<0) return; const m=massOf(cc); if (!Number.isFinite(m)) return;
       if (Object.entries(cc).reduce((t,[k,v])=>k==='H'?t:t+v,0)<2) return; // CH3+, OH+, NH4+ and the like are not seen in CID spectra
-      raw.push({mz: m - sign*E, formula: hill(cc)+(sign>0?'+':'-'), score, how, atoms, bonds});
+      // ions below m/z 50 (CH₂=NH₂⁺, CH₃CO⁺ …) are weak in CID and usually below the recorded range
+      raw.push({mz: m - sign*E, formula: hill(cc)+(sign>0?'+':'-'), score: score - (m<50 ? 1.0 : 0), how, atoms, bonds});
     };
     const energyShift = energy==='low' ? -0.6 : energy==='high' ? 0.5 : 0;
     // one-bond cleavages
@@ -160,14 +182,20 @@ const MS = (()=>{
       const parts=split(new Set([b])); if (parts.length!==2) continue;
       const a1=mol.getBondAtom(0,b), a2=mol.getBondAtom(1,b), bs=bondScore(b);
       for (const [part,site] of [[parts[0], parts[0].includes(a1)?a1:a2],[parts[1], parts[1].includes(a1)?a1:a2]]){
-        const other=site===a1?a2:a1, c=countsOf(part);
-        const lbl=`${el(site)}–${el(other)} cleavage`;
+        const other=site===a1?a2:a1, c=countsOf(part), rest=part===parts[0]?parts[1]:parts[0];
+        const lbl=`${el(site)}–${el(other)} cleavage`, cs=chargeSite(part, rest);
         // even-electron ion with one H moved: to the ion when the charge sits on a basic site, away from it otherwise
-        pushIon(c, true, bs+ionScore(site)*0.6 - 0.4 + (sign>0 && el(site)==='N'?0.8:0), lbl+(sign>0?', H transfer':', H loss'), part, [b]);
-        pushIon(c, false, bs+ionScore(site), lbl, part, [b]);
+        // positive mode: the ion keeps the proton, so it needs a site that can hold one (no CnH2n+3⁺ from an alkyl piece)
+        if (sign>0 ? givesH(rest,[other]) && part.some(holdsH) : givesH(part,[site]))
+          pushIon(c, true, bs+ionScore(site,other)*0.6 - 0.4 + (sign>0 ? ({N:1.6,O:0.6}[el(site)]||0) : 0) + cs, lbl+(sign>0?', H transfer':', H loss'), part, [b]);
+        // the other piece leaves with the proton; an alkane (CH₄, C₂H₆ …) rarely does
+        const alkane = sign>0 && rest.every(i=>el(i)==='C');
+        if (sign>0 || givesH(rest,[other])) pushIon(c, false, bs+ionScore(site,other) + cs - (alkane?1.5:0), lbl, part, [b]);
       }
     }
-    // ring openings: two bonds of the same ring (≤ 7 atoms), giving two pieces (retro-Diels–Alder and similar)
+    // ring openings: two bonds of the same ring (≤ 7 atoms), giving two pieces (retro-Diels–Alder and similar).
+    // Each piece closes up as a neutral molecule on its own (a new π bond), so the ion is that piece plus the
+    // proton, [A+H]⁺, or minus it, [A−H]⁻
     const rs=mol.getRingSet();
     for (let r=0;r<rs.getSize();r++){
       const rb=rs.getRingBonds(r); if (rb.length>7 || rs.isAromatic(r)) continue;
@@ -175,25 +203,58 @@ const MS = (()=>{
         const cut=new Set([rb[x],rb[y]]); if ([...cut].some(b=>mol.getBondOrder(b)!==1)) continue;
         const parts=split(cut); if (parts.length!==2) continue;
         const s=(bondScore(rb[x])+bondScore(rb[y]))/2 - 0.8;
-        for (const part of parts){ pushIon(countsOf(part), true, s, 'ring opening', part, [...cut]); pushIon(countsOf(part), false, s-0.3, 'ring opening', part, [...cut]); } }
+        // the larger piece usually keeps the charge
+        for (const part of parts){ const rest=part===parts[0]?parts[1]:parts[0];
+          pushIon(add(countsOf(part),{H:sign}), false, s+chargeSite(part, rest)-(part.length<rest.length?1.0:0), 'ring opening', part, [...cut]); } }
     }
-    // neutral losses from the precursor
-    const groups={OH:0,NH2:0,COOH:0,CO:0,OMe:0,Hal:{}};
+    // neutral losses from the precursor, up to three in a row; each group can be lost as often as it occurs
+    const g={OH:0, ArOH:0, NH2:0, COOH:0, CO:0, OMe:0, Hal:{}};
     for (let i=0;i<n;i++){
-      if (el(i)==='O' && hz(i)>0) groups.OH++;
-      if (el(i)==='N' && hz(i)>=2) groups.NH2++;
-      if (isCarbonylC(i)){ groups.CO++; let oh=false, ome=false; for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (el(o)==='O' && mol.getBondOrder(mol.getConnBond(i,k))===1){ if (hz(o)) oh=true; else for (let q=0;q<mol.getConnAtoms(o);q++){ const c2=mol.getConnAtom(o,q); if (c2!==i && el(c2)==='C' && hz(c2)===3) ome=true; } } } if (oh) groups.COOH++; if (ome) groups.OMe++; }
-      if (/^(Cl|Br|I|F)$/.test(el(i))) groups.Hal[el(i)]=1;
+      if (el(i)==='O' && hz(i)>0){ const c=mol.getConnAtom(i,0);
+        if (c<n && isCarbonylC(c)) {} else if (c<n && arom(c)) g.ArOH++; else g.OH++; }
+      if (el(i)==='N' && hz(i)>=2 && !arom(i)) g.NH2++;
+      if (isCarbonylC(i)){ let oh=false, ome=false; for (let k=0;k<mol.getConnAtoms(i);k++){ const o=mol.getConnAtom(i,k); if (el(o)==='O' && mol.getBondOrder(mol.getConnBond(i,k))===1){ if (hz(o)) oh=true; else for (let q=0;q<mol.getConnAtoms(o);q++){ const c2=mol.getConnAtom(o,q); if (c2!==i && el(c2)==='C' && hz(c2)===3) ome=true; } } } if (oh) g.COOH++; else g.CO++; if (ome) g.OMe++; }
+      if (/^(Cl|Br|I)$/.test(el(i))) g.Hal[el(i)]=(g.Hal[el(i)]||0)+1;
     }
-    const losses=[];
-    if (groups.OH) losses.push(['H2O','loss of H₂O',1.6]);
-    if (groups.NH2) losses.push(['NH3','loss of NH₃',1.5]);
-    if (groups.COOH) losses.push(['CO2','loss of CO₂',sign<0?2.2:0.9], ['CH2O2','loss of HCOOH',1.0]);
-    if (groups.CO) losses.push(['CO','loss of CO',0.8]);
-    if (groups.OMe) losses.push(['CH4O','loss of CH₃OH',1.4]);
-    for (const h of Object.keys(groups.Hal)) if (h!=='F') losses.push([`H${h}`,`loss of H${h}`,1.3]);
-    const pc=add(comp.counts,{H:sign});
-    for (const [f,how,s] of losses){ const c=add(pc,parse(f),-1); if (Object.values(c).some(v=>v<0)) continue; const m=massOf(c); raw.push({mz:m - sign*E, formula:hill(c)+(sign>0?'+':'-'), score:s, how, atoms:null, bonds:[]}); }
+    // [formula, label, score, budget key, how many the molecule can give, earliest step]; a phenol loses CO only
+    // once another loss has made it an ion of its own
+    const LOSS=[
+      ['H2O','H₂O',1.6,'OH',g.OH], ['H2O','H₂O',1.3,'COOH',g.COOH], ['NH3','NH₃',1.5,'NH2',g.NH2],
+      ['CO2','CO₂',sign<0?2.2:0.9,'COOH',g.COOH], ['CH2O2','HCOOH',sign>0?2.0:1.0,'COOH',g.COOH], ['CH4O','CH₃OH',1.4,'OMe',g.OMe],
+      ['CO','CO',0.8,'CO',g.CO], ['CO','CO',0.7,'ArOH',g.ArOH,2], ['H2O','H₂O',-0.5,'ArOH',g.ArOH],
+      ...Object.entries(g.Hal).map(([h,c])=>[`H${h}`,`H${h}`,1.3,h,c]),
+    ].filter(l=>l[4]>0);
+    const depthShift = energy==='low' ? -0.8 : energy==='high' ? 0.7 : 0;
+    const FIRST=2.0; // the first loss from the protonated (or deprotonated) molecule is the most favoured process in CID
+    const pc=add(comp.counts,{H:sign}), heavy=c=>Object.entries(c).reduce((t,[k,v])=>k==='H'?t:t+v,0);
+    // an ion that a bond cleavage already explains (C–O cleavage is the H₂O loss) gets that cleavage's extra score,
+    // whichever loss reaches it, so a chain scores the same in any order
+    const cleaved=new Map(); for (const p of raw) if (!(cleaved.get(p.formula) >= p.score)) cleaved.set(p.formula, p.score);
+    const ionF=c=>hill(c)+(sign>0?'+':'-'), first=new Map();
+    for (const [f,,sc,,,from=1] of LOSS) if (from===1){ const k=ionF(add(pc,parse(f),-1)); if (!(first.get(k) >= sc)) first.set(k, sc); }
+    const boost=f=> cleaved.has(f) ? Math.max(0, cleaved.get(f) - FIRST - first.get(f)) : 0;
+    const seen=new Map();
+    (function walk(counts, used, steps, prevScore){
+      for (let j=0;j<LOSS.length;j++){ const [f,lab,sc,key,max,from=1]=LOSS[j];
+        if ((used[key]||0) >= max || steps.length+1 < from) continue;
+        if (key==='ArOH' && f==='CO' && hasBasicN && (used.NH2||0) < g.NH2) continue; // the ring opens once the amine (and its charge) has gone
+        const c=add(counts,parse(f),-1); if (Object.values(c).some(v=>v<0) || heavy(c)<2) continue;
+        const st=[...steps, lab], u={...used, [key]:(used[key]||0)+1}, formula=ionF(c);
+        // each later loss costs more; collision energy decides how far the chain goes
+        const score = steps.length ? prevScore + sc - 2.0 + depthShift : FIRST + sc + boost(formula);
+        const prev=seen.get(formula);
+        if (prev && prev.score>=score) continue;  // a better route to this ion is already there
+        seen.set(formula, {mz:massOf(c) - sign*E, formula, score, how:'loss of '+st.join(', then '), atoms:null, bonds:[]});
+        if (st.length<3) walk(c, u, st, score);
+      }
+    })(pc, {}, [], 0);
+    // a loss that a bond cleavage also explains replaces it, keeping the cleavage's atoms so a click can show them
+    for (const p of seen.values()){
+      const same=raw.filter(q=>q.formula===p.formula && q.atoms);
+      if (same.length){ const best=same.reduce((a,b)=>b.score>a.score?b:a); Object.assign(p,{atoms:best.atoms, bonds:best.bonds});
+        for (let k=raw.length-1;k>=0;k--) if (raw[k].formula===p.formula) raw.splice(k,1); }
+      raw.push(p);
+    }
     // acylium ions also lose CO
     for (const p of [...raw]) if (sign>0 && p.how.includes('cleavage') && p.atoms && p.atoms.some(isCarbonylC) && p.score>2.5){ const c=add(parse(p.formula.replace(/[+-]$/,'')),{C:1,O:1},-1); if (Object.values(c).every(v=>v>=0) && (c.C||0)>1){ raw.push({mz:massOf(c)-E, formula:hill(c)+'+', score:p.score-1.2, how:p.how+', then −CO', atoms:p.atoms, bonds:p.bonds}); } }
     // merge peaks at the same m/z (keep the best explanation), convert scores to intensities
