@@ -2091,10 +2091,10 @@ function syncTools(){
 /* ================= dialogs & toast ================= */
 const modal=$('#modal'), dialog=$('#dialog');
 function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog);
-  // focus goes into the dialog: its first visible text field or menu (not a checkbox, where Space would tick it), else its close button, else the dialog itself
-  const f=[...dialog.querySelectorAll('textarea,select,input:not([type=checkbox]):not([type=radio]):not([type=hidden])')].find(x=>!x.disabled && x.getClientRects().length),
-    b=f? null : dialog.querySelector('[data-close]')||dialog.querySelector('button:not([disabled])');
-  setTimeout(()=>{ if (f) f.focus(); else (b||dialog).focus({preventScroll:true}); },30); }
+  // focus goes into the dialog without scrolling it: its first visible text field (not a checkbox or a menu, which keys would change), else its close button, else the dialog itself
+  const f=[...dialog.querySelectorAll('textarea,input:not([type=checkbox]):not([type=radio]):not([type=hidden])')].find(x=>!x.disabled && x.getClientRects().length),
+    t=f || dialog.querySelector('[data-close]') || dialog.querySelector('button:not([disabled])') || dialog;
+  setTimeout(()=>t.focus({preventScroll:true}),30); }
 function closeDialog(){ modal.classList.remove('open'); dialog.innerHTML=''; dialog.classList.remove('wide'); }
 modal.addEventListener('pointerdown', e=>{ if (e.target===modal) closeDialog(); });
 dialog.addEventListener('keydown', e=>{ if (e.key==='Escape'){ e.stopPropagation(); closeDialog(); } }); // the key is the dialog's: closing detaches the focused element, so without stopping it the drawing's own Escape would clear the selection

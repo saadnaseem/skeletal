@@ -770,8 +770,8 @@ def test_dialog_without_field_keeps_keys_out_of_drawing(page):
     page.keyboard.press("Escape")
     assert not page.is_visible("#dialog")
     assert page.evaluate("sel.size") == n_sel > 0  # Escape closed the dialog only, not the drawing's selection
-    page.click("#bPage")  # Document size: its first inputs are hidden, so focus goes to the Sheet size menu (not the "every page" checkbox)
-    wait_until(page, "document.activeElement && document.activeElement.id === 'psSize'")
+    page.click("#bPage")  # Document size: its text fields are hidden, so focus goes to Done (not the "every page" checkbox or the size menu)
+    wait_until(page, "document.activeElement && document.activeElement.matches('#dialog [data-close]')")
     page.keyboard.press("Escape")
     assert not page.is_visible("#dialog")
     page.click("#bAbout")  # focus left on the page while a dialog is open (a click on its text, Safari): keys still stay out of the drawing
