@@ -2088,10 +2088,16 @@ function syncTools(){
 
 /* ================= dialogs & toast ================= */
 const modal=$('#modal'), dialog=$('#dialog');
-function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog); const f=dialog.querySelector('textarea,input'); if (f) setTimeout(()=>f.focus(),30); }
+function openDialog(html){ dialog.classList.remove('wide'); dialog.innerHTML=html; modal.classList.add('open'); dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeDialog);
+  // focus goes into the dialog: its first field, else its close button (so Escape works and keys stay out of the drawing), without scrolling it
+  const f=dialog.querySelector('textarea,input'), b=f? null : dialog.querySelector('[data-close]')||dialog.querySelector('button:not([disabled])');
+  setTimeout(()=>{ if (f) f.focus(); else if (b) b.focus({preventScroll:true}); },30); }
 function closeDialog(){ modal.classList.remove('open'); dialog.innerHTML=''; dialog.classList.remove('wide'); }
 modal.addEventListener('pointerdown', e=>{ if (e.target===modal) closeDialog(); });
 dialog.addEventListener('keydown', e=>{ if (e.key==='Escape') closeDialog(); });
+// top bar: drop button words in steps (About, then Sign in / Feedback / Solvent peaks, then all) until it fits; fonts, account name and zoom all change its width
+function fitTopBar(){ const h=$('header.top'), steps=['fit-1','fit-2','fit-3']; h.classList.remove(...steps); for (const c of steps){ if (h.scrollWidth<=h.clientWidth) break; h.classList.add(c); } }
+new ResizeObserver(fitTopBar).observe($('header.top')); if (document.fonts) document.fonts.ready.then(fitTopBar);
 let _toastT=null;
 function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),ms); }
 
@@ -2211,7 +2217,7 @@ $('#bSmiles').onclick=()=>openSmilesDialog();
 $('#bCopy').onclick=()=>{ clip=subDoc(sel.size?sel:null); copyImage(); };
 $('#bSaveAs').onclick=openSaveAs;
 $('#bPng').onclick=downloadPng; $('#bSvg').onclick=downloadSvg; $('#bSave').onclick=saveDrawing; $('#bPdf').onclick=exportPdfDialog; $('#bOpenTop').onclick=()=>openProjectFile();
-$('#bAccount').onclick=()=>openAccountMenu(); $('#bFeedback').onclick=openFeedback;
+$('#bAccount').onclick=()=>openAccountMenu(); $('#bFeedback').onclick=openFeedback; $('#bAbout').onclick=openAbout;
 $('#nudgeIn').onclick=()=>{ $('#signinNudge').hidden=true; signIn(); }; $('#nudgeNo').onclick=()=>{ $('#signinNudge').hidden=true; };
 initAccount(); $('#bSaveNew').onclick=()=>saveProject(true);
 $('#bSaveHtml').onclick=()=>saveProject(); $('#bVersion').onclick=saveVersionDialog; $('#bNmr').onclick=openNmr; $('#bOpen').onclick=()=>openProjectFile();
@@ -2358,6 +2364,29 @@ function signIn(){ saveNow(); location.href='/api/auth/google'; }
 const FEEDBACK_MAIL='feedback@lonepair.app';
 const canPost=()=>/^https?:$/.test(location.protocol) && !!document.querySelector('meta[name="lp-api"]');
 let _fbDraft={message:'', email:''};
+// About: what Lone Pair calculates, and where each number comes from
+function openAbout(){
+  openDialog(`<div class="about"><h3>About Lone Pair</h3>
+    <p>Every value below is calculated in your browser, on your computer, and works offline.</p>
+    <h4>What it calculates, and how</h4>
+    <ul>
+      <li><b>Analysis panel and Analysis block</b>
+        <ul>
+          <li>SMILES, MW, cLogP, LogS, tPSA, H-bond donors and acceptors, rotatable bonds and stereocenters: the OpenChemLib library.</li>
+          <li>Exact mass: OpenChemLib in the panel, Lone Pair\u2019s own isotope masses in the Analysis block.</li>
+          <li>InChI and InChIKey: the official IUPAC InChI library, bundled.</li>
+          <li>Formula, adduct m/z, isotope peaks and elemental analysis: Lone Pair’s own tables of atomic weights and isotope masses.</li>
+        </ul></li>
+      <li><b>Mass spectrum</b>: adducts and the isotope pattern from isotope masses. The predicted MS/MS is rule-based: it scores which bonds break and how stable the fragment ion is, and applies up to three neutral losses in a row.</li>
+      <li><b>NMR</b>: ¹H shifts from Shoolery/Pretsch, Pretsch Z and Pascual–Meier–Simon increments; ¹³C shifts from Grant–Paul plus substituent, benzene and alkene tables. Splitting is first-order.</li>
+      <li><b>pKa</b>: reference values by class (Evans/Bordwell/Williams), Hammett σ for aromatic sites, and an inductive fall-off with distance for aliphatic sites.</li>
+      <li><b>BDE</b>: Blanksby & Ellison X–H values plus radical-stabilisation terms, and the Sanderson/Reusch R–X table.</li>
+      <li><b>3D view</b>: an OpenChemLib conformer refined with MMFF94s.</li>
+      <li><b>NMR guide</b>: degree of unsaturation and Rule of 13 (Bright & Chen) calculators. <b>Solvent peaks</b>: Fulmer et al. 2010, extending Gottlieb et al. 1997.</li>
+    </ul>
+    <p class="note">These are estimates for planning and checking, not measured data. The NMR, pKa and BDE results each state their expected error.</p>
+    <div class="actions"><button class="tb primary" data-close>Done</button></div></div>`);
+}
 function openFeedback(){
   let saved=''; try{ saved=localStorage.getItem('lonepair.fbEmail')||''; }catch(e){}
   const hasDrawing=hasContent(doc);
@@ -2393,10 +2422,11 @@ async function sendFeedback(){
 }
 function syncAccountUI(){
   const b=$('#bAccount'); b.hidden=!accountAvailable;
-  if (!accountAvailable) return;
+  if (!accountAvailable) return fitTopBar();
   if (account){ const ini=(account.name||account.email||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    b.innerHTML=`<span class="avatar" aria-hidden="true">${esc(ini)}</span><span class="hide-mobile">${esc((account.name||'').split(' ')[0]||'Account')}</span>`; b.title=`Signed in as ${account.email}`; }
-  else { b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 01-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 010-4.4V7H2.1a11 11 0 000 10l3.7-2.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 002.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg><span class="hide-mobile">Sign in with Google</span>`; b.title='Sign in with Google (optional)'; }
+    b.innerHTML=`<span class="avatar" aria-hidden="true">${esc(ini)}</span><span class="hide-mobile lab-wide">${esc((account.name||'').split(' ')[0]||'Account')}</span>`; b.title=`Signed in as ${account.email}`; }
+  else { b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 01-2.2 3.3v2.7h3.6c2-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 010-4.4V7H2.1a11 11 0 000 10l3.7-2.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 002.1 7l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg><span class="hide-mobile lab-wide">Sign in with Google</span>`; b.title='Sign in with Google (optional)'; }
+  fitTopBar();
 }
 function openAccountMenu(){
   if (!account){ signIn(); return; }

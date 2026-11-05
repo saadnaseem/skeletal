@@ -87,12 +87,12 @@ def open_app(browser, base):
 
 def test_sign_in_saves_the_account_and_keeps_the_drawing(server, browser):
     ctx, pg = open_app(browser, server["base"])
-    assert "Sign in with Google" in pg.inner_text("#bAccount")
+    assert "Sign in with Google" in pg.text_content("#bAccount")  # the word may be hidden to fit the top bar; the tooltip stays
     pg.evaluate("tryLoadText('CC(=O)Oc1ccccc1C(=O)O')")  # work in progress survives the trip to Google and back
     pg.click("#bAccount")
     pg.wait_for_url(server["base"] + "/")  # back home, ?signin=ok removed
     pg.wait_for_selector("#bAccount .avatar")
-    assert "Ada" in pg.inner_text("#bAccount") and pg.evaluate("doc.atoms.length") == 13
+    assert "Ada" in pg.text_content("#bAccount") and pg.evaluate("doc.atoms.length") == 13
     rows = server["sql"]("SELECT id, email, name, sign_ins FROM users")
     assert rows == [{"id": USER["sub"], "email": USER["email"], "name": USER["name"], "sign_ins": 1}]
     assert len(server["sql"]("SELECT id FROM sessions")) == 1

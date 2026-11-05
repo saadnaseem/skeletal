@@ -131,7 +131,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 
 ## How the estimates work, and how accurate they are
 
-All predictions are rule-based. They run instantly and offline, but they are estimates, not measurements. Each result card in the app shows the reference value and correction it used.
+All predictions are rule-based. They run instantly and offline, but they are estimates, not measurements. Each result card in the app shows the reference value and correction it used, and the **About** button at the right end of the top bar lists the library, table or method behind every number.
 
 | Tool | Method | Held-out error* |
 | --- | --- | --- |
@@ -160,7 +160,7 @@ npm run build        # writes dist/lonepair.html
 npm test             # 228 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 793 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
+npm run test:e2e     # 796 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
