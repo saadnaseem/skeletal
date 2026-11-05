@@ -131,7 +131,7 @@ To host it, see [Hosting on Cloudflare Pages](#hosting-on-cloudflare-pages), or 
 
 ## How the estimates work, and how accurate they are
 
-All predictions are rule-based. They run instantly and offline, but they are estimates, not measurements. Each result card in the app shows the reference value and correction it used.
+All predictions are rule-based. They run instantly and offline, but they are estimates, not measurements. Each result card in the app shows the reference value and correction it used, and the **About** button at the right end of the top bar lists the library, table or method behind every number.
 
 | Tool | Method | Held-out error* |
 | --- | --- | --- |
