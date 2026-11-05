@@ -100,10 +100,10 @@ table.fmt td{padding:6px 8px; vertical-align:top}
 .tb.primary:hover{filter:brightness(1.07)}
 .spacer{flex:1}
 .only-mobile{display:none}
-/* top-bar words drop in steps so nothing is cut off on the right (widths measured with the sign-in button shown) */
-@media (max-width: 1659px){ .wide-only{display:none} }
-@media (max-width: 1599px){ .lab-wide{display:none} }
-@media (max-width: 1299px){ .hide-mobile{display:none} }
+/* top bar: fitTopBar() (app.js) drops button words in these steps until the bar fits; below the last step it scrolls sideways.
+   Buttons never shrink, so an overflow shows up as overflow instead of squashed icons. */
+header.top > *{flex-shrink:0}
+header.top.fit-1 .wide-only, header.top.fit-2 .lab-wide, header.top.fit-3 .hide-mobile{display:none}
 
 nav.tools{background:var(--chrome); border-right:1px solid var(--line); padding:10px 8px; overflow-y:auto; display:flex; flex-direction:column; gap:10px}
 .tgroup{display:grid; grid-template-columns:repeat(3,36px); gap:4px}
