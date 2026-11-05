@@ -724,6 +724,43 @@ def test_link_preview_tags(page):
         assert page.evaluate("!!document.querySelector('link[rel=apple-touch-icon]')")
 
 
+def test_about_box(page):
+    hdr = page.locator("header.top > *")
+    assert hdr.nth(hdr.count() - 1).get_attribute("id") == "bAbout"  # last thing in the top bar
+    page.click("#bAbout")
+    txt = page.inner_text("#dialog")
+    assert "About Lone Pair" in txt
+    for src in ("OpenChemLib", "IUPAC InChI", "Shoolery", "Grant", "Hammett", "Blanksby", "MMFF94s", "Fulmer"):
+        assert src in txt, src
+    page.click("#dialog [data-close]")
+    assert not page.is_visible("#dialog")
+
+
+def test_top_bar_fits(page):
+    # the live site shows the sign-in button; with it the top bar is at its widest
+    page.evaluate("accountAvailable=true; account=null; syncAccountUI(); 0")
+    fit = """(()=>{ const h=document.querySelector('header.top'), r=id=>document.querySelector(id).getBoundingClientRect();
+      return {fits: h.scrollWidth<=h.clientWidth, about: r('#bAbout').right<=innerWidth, copy: r('#bCopy').right<=innerWidth,
+              word: getComputedStyle(document.querySelector('#bAbout .wide-only')).display!=='none'}; })()"""
+    for w, word in ((1300, False), (1366, False), (1440, False), (1600, False), (1680, True)):
+        page.set_viewport_size({"width": w, "height": 900})
+        got = page.evaluate(fit)
+        assert got["fits"] and got["about"] and got["copy"], (w, got)  # nothing cut off on the right
+        assert got["word"] == word, (w, got)  # "About" spelled out only where it fits
+    page.set_viewport_size({"width": 1000, "height": 900})  # narrower than the icons: the bar scrolls instead of cutting off
+    assert page.evaluate("getComputedStyle(document.querySelector('header.top')).overflowX") == "auto"
+
+
+def test_dialog_without_field_keeps_keys_out_of_drawing(page):
+    page.evaluate("tryLoadText('CCO'); selectAll(); 0")
+    page.click("#bAbout")
+    page.wait_for_function("document.activeElement && document.activeElement.closest('.dialog')")
+    page.keyboard.press("Delete")  # with focus in the dialog, Delete must not erase the selection behind it
+    assert page.evaluate("doc.atoms.length") == 3
+    page.keyboard.press("Escape")
+    assert not page.is_visible("#dialog")
+
+
 def test_feedback_form(page):
     from conftest import URL
     page.evaluate("tryLoadText('CCO')")

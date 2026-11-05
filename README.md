@@ -160,7 +160,7 @@ npm run build        # writes dist/lonepair.html
 npm test             # 228 unit tests (Node test runner)
 npm run validate     # held-out accuracy report for NMR and pKa
 pip install -r requirements-dev.txt && python -m playwright install chromium
-npm run test:e2e     # 793 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
+npm run test:e2e     # 796 browser tests (Playwright; the 3 sign-in tests need Node 22 for wrangler and a built site/)
 ```
 
 To cross-check the chemical file formats with RDKit and Open Babel (`pip install rdkit openbabel-wheel`):
