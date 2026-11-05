@@ -762,7 +762,7 @@ def test_top_bar_fits(page):
 def test_dialog_without_field_keeps_keys_out_of_drawing(page):
     page.evaluate("tryLoadText('CCO'); selectAll(); 0")
     page.click("#bAbout")
-    page.wait_for_function("document.activeElement && document.activeElement.closest('.dialog')")
+    wait_until(page, "!!(document.activeElement && document.activeElement.closest('.dialog'))")
     assert page.evaluate("document.activeElement.matches('[data-close]')")  # the close button, not some other button
     page.keyboard.press("Delete")  # with focus in the dialog, Delete must not erase the selection behind it
     assert page.evaluate("doc.atoms.length") == 3
@@ -770,13 +770,13 @@ def test_dialog_without_field_keeps_keys_out_of_drawing(page):
     assert not page.is_visible("#dialog")
     page.set_viewport_size({"width": 390, "height": 600})  # a dialog taller than the window opens at its top
     page.evaluate("openAbout(); 0")
-    page.wait_for_function("document.activeElement && document.activeElement.closest('.dialog')")
+    wait_until(page, "!!(document.activeElement && document.activeElement.closest('.dialog'))")
     assert page.evaluate("document.querySelector('#dialog').scrollTop") == 0
     page.keyboard.press("Escape")
     page.set_viewport_size({"width": 1400, "height": 900})
     page.evaluate("accountAvailable=true; account={name:'Ada L', email:'a@example.com'}; syncAccountUI(); 0")
     page.click("#bAccount")  # the account menu's first button is Delete my account: focus must not land there
-    page.wait_for_function("document.activeElement && document.activeElement.closest('.dialog')")
+    wait_until(page, "!!(document.activeElement && document.activeElement.closest('.dialog'))")
     assert page.evaluate("document.activeElement.id") != "acDel"
 
 
