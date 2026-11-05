@@ -766,6 +766,12 @@ def test_dialog_without_field_keeps_keys_out_of_drawing(page):
     assert page.evaluate("document.activeElement.matches('[data-close]')")  # the close button, not some other button
     page.keyboard.press("Delete")  # with focus in the dialog, Delete must not erase the selection behind it
     assert page.evaluate("doc.atoms.length") == 3
+    n_sel = page.evaluate("sel.size")
+    page.keyboard.press("Escape")
+    assert not page.is_visible("#dialog")
+    assert page.evaluate("sel.size") == n_sel > 0  # Escape closed the dialog only, not the drawing's selection
+    page.click("#bPage")  # Document size: its first inputs are hidden, so focus must skip to a visible one
+    wait_until(page, "!!(document.activeElement && document.activeElement.closest('.dialog'))")
     page.keyboard.press("Escape")
     assert not page.is_visible("#dialog")
     page.set_viewport_size({"width": 390, "height": 600})  # a dialog taller than the window opens at its top
