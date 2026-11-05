@@ -10,7 +10,7 @@ pass, the run fails until its mark is removed.
 """
 import re
 import pytest
-from conftest import _open
+from conftest import _open, _wait
 
 # id, input, standard InChIKey (Indigo), monoisotopic mass (Indigo)
 CASES = [
@@ -274,7 +274,7 @@ def _insert(lp, text, pubchem):
     try:  # the page is shared by the module: leave no route or open dialog behind, even on failure
         lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
         lp.fill("#smIn", text); lp.click("#smGo")
-        lp.wait_for_function("!/Looking up/.test(document.querySelector('#smErr').textContent)")
+        _wait(lp, "!/Looking up/.test(document.querySelector('#smErr').textContent)")
         msg = lp.inner_text("#smErr")
     finally:
         lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
@@ -305,7 +305,7 @@ def test_insert_dialog_still_inserts_a_name_that_is_also_a_broken_smiles(lp):
     try:
         lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''; openSmilesDialog()")
         lp.fill("#smIn", "B12"); lp.click("#smGo")
-        lp.wait_for_function("doc.atoms.length > 0")
+        _wait(lp, "doc.atoms.length > 0")
         toast = lp.inner_text("#toast")
     finally:
         lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
@@ -328,7 +328,7 @@ def test_insert_dialog_says_when_pubchem_structure_cannot_be_drawn(lp):
     try:
         lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
         lp.fill("#smIn", "somename"); lp.click("#smGo")
-        lp.wait_for_function("!/Looking up/.test(document.querySelector('#smErr').textContent)")
+        _wait(lp, "!/Looking up/.test(document.querySelector('#smErr').textContent)")
         msg = lp.inner_text("#smErr")
     finally:
         lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
@@ -353,7 +353,7 @@ def test_file_open_of_a_pdb_file_keeps_the_plain_message(lp, tmp_path):
     f = tmp_path / "x.pdb"; f.write_text("HEADER    PROTEIN\nATOM      1  N   ALA A   1\n")
     lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''")
     lp.set_input_files("#fileIn", str(f))
-    lp.wait_for_function("document.querySelector('#toast').textContent")
+    _wait(lp, "document.querySelector('#toast').textContent")
     assert lp.inner_text("#toast") == "Could not read this file"
 
 
@@ -361,7 +361,7 @@ def test_file_open_of_an_invalid_smiles_says_why(lp, tmp_path):
     f = tmp_path / "bad.smi"; f.write_text("CC(C)C1CC\n")
     lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''")
     lp.set_input_files("#fileIn", str(f))
-    lp.wait_for_function("document.querySelector('#toast').textContent")
+    _wait(lp, "document.querySelector('#toast').textContent")
     assert "Not a valid SMILES. Ring bond 1 is opened" in lp.inner_text("#toast") and lp.evaluate("doc.atoms.length") == 0
 
 
