@@ -1853,9 +1853,10 @@ async function copyImage(){
     $('#dlFromCopy').onclick=()=>{ closeDialog(); downloadPng(); };
   }
 }
+// true when the text reached the clipboard; otherwise it is shown in a dialog to copy by hand
 async function copyText(t, msg){
-  try{ await navigator.clipboard.writeText(t); toast(msg||'Copied'); }
-  catch(e){ const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(_){} ta.remove(); if (ok) toast(msg||'Copied'); else openDialog(`<h3>Copy text</h3><p>Select the text and copy it.</p><textarea readonly>${esc(t)}</textarea><div class="actions"><button class="tb primary" data-close>Done</button></div>`); }
+  try{ await navigator.clipboard.writeText(t); toast(msg||'Copied'); return true; }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(_){} ta.remove(); if (ok) toast(msg||'Copied'); else openDialog(`<h3>Copy text</h3><p>Select the text and copy it.</p><textarea readonly>${esc(t)}</textarea><div class="actions"><button class="tb primary" data-close>Done</button></div>`); return ok; }
 }
 // PNG chunk helpers (dpi + embedded drawing for reopening)
 const CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
@@ -1877,11 +1878,13 @@ function readPngMeta(bytes){
   return null;
 }
 let dlCap; const dlReady=(async()=>{ try{ if (window.claude && claude.use){ dlCap=await claude.use('downloads'); } }catch(e){ dlCap=null; } })();
+// true when the file was handed over to be saved; false when saving failed or was declined (and the user was told)
 async function saveFile(filename, data){
   await dlReady;
-  if (dlCap){ try{ await dlCap.save({filename, data}); toast('Saved '+filename); }catch(e){ if (e && e.code==='declined') return; toast('Could not save the file here'); } return; }
+  if (dlCap){ try{ await dlCap.save({filename, data}); toast('Saved '+filename); return true; }catch(e){ if (e && e.code==='declined') return false; toast('Could not save the file here'); } return false; }
   const blob = data instanceof Blob ? data : new Blob([data]);
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  return true;
 }
 async function downloadPng(){
   const d=exportTarget(); if(!d){ toast('Nothing to export yet'); return; }
@@ -1946,15 +1949,47 @@ async function exportData(id){ // -> {data: string|Blob|Uint8Array, mime}
     const out=FORMATS.write(id, d); return {data:out, mime: it.bin? 'application/octet-stream' : 'text/plain'}; }
   throw new Error('Unknown format');
 }
+// A structure file just written is read back with our own readers and compared with the drawing, part by part (structureKey).
+// Returns what the file would lose, in words, or '' when it reads back the same. The file is still saved: the loss is often the
+// format's (a molfile has no dative bonds), and the user should know, not be stopped.
+const READBACK={smiles:'SMILES string', mol:'molfile', molV3:'V3000 molfile', sdf:'SD file', cdxml:'ChemDraw XML file', cdx:'ChemDraw file', cml:'CML file', mrv:'Marvin file'};
+function exportCheck(id, data, d){
+  const name=READBACK[id]; if (!name || !d.atoms.length) return '';
+  const r=toOCL(d, buildIndex(d), d.atoms.map(a=>a.id)); if (r.generic) return ''; // R and X are written as unknown atoms on purpose
+  // dative bonds aren't in the OCL molecule, so they are compared as donor>acceptor element pairs
+  const datives=doc=>{ const el=new Map(doc.atoms.map(a=>[a.id,a.el])); return doc.bonds.filter(b=>b.kind==='dative').map(b=>el.get(b.a)+'>'+el.get(b.b)).sort(); };
+  const want=r.mol, wantDative=datives(d);
+  let got, gotDative=[];
+  try{
+    if (id==='smiles') got=OCL.Molecule.fromSmiles(String(data).trim().split(/\s+/)[0]); // not smilesMol: its [1H] marks a drawn H, which the drawing's H has no mass for
+    else if (id==='mol' || id==='molV3') got=molfileMol(data).mol;
+    else if (id==='sdf'){ got=new OCL.Molecule(8,8); for (const rec of String(data).split('$$$$')) if (/M\s+END/.test(rec)) got.addMolecule(molfileMol(rec.replace(/^\r?\n/,'')).mol); }
+    else { const {skipped, style, styleOv, labelSize, ...parts}=FORMATS.read(id, data), back=normalizeDoc({...newDoc(), ...parts});
+      got=toOCL(back, buildIndex(back), back.atoms.map(a=>a.id)).mol; gotDative=datives(back); }
+  }catch(e){ got=null; }
+  if (!got || !got.getAllAtoms()) return `The ${name} was written, but it couldn’t be read back to check it.`; // a reader that finds nothing is no comparison
+  if (structureKey(want)!==structureKey(got)){
+    const fa=MS.hill(MS.composition(want).counts), fb=MS.hill(MS.composition(got).counts);
+    if (fa!==fb) return `The ${name} doesn’t keep everything in the drawing: it reads back as ${fb}, not ${fa}.`;
+    if (structureKey(want,false)===structureKey(got,false)) return `The ${name} doesn’t keep the stereochemistry as drawn.`;
+    return `The ${name} reads back with different bonds than the drawing.`;
+  }
+  if (gotDative.length<wantDative.length) return `The ${name} leaves out the dative bonds (the arrows), so those parts are written unconnected. ChemDraw files keep them.`;
+  if (gotDative.join()!==wantDative.join()) return `The ${name} reads back with different dative bonds (the arrows) than the drawing.`;
+  return '';
+}
 async function exportAs(id, copy){
   if (id==='png') return downloadPng(); if (id==='svg') return downloadSvg(); if (id==='pdf'){ closeDialog(); return exportPdfDialog(); } if (id==='html') return saveHtml();
   const it=EXPORTS.flatMap(g=>g.items).find(x=>x.id===id);
   try{
-    const {data}=await exportData(id);
-    if (copy){ copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); return; }
+    const {data}=await exportData(id), d=exportDoc();
+    // the read-back check runs after the save or copy, so it never delays it, and only when it went through (a failed save keeps its own message)
+    const check=()=>{ try{ return exportCheck(id, data, d); }catch(e){ console.warn(e); return ''; } };
+    if (copy){ const ok=await copyText(typeof data==='string'? data.trim() : '', it.n+' copied'); const warn=check(); if (warn) toast((ok? it.n+' copied. ' : '')+warn, 9000); return; }
     const lost = id==='eps' ? PDF.takeMissing() : [];
-    await saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
+    const saved=await saveFile(fileBase()+(sel.size?' selection':'')+'.'+it.ext, data instanceof Uint8Array ? new Blob([data]) : data);
     warnMissingChars('EPS', lost);
+    const warn=saved ? check() : ''; if (warn) toast(warn, 9000);
   }catch(err){ toast(err.message||'Export failed'); }
 }
 function openSaveAs(){

@@ -894,6 +894,12 @@ function findChairs(d, ix){
 }
 // SMILES with its explicit hydrogens kept as atoms ([H]C([H])([H])O draws its H): OpenChemLib drops plain [H], so they go in as [1H]
 function smilesMol(smi){ return OCL.Molecule.fromSmiles(String(smi).replace(/\[H\]/g,'[1H]')); }
+// A structure's identity, to compare a file read back with the drawing it came from: OCL's canonical ID code of each fragment
+// (atoms, bonds, charges, isotopes, radicals and, unless stereo is false, stereo), sorted, so the order of the parts doesn't count
+function structureKey(mol, stereo=true){
+  const m=mol.getCompactCopy(); if (!stereo) m.stripStereoInformation();
+  return m.getFragments().map(f=>f.getIDCode()).sort().join('.');
+}
 // Atoms a SMILES writes outside brackets fill their valence with H, so they can't be radicals. OpenChemLib makes one when it can't give an
 // aromatic ring alternating double bonds (c1cccc1, or a ring N-H written n, not [nH]): those atoms are returned, so the caller can refuse
 // the SMILES instead of drawing a radical nobody wrote. OCL keeps the SMILES atom order; if the counts disagree, nothing is reported.
