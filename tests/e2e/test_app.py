@@ -766,8 +766,21 @@ def test_dialog_without_field_keeps_keys_out_of_drawing(page):
     assert page.evaluate("document.activeElement.matches('[data-close]')")  # the close button, not some other button
     page.keyboard.press("Delete")  # with focus in the dialog, Delete must not erase the selection behind it
     assert page.evaluate("doc.atoms.length") == 3
+    n_sel = page.evaluate("sel.size")
     page.keyboard.press("Escape")
     assert not page.is_visible("#dialog")
+    assert page.evaluate("sel.size") == n_sel > 0  # Escape closed the dialog only, not the drawing's selection
+    page.click("#bPage")  # Document size: its text fields are hidden, so focus goes to Done (not the "every page" checkbox or the size menu)
+    wait_until(page, "document.activeElement && document.activeElement.matches('#dialog [data-close]')")
+    page.keyboard.press("Escape")
+    assert not page.is_visible("#dialog")
+    page.click("#bAbout")  # focus left on the page while a dialog is open (a click on its text, Safari): keys still stay out of the drawing
+    wait_until(page, "!!(document.activeElement && document.activeElement.closest('.dialog'))")
+    page.evaluate("document.activeElement.blur(); 0")
+    page.keyboard.press("Delete")
+    assert page.evaluate("doc.atoms.length") == 3
+    page.keyboard.press("Escape")
+    assert not page.is_visible("#dialog") and page.evaluate("sel.size") == n_sel
     page.set_viewport_size({"width": 390, "height": 600})  # a dialog taller than the window opens at its top
     page.evaluate("openAbout(); 0")
     wait_until(page, "!!(document.activeElement && document.activeElement.closest('.dialog'))")
