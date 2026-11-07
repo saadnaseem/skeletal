@@ -1000,10 +1000,10 @@ document.addEventListener('paste', e=>{
   if (txt.trim()){
     if (tryLoadText(txt.trim(), true)) return;
     if (loadErrorKind==='valence'){ openSmilesDialog(txt.trim(), loadError); return; } // the toast can't hold Insert anyway
-    if (loadError){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
+    if (loadError && loadErrorKind!=='syntax'){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
   }
   if (clip) pasteDoc(clip, L*1.2);
-  else if (txt.trim()) toast('Clipboard text is not a SMILES string or molfile');
+  else if (txt.trim()) toast(loadErrorKind==='syntax' ? 'Not a valid SMILES. '+loadError : 'Clipboard text is not a SMILES string or molfile', loadErrorKind==='syntax' ? 7000 : undefined);
 });
 
 /* ================= import: SMILES, molfile, reactions ================= */
@@ -1017,8 +1017,9 @@ function layoutSmiles(smi){
 }
 // why the last tryLoadText refused its text, in words for the user ('' when there is nothing more specific to say than "not readable")
 let loadError='', loadErrorKind=''; // loadErrorKind 'valence': refused only for too many bonds, so it can be inserted anyway
+// loadErrorKind 'syntax': OpenChemLib couldn't parse it; the text may still be a compound name, so the Insert dialog looks it up
 function readSmiles(smi){
-  const mol=smilesMol(smi);
+  let mol; try{ mol=smilesMol(smi); }catch(err){ const why=smilesReason(smi, err); if (!why) throw err; const e=new Error(why); e.user=true; e.kind='syntax'; throw e; }
   if (inventedRadicals(smi, mol).length){ const e=new Error('This SMILES has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H is written [nH], as in pyrrole: c1cc[nH]c1.'); e.user=true; throw e; }
   return mol;
 }
@@ -1094,9 +1095,11 @@ function tryLoadText(txt, quiet, force){
     if (rxn.length>1){
       const [r,a,p]=rxn; if (p===undefined || rxn.length>3) throw 0;
       const parts=[]; const rs=r.split('.').filter(Boolean), ps=p.split('.').filter(Boolean);
-      rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      // a fault's position is within its part, so the reason names the part
+      const lay=s=>{ try{ return layoutSmiles(s); }catch(e){ if (e && e.kind==='syntax') e.message=`In \u201c${s}\u201d: ${e.message}`; throw e; } };
+      rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:lay(s)}); });
       parts.push({kind:'arrow'});
-      ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:lay(s)}); });
       if (!force) checkValence(parts);
       insertFragments(parts);
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
@@ -1982,7 +1985,7 @@ async function openFile(f, handle){
     const txt = /\.sdf$/i.test(f.name) ? t.split('$$$$')[0] : t.trim(); // an SD file opens its first record
     if (tryLoadText(txt)) return;
     if (loadErrorKind==='valence'){ openSmilesDialog(txt, loadError); return; }
-    toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
+    toast(loadErrorKind==='syntax' ? 'Not a valid SMILES. '+loadError : loadError || 'Could not read this file', loadError ? 7000 : undefined);
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
 // drag and drop files
@@ -2118,13 +2121,18 @@ function openSmilesDialog(prefill, err){
   const go=async ()=>{ unrefuse(); const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
     if (loadErrorKind==='valence'){ refuse(v, loadError); return; }
-    if (loadError){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
-    if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
-    $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
+    // a SMILES fault; C60 or B12 may still be a name, so look it up. The reason is about the first word only, so text with spaces doesn't get it
+    const why = loadErrorKind==='syntax' && !/\s/.test(v) ? ' '+loadError : '';
+    if (loadErrorKind==='syntax' && !why) loadError='';
+    if (loadError && !why){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
+    if (why && /(?<!-)>/.test(v)){ $('#smErr').textContent='Not a valid reaction SMILES.'+why; return; } // a reaction is never a compound name
+    if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile.'+(why||' Check brackets and ring numbers.'); return; }
+    $('#smErr').textContent=`Not a valid SMILES.${why} Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
     try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }
       if (smi && loadErrorKind==='valence'){ refuse(smi, `PubChem\u2019s structure for \u201c${v}\u201d: ${loadError}`); return; }
-      $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
-    catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
+      if (smi){ $('#smErr').textContent=`PubChem found \u201c${v}\u201d, but its structure couldn\u2019t be drawn.${loadError ? ' '+loadError : ''}`; return; }
+      $('#smErr').textContent= why ? `Not a valid SMILES.${why} PubChem has no compound named \u201c${v}\u201d either.` : `Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    catch(err){ $('#smErr').textContent= why ? `Not a valid SMILES.${why} (PubChem could not be reached to look it up as a name.)` : 'That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
 function openElementDialog(){

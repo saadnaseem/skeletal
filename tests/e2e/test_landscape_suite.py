@@ -10,7 +10,7 @@ pass, the run fails until its mark is removed.
 """
 import re
 import pytest
-from conftest import _open
+from conftest import _open, _wait
 
 # id, input, standard InChIKey (Indigo), monoisotopic mass (Indigo)
 CASES = [
@@ -229,9 +229,140 @@ def test_text_that_is_not_a_structure_is_refused(lp, text):
     assert r["atoms"] == 0 and r["toast"]
 
 
-@pytest.mark.xfail(reason="B7: the message doesn't say what is wrong with the SMILES", strict=True)
 def test_unclosed_ring_says_which_ring(lp):
     assert re.search(r"\bring\b", paste(lp, "C1CC")["toast"], re.I)  # not the "ring" in "string"
+
+
+@pytest.mark.parametrize("text, says", [
+    ("C1CC", "Ring bond 1 is opened but never closed"),
+    ("CC)C", "“)” at character 3 has no “(”"),
+    ("C[NH4+", "“[” at character 2 is never closed"),
+    ("NaCl", "“Na” has to be written in brackets"),
+    ("C[Xx]", "“[Xx]” is not an element"),
+    ("C=C=", "ends with “=”"),
+    ("CC>>C1CC", "In “C1CC”: Ring bond 1"),  # a reaction names the part
+])
+def test_invalid_smiles_paste_says_why(lp, text, says):
+    r = paste(lp, text)
+    assert r["atoms"] == 0 and says in r["toast"], r["toast"]
+
+
+def test_a_word_paste_keeps_the_plain_message(lp):
+    assert paste(lp, "caffeine")["toast"] == "Clipboard text is not a SMILES string or molfile"
+
+
+@pytest.mark.parametrize("text, pastes_clip", [("C1CC", True), ("c1cccc1", False)])
+def test_invalid_smiles_paste_with_an_in_app_copy(lp, text, pastes_clip):
+    # Value: protects=with an in-app copy, an unparseable SMILES pastes the copy, while a refused structure (aromatic) still toasts and pastes nothing;
+    # fails_when=the syntax exemption is dropped from, or widened in, the paste handler's early return; why_new=the other paste tests run with clip null;
+    # seam=none; no_claim=the system clipboard (a synthetic ClipboardEvent stands in)
+    lp.evaluate("setDoc(newDoc()); sel.clear(); tryLoadText('CCO'); clip=subDoc(new Set(doc.atoms.map(a=>'a'+a.id)))")
+    try: r = paste(lp, text)
+    finally: lp.evaluate("clip=null")
+    assert r["atoms"] == (3 if pastes_clip else 0), r
+    assert ("Not a valid SMILES" in r["toast"]) is False and (("aromatic" in r["toast"]) == (not pastes_clip)), r["toast"]
+
+
+def _insert(lp, text, pubchem):
+    asked = []
+    def handle(route):
+        asked.append(route.request.url)
+        if pubchem == "offline": route.abort()
+        else: route.fulfill(status=200, content_type="application/json", body='{"Fault": {"Code": "PUGREST.NotFound"}}')  # a 404 would log a console error
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", handle)
+    try:  # the page is shared by the module: leave no route or open dialog behind, even on failure
+        lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
+        lp.fill("#smIn", text); lp.click("#smGo")
+        _wait(lp, "!/Looking up/.test(document.querySelector('#smErr').textContent)")
+        msg = lp.inner_text("#smErr")
+    finally:
+        lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    return msg, asked
+
+
+@pytest.mark.parametrize("pubchem", ["none", "offline"])
+def test_insert_dialog_says_why_after_the_name_lookup(lp, pubchem):
+    # C60 or B12 might be a name, so the lookup still runs; when it finds nothing (or can't be reached) the SMILES fault is given
+    msg, asked = _insert(lp, "C1CC", pubchem)
+    assert asked and "Ring bond 1 is opened but never closed" in msg, msg
+    assert ("PubChem has no compound" in msg) == (pubchem == "none")
+
+
+def test_insert_dialog_says_why_for_long_text_without_a_lookup(lp):
+    # Value: protects=text over 200 characters with a SMILES fault gives the reason and is not sent to PubChem; fails_when=the length branch drops
+    # the reason or the length guard moves after the lookup; why_new=the dialog tests above use short text; seam=none; no_claim=real PubChem (routed)
+    msg, asked = _insert(lp, "C1" + "C" * 210, "none")
+    assert not asked and msg.startswith("That isn’t a valid SMILES string or molfile. Ring bond 1 is opened"), msg
+
+
+def test_insert_dialog_still_inserts_a_name_that_is_also_a_broken_smiles(lp):
+    # Value: protects=a name that also reads as a faulty SMILES (B12) is still looked up and inserted; fails_when=a syntax reason stops the
+    # dialog before the PubChem lookup; why_new=only the not-found and offline lookups were tested; seam=none; no_claim=real PubChem (routed)
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", lambda route: route.fulfill(status=200, content_type="application/json",
+        body='{"PropertyTable": {"Properties": [{"SMILES": "CCO"}]}}'))
+    try:
+        lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''; openSmilesDialog()")
+        lp.fill("#smIn", "B12"); lp.click("#smGo")
+        _wait(lp, "doc.atoms.length > 0")
+        toast = lp.inner_text("#toast")
+    finally:
+        lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    assert lp.evaluate("doc.atoms.length") == 3 and toast == "Inserted B12 from PubChem"
+
+
+def test_insert_dialog_gives_no_smiles_reason_for_text_with_spaces(lp):
+    # Value: protects=a reason about the first word isn't shown for a whole phrase; fails_when=the syntax reason is used whatever the text;
+    # why_new=every other dialog case is one word; seam=none; no_claim=real PubChem (routed)
+    msg, asked = _insert(lp, "B12 vitamin", "none")
+    assert asked and msg == "Not a valid SMILES, and PubChem has no compound named “B12 vitamin”.", msg
+
+
+def test_insert_dialog_says_when_pubchem_structure_cannot_be_drawn(lp):
+    # Value: protects=a PubChem hit whose structure fails to load is not reported as "no compound"; fails_when=the not-found message is
+    # shown for a hit; why_new=only hits that load and misses were tested; seam=none; no_claim=real PubChem (routed)
+    lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    lp.route("**/pubchem.ncbi.nlm.nih.gov/**", lambda route: route.fulfill(status=200, content_type="application/json",
+        body='{"PropertyTable": {"Properties": [{"SMILES": "C1CC"}]}}'))
+    try:
+        lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); openSmilesDialog()")
+        lp.fill("#smIn", "somename"); lp.click("#smGo")
+        _wait(lp, "!/Looking up/.test(document.querySelector('#smErr').textContent)")
+        msg = lp.inner_text("#smErr")
+    finally:
+        lp.evaluate("closeDialog()"); lp.unroute("**/pubchem.ncbi.nlm.nih.gov/**")
+    assert msg.startswith("PubChem found “somename”, but its structure couldn’t be drawn.") and lp.evaluate("doc.atoms.length") == 0, msg
+
+
+def test_insert_dialog_does_not_look_up_a_broken_reaction(lp):
+    # Value: protects=reaction text is never sent to PubChem as a name; fails_when=the syntax branch looks up everything; why_new=only
+    # single structures were typed in the dialog; seam=none; no_claim=real PubChem (routed)
+    msg, asked = _insert(lp, "CC>>C1CC", "none")
+    assert not asked and msg.startswith("Not a valid reaction SMILES. In “C1CC”: Ring bond 1"), msg
+
+
+def test_insert_dialog_keeps_the_name_message_for_a_word(lp):
+    msg, _ = _insert(lp, "notacompound", "none")
+    assert msg == "Not a valid SMILES, and PubChem has no compound named “notacompound”."
+
+
+def test_file_open_of_a_pdb_file_keeps_the_plain_message(lp, tmp_path):
+    # Value: protects=a non-SMILES text file (a PDB starting HEADER) isn't diagnosed as a broken SMILES; fails_when=the word check sees only
+    # lowercase; why_new=File > Open was tested only with a .smi; seam=none; no_claim=none beyond protects
+    f = tmp_path / "x.pdb"; f.write_text("HEADER    PROTEIN\nATOM      1  N   ALA A   1\n")
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''")
+    lp.set_input_files("#fileIn", str(f))
+    _wait(lp, "document.querySelector('#toast').textContent")
+    assert lp.inner_text("#toast") == "Could not read this file"
+
+
+def test_file_open_of_an_invalid_smiles_says_why(lp, tmp_path):
+    f = tmp_path / "bad.smi"; f.write_text("CC(C)C1CC\n")
+    lp.evaluate("setDoc(newDoc()); sel.clear(); changed(); document.querySelector('#toast').textContent=''")
+    lp.set_input_files("#fileIn", str(f))
+    _wait(lp, "document.querySelector('#toast').textContent")
+    assert "Not a valid SMILES. Ring bond 1 is opened" in lp.inner_text("#toast") and lp.evaluate("doc.atoms.length") == 0
 
 
 @pytest.mark.parametrize("text", ["c1cccc1", "c1ccc[nH]c1", "c1cccc1>>CC"])

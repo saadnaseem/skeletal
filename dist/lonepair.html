@@ -1444,6 +1444,55 @@ function inventedRadicals(smi, mol){
   const out=[]; for (let i=0;i<toks.length;i++) if (mol.getAtomRadical(i) && toks[i][0]!=='[') out.push(i);
   return out;
 }
+// Why OpenChemLib refused a SMILES, as a sentence for the user; '' when there is nothing more useful to say than "not a SMILES".
+// Text that reads as a word gets no reason, so the Insert dialog can still look it up as a compound name: a run of three or more
+// lowercase letters that aren't aromatic atoms (caffeine, 2-butanol), or of three or more letters that can't be split into element
+// symbols (ASPIRIN, MeOH, a PDB file's HEADER). Positions in OCL's messages are 0-based; the user is told 1-based.
+const SMILES_SYMBOLS = new Set([...ELEMENTS, 'se', 'as', 'b', 'c', 'n', 'o', 'p', 's']);
+// whether a letter run splits into those symbols. A scan of reachable positions, linear in the run: a regex alternation would backtrack
+// exponentially on runs that split two ways (Co is Co, or C then aromatic o)
+function splitsIntoSymbols(w){
+  const ok=[true]; for (let i=1;i<=w.length;i++) ok[i]=(ok[i-1] && SMILES_SYMBOLS.has(w[i-1])) || (i>1 && ok[i-2] && SMILES_SYMBOLS.has(w.slice(i-2,i)));
+  return ok[w.length];
+}
+const ORGANIC = 'Without brackets, SMILES only writes B, C, N, O, P, S, F, Cl, Br and I (and b, c, n, o, p, s in aromatic rings)';
+function smilesReason(smi, err){
+  const m=/SmilesParser: (.*)/.exec(String(err && err.message || '')); if (!m) return '';
+  const s=String(smi), msg=m[1], at=i=>`at character ${i+1}`;
+  if (/[a-z]{3,}/.test(s.replace(/[bcnops]{3,}/g,'')) || (s.match(/[A-Za-z]{3,}/g)||[]).some(w=>!splitsIntoSymbols(w))) return '';
+  let r;
+  if ((r=/dangling ring closure: (\d+)/.exec(msg))) return `Ring bond ${r[1]} is opened but never closed. Each ring number appears twice, once where the ring opens and once where it closes, as in cyclohexane: C1CCCCC1.`;
+  // every other message names a position. smilesMol parses [H] as [1H], one character longer, so map it back to the text as written
+  const q=+(/position:\s*(\d+)/i.exec(msg)||[])[1]; if (!Number.isInteger(q)) return '';
+  const back=[]; for (let i=0;i<s.length;) if (s.startsWith('[H]',i)){ back.push(i,i,i+1,i+2); i+=3; } else back.push(i++);
+  const p = q>=back.length ? s.length+(q-back.length) : back[q];
+  const brackets = el => el==='H'
+    ? 'Hydrogens are implied in SMILES, so they aren’t written: water is O and ammonia is N. To show one, put it in brackets with its atom, as in [OH2].'
+    : `“${el}” has to be written in brackets, as in [${el}]. ${ORGANIC}.`;
+  if (/Closing '\)'/.test(msg)) return `The “)” ${at(p)} has no “(” before it.`;
+  if (/closing bracket/.test(msg)){ // OCL says this for a stray ']' (C]C) and for brackets with no element inside (C[], C[13])
+    const o=s.lastIndexOf('[', p-1);
+    return o<0 || s.lastIndexOf(']', p-1)>o ? `The “]” ${at(p)} has no “[” before it.` : `The brackets ${at(o)} have no element in them, as in [CH4] or [13C].`;
+  }
+  if (/inside brackets/.test(msg)){ const o=s.lastIndexOf('[');
+    if (o>s.lastIndexOf(']')) return `The “[” ${at(o)} is never closed with “]”.`;
+    if (s[p] && s[p]!==' ') return `The “${s[p]}” ${at(p)} doesn’t belong inside the brackets.`; }
+  if (/Unknown atom label/.test(msg)){ const b=/^\[[^\]]*\]/.exec(s.slice(p)); if (b) return `“${b[0]}” is not an element.`; }
+  if (/must not be aromatic/.test(msg)){ // Si read as S plus an aromatic i
+    const two=s.slice(p-1,p+1); if (p>0 && ELSET.has(two)) return brackets(two);
+    return `“${s[p]}” ${at(p)} can’t be an aromatic atom.`; }
+  if (/found outside brackets/.test(msg) && /[+-]/.test(s[p]||'')) return `The “${s[p]}” ${at(p)} is outside brackets. A charge goes in brackets with its atom, as in [NH4+] or [Cl-].`;
+  if (/unexpected character outside brackets/.test(msg) && s[p]) return `“${s[p]}” ${at(p)} can’t be used in a SMILES.`;
+  if (/unknown element label/.test(msg)){
+    const pair = /[a-z]/.test(s[p]||'') && p>0 ? s.slice(p-1,p+1) : /^[A-Z][a-z]/.test(s.slice(p,p+2)) ? s.slice(p,p+2) : '';
+    if (pair && ELSET.has(pair)) return brackets(pair); // Na, Mn
+    if (pair && /[A-Z]/.test(s[p])) return `“${pair}” ${at(p)} is not an element.`; // Uu
+    if (ELSET.has(s[p])) return brackets(s[p]); // H, K, U
+    return `“${s[p]}” ${at(p)} is not an atom. ${ORGANIC}; other elements go in brackets, as in [Na+] or [Si].`;
+  }
+  if (/dangling open bond/.test(msg) && p>=s.length) return s.endsWith('.') ? 'The SMILES ends with “.”, which separates two structures, with nothing after it.' : `The SMILES ends with “${s.slice(-1)}”, with no atom after it.`;
+  return '';
+}
 // A molfile, with its wedges read as drawn. In V2000, chiral flag 0 strictly means "racemic", and OpenChemLib reads it that way;
 // but RDKit and many other programs write 0 in every file, and RDKit, Indigo and ChemDraw read the wedges as one enantiomer.
 // So a flag-0 file with wedge or hash bonds is read as chiral, and asDrawn says so (the user can still mark a centre &1).
@@ -4601,10 +4650,10 @@ document.addEventListener('paste', e=>{
   if (txt.trim()){
     if (tryLoadText(txt.trim(), true)) return;
     if (loadErrorKind==='valence'){ openSmilesDialog(txt.trim(), loadError); return; } // the toast can't hold Insert anyway
-    if (loadError){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
+    if (loadError && loadErrorKind!=='syntax'){ toast(loadError, 7000); return; } // a structure that was refused for a reason: say why, don't paste something else
   }
   if (clip) pasteDoc(clip, L*1.2);
-  else if (txt.trim()) toast('Clipboard text is not a SMILES string or molfile');
+  else if (txt.trim()) toast(loadErrorKind==='syntax' ? 'Not a valid SMILES. '+loadError : 'Clipboard text is not a SMILES string or molfile', loadErrorKind==='syntax' ? 7000 : undefined);
 });
 
 /* ================= import: SMILES, molfile, reactions ================= */
@@ -4618,8 +4667,9 @@ function layoutSmiles(smi){
 }
 // why the last tryLoadText refused its text, in words for the user ('' when there is nothing more specific to say than "not readable")
 let loadError='', loadErrorKind=''; // loadErrorKind 'valence': refused only for too many bonds, so it can be inserted anyway
+// loadErrorKind 'syntax': OpenChemLib couldn't parse it; the text may still be a compound name, so the Insert dialog looks it up
 function readSmiles(smi){
-  const mol=smilesMol(smi);
+  let mol; try{ mol=smilesMol(smi); }catch(err){ const why=smilesReason(smi, err); if (!why) throw err; const e=new Error(why); e.user=true; e.kind='syntax'; throw e; }
   if (inventedRadicals(smi, mol).length){ const e=new Error('This SMILES has an aromatic ring that can’t alternate single and double bonds, so it isn’t drawn. A ring N–H is written [nH], as in pyrrole: c1cc[nH]c1.'); e.user=true; throw e; }
   return mol;
 }
@@ -4695,9 +4745,11 @@ function tryLoadText(txt, quiet, force){
     if (rxn.length>1){
       const [r,a,p]=rxn; if (p===undefined || rxn.length>3) throw 0;
       const parts=[]; const rs=r.split('.').filter(Boolean), ps=p.split('.').filter(Boolean);
-      rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      // a fault's position is within its part, so the reason names the part
+      const lay=s=>{ try{ return layoutSmiles(s); }catch(e){ if (e && e.kind==='syntax') e.message=`In \u201c${s}\u201d: ${e.message}`; throw e; } };
+      rs.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:lay(s)}); });
       parts.push({kind:'arrow'});
-      ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:layoutSmiles(s)}); });
+      ps.forEach((s,i)=>{ if(i) parts.push({kind:'plus'}); parts.push({kind:'frag',f:lay(s)}); });
       if (!force) checkValence(parts);
       insertFragments(parts);
       if (a){ const ar=doc.arrows[doc.arrows.length-1]; pushUndo(); doc.texts.push({id:nid(),x:(ar.x1+ar.x2)/2,y:ar.y1-L*0.9,text:a.replace(/\./g,', ')}); changed(); }
@@ -5583,7 +5635,7 @@ async function openFile(f, handle){
     const txt = /\.sdf$/i.test(f.name) ? t.split('$$$$')[0] : t.trim(); // an SD file opens its first record
     if (tryLoadText(txt)) return;
     if (loadErrorKind==='valence'){ openSmilesDialog(txt, loadError); return; }
-    toast(loadError || 'Could not read this file', loadError ? 7000 : undefined);
+    toast(loadErrorKind==='syntax' ? 'Not a valid SMILES. '+loadError : loadError || 'Could not read this file', loadError ? 7000 : undefined);
   }catch(err){ console.warn(err); toast('Could not read this file'); }
 }
 // drag and drop files
@@ -5719,13 +5771,18 @@ function openSmilesDialog(prefill, err){
   const go=async ()=>{ unrefuse(); const v=$('#smIn').value.trim(); if(!v){ $('#smErr').textContent='Enter a SMILES string, name or CAS number first.'; return; }
     if (tryLoadText(v,true)){ closeDialog(); return; }
     if (loadErrorKind==='valence'){ refuse(v, loadError); return; }
-    if (loadError){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
-    if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile. Check brackets and ring numbers.'; return; }
-    $('#smErr').textContent=`Not a valid SMILES. Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
+    // a SMILES fault; C60 or B12 may still be a name, so look it up. The reason is about the first word only, so text with spaces doesn't get it
+    const why = loadErrorKind==='syntax' && !/\s/.test(v) ? ' '+loadError : '';
+    if (loadErrorKind==='syntax' && !why) loadError='';
+    if (loadError && !why){ $('#smErr').textContent=loadError; return; } // it was a SMILES, just not a drawable one: no name lookup
+    if (why && /(?<!-)>/.test(v)){ $('#smErr').textContent='Not a valid reaction SMILES.'+why; return; } // a reaction is never a compound name
+    if (v.includes('\n') || v.length>200){ $('#smErr').textContent='That isn\u2019t a valid SMILES string or molfile.'+(why||' Check brackets and ring numbers.'); return; }
+    $('#smErr').textContent=`Not a valid SMILES.${why} Looking up \u201c${v}\u201d as a name or CAS number on PubChem\u2026`;
     try{ const smi=await pubchemNameToSmiles(v); if (smi && tryLoadText(smi)){ closeDialog(); toast(`Inserted ${v} from PubChem`); return; }
       if (smi && loadErrorKind==='valence'){ refuse(smi, `PubChem\u2019s structure for \u201c${v}\u201d: ${loadError}`); return; }
-      $('#smErr').textContent=`Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
-    catch(err){ $('#smErr').textContent='That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
+      if (smi){ $('#smErr').textContent=`PubChem found \u201c${v}\u201d, but its structure couldn\u2019t be drawn.${loadError ? ' '+loadError : ''}`; return; }
+      $('#smErr').textContent= why ? `Not a valid SMILES.${why} PubChem has no compound named \u201c${v}\u201d either.` : `Not a valid SMILES, and PubChem has no compound named \u201c${v}\u201d.`; }
+    catch(err){ $('#smErr').textContent= why ? `Not a valid SMILES.${why} (PubChem could not be reached to look it up as a name.)` : 'That isn\u2019t a valid SMILES string, and PubChem could not be reached to look it up as a name. Check your connection.'; } };
   $('#smGo').onclick=go; $('#smIn').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go(); } });
 }
 function openElementDialog(){
